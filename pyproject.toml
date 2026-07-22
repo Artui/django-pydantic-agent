@@ -1,0 +1,164 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "django-pydantic-agent"
+dynamic = ["version"]
+description = "Settings-agnostic Django agent-host substrate for Pydantic-AI: config in, built agent out."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Artur Veres", email = "artur8118@gmail.com" },
+]
+keywords = ["django", "pydantic-ai", "agent", "llm", "ai", "toolset"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 5.2",
+    "Framework :: Django :: 6.0",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "django>=4.2",
+    # Slim core only. Unlike a transport package this pulls **no** wire extra —
+    # the AG-UI adapter (and its ag-ui-protocol floor) belongs to django-ag-ui,
+    # A2A's belongs to django-a2a. The substrate just builds the agent.
+    "pydantic-ai-slim>=2,<3",
+]
+
+[project.optional-dependencies]
+# Model-provider extras (slim ships none). Install one to use a "provider:model"
+# string, e.g. `pip install django-pydantic-agent[anthropic]`.
+anthropic = ["pydantic-ai-slim[anthropic]>=2,<3"]
+openai = ["pydantic-ai-slim[openai]>=2,<3"]
+google = ["pydantic-ai-slim[google]>=2,<3"]
+# In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
+# toolset (the agent calls DRF tools without a network hop).
+drf-mcp = ["djangorestframework-mcp-server>=0.12,<0.13"]
+# Expose drf-services specs directly as agent tools via djangorestframework-
+# pydantic-ai's SpecCapability — no MCP server in the path.
+spec-tools = ["djangorestframework-pydantic-ai>=0.5,<0.6"]
+# pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
+# CodeMode batching, compaction, step persistence, sub-agents.
+harness = ["pydantic-ai-harness[code-mode]>=0.7,<0.8"]
+
+[project.urls]
+Homepage = "https://github.com/Artui/django-pydantic-agent"
+Repository = "https://github.com/Artui/django-pydantic-agent"
+Issues = "https://github.com/Artui/django-pydantic-agent/issues"
+
+[tool.hatch.version]
+path = "django_pydantic_agent/version.py"
+pattern = "^__version__(?:\\s*:\\s*[A-Za-z][A-Za-z0-9_]*)?\\s*=\\s*[\"'](?P<version>[^\"']+)[\"']"
+
+[tool.hatch.build.targets.wheel]
+packages = ["django_pydantic_agent"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "ty>=0.0.32",
+    "pre-commit>=3.8.0",
+    "pytest>=8.0",
+    "pytest-django>=4.11.1",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.24",
+    "flake8-tidy-imports>=4.12.0",
+    "django-stubs>=5.0",
+    # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
+    "djangorestframework-mcp-server>=0.12,<0.13",
+    # The [spec-tools] extra's backing package, so its capability + tests run in dev.
+    "djangorestframework-pydantic-ai>=0.5,<0.6",
+    # The [harness] extra's backing package, so the harness capabilities run in dev.
+    "pydantic-ai-harness[code-mode]>=0.7,<0.8",
+    # Provider libs so the api_key / provider model-building path is exercised
+    # in dev/CI (the extras above ship to consumers, not the dev env).
+    "pydantic-ai-slim[anthropic,openai,google]>=2",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.conftest_settings"
+asyncio_mode = "auto"
+addopts = "--cov=django_pydantic_agent --cov-report=term-missing --cov-fail-under=100"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["django_pydantic_agent"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "UP", "B", "SIM", "I", "TID"]
+ignore = ["E203", "E501", "E231", "F811", "E722", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["django_pydantic_agent"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ty.environment]
+root = ["./django_pydantic_agent"]
+
+# bump-my-version drives `make release-bump` — it rewrites the version in
+# django_pydantic_agent/version.py and promotes the CHANGELOG [Unreleased] block
+# under a new dated heading.
+[tool.bumpversion]
+current_version = "0.1.0"
+allow_dirty = false
+commit = false
+tag = false
+
+[[tool.bumpversion.files]]
+filename = "django_pydantic_agent/version.py"
+search = '__version__: str = "{current_version}"'
+replace = '__version__: str = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "## [Unreleased]"
+replace = """## [Unreleased]
+
+## [{new_version}] — {now:%Y-%m-%d}"""
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v{current_version}...HEAD"
+replace = """[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v{new_version}...HEAD
+[{new_version}]: https://github.com/Artui/django-pydantic-agent/compare/v{current_version}...v{new_version}"""
