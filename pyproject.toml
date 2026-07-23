@@ -40,24 +40,24 @@ dependencies = [
     # Slim core only. Unlike a transport package this pulls **no** wire extra —
     # the AG-UI adapter (and its ag-ui-protocol floor) belongs to django-ag-ui,
     # A2A's belongs to django-a2a. The substrate just builds the agent.
-    "pydantic-ai-slim>=2,<3",
+    "pydantic-ai-slim>=2.16.0,<3",
 ]
 
 [project.optional-dependencies]
 # Model-provider extras (slim ships none). Install one to use a "provider:model"
 # string, e.g. `pip install django-pydantic-agent[anthropic]`.
-anthropic = ["pydantic-ai-slim[anthropic]>=2,<3"]
-openai = ["pydantic-ai-slim[openai]>=2,<3"]
-google = ["pydantic-ai-slim[google]>=2,<3"]
+anthropic = ["pydantic-ai-slim[anthropic]>=2.16.0,<3"]
+openai = ["pydantic-ai-slim[openai]>=2.16.0,<3"]
+google = ["pydantic-ai-slim[google]>=2.16.0,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
 # toolset (the agent calls DRF tools without a network hop).
 drf-mcp = ["djangorestframework-mcp-server>=0.12,<0.13"]
 # Expose drf-services specs directly as agent tools via djangorestframework-
 # pydantic-ai's SpecCapability — no MCP server in the path.
-spec-tools = ["djangorestframework-pydantic-ai>=0.5,<0.6"]
+spec-tools = ["djangorestframework-pydantic-ai>=0.6.1,<0.7"]
 # pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
 # CodeMode batching, compaction, step persistence, sub-agents.
-harness = ["pydantic-ai-harness[code-mode]>=0.7,<0.8"]
+harness = ["pydantic-ai-harness[code-mode]>=0.10.0,<0.11"]
 
 [project.urls]
 Homepage = "https://github.com/Artui/django-pydantic-agent"
@@ -85,17 +85,17 @@ dev = [
     # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
     "djangorestframework-mcp-server>=0.12,<0.13",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.
-    "djangorestframework-pydantic-ai>=0.5,<0.6",
+    "djangorestframework-pydantic-ai>=0.6.1,<0.7",
     # The [harness] extra's backing package, so the harness capabilities run in dev.
-    "pydantic-ai-harness[code-mode]>=0.7,<0.8",
+    "pydantic-ai-harness[code-mode]>=0.10.0,<0.11",
     # Provider libs so the api_key / provider model-building path is exercised
     # in dev/CI (the extras above ship to consumers, not the dev env).
-    "pydantic-ai-slim[anthropic,openai,google]>=2",
+    "pydantic-ai-slim[anthropic,openai,google]>=2.16.0",
 ]
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
-    "mkdocstrings[python]>=0.25",
+    "mkdocstrings[python]>=1.0.6",
 ]
 
 [tool.pytest.ini_options]
