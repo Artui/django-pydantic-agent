@@ -42,6 +42,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `[spec-tools]` makes the two extras **mutually uninstallable**. They have to
   advance together.
 
+### Documentation
+
+- **A real documentation site.** The package shipped in 0.1.0 with 36 exported
+  symbols, a one-paragraph `docs/index.md` and a nav containing only "Home" — no
+  reference at all. It now has five narrative pages (Concepts, Tools, Storage,
+  Policy, Integrations) and a five-page autodoc reference covering the whole
+  public surface, plus a README that says what the package does rather than only
+  what it is. Highlights the things the source knows but nothing surfaced:
+  capabilities compose order-independently; `category` is advisory while
+  `destructive` drives the gate; the `x-*` schema keys reach the *client* while
+  `DESTRUCTIVE_METADATA_KEY` is read *server-side*; stores key on
+  `(owner_id, thread_id)`, so two transports sharing one store share a user's
+  thread list unless wrapped in `ScopedConversationStore`.
+- **Corrected a claim that this package declares a `StepStore` protocol.** It
+  does not — `DefaultStepStore` structurally satisfies **`pydantic-ai-harness`'s**
+  protocol, which is upstream's. The repo conventions asserted otherwise in two
+  places.
+
 ### Fixed
 
 - **The spec-conventions test asserted behaviour that changed in PAI 0.6.0.**

@@ -73,3 +73,15 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Concepts: concepts.md
+  - Tools: tools.md
+  - Storage: storage.md
+  - Policy: policy.md
+  - Integrations: integrations.md
+  - Reference:
+      - reference/index.md
+      - Agent: reference/agent.md
+      - Registry: reference/registry.md
+      - Persistence: reference/persistence.md
+      - Policy: reference/policy.md
+      - Integrations: reference/integrations.md
