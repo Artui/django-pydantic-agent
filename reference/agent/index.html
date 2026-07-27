@@ -697,6 +697,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agentdeps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentDeps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentDeps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AgentDeps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        user
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        state
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#build_agent" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1032,6 +1082,56 @@
     <span class="md-ellipsis">
       
         tool_guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agentdeps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentDeps
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgentDeps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AgentDeps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        user
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        state
       
     </span>
   </a>
@@ -1423,6 +1523,132 @@ agent ungated.</p>
 
     </div>
 
+</div><h2 id="agentdeps"><code>AgentDeps</code><a class="headerlink" href="#agentdeps" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_pydantic_agent.AgentDeps" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AgentDeps</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AgentDeps" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Per-run dependencies handed to the agent as <code>ctx.deps</code>.</p>
+<p>Pydantic-AI's own seam for threading request-scoped values into a run:
+every tool, toolset and capability reads them off <code>RunContext.deps</code>
+instead of closing over a request. That closure is what this type replaces —
+it is why the agent had to be rebuilt per request, and why the acting user
+could not be read through the upstream default.</p>
+<p><code>djangorestframework-pydantic-ai</code>'s <code>SpecToolset</code> already reads
+<code>ctx.deps.user</code> as its default user extractor, so a run given these deps
+binds the user natively with nothing passed at the call site.</p>
+<p>Projects wanting more per-run context subclass this and set
+<code>AgentConfig.deps_factory</code>; the fields below are the two the framework
+itself reads.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AgentDeps.user" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">user</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AgentDeps.user" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">user</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The acting Django user (<code>request.user</code>), or <code>None</code> for an
+unauthenticated run. <code>Any</code> because it is a Django boundary — it may be a
+<code>User</code>, an <code>AnonymousUser</code>, or a project's own model.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AgentDeps.state" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">state</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AgentDeps.state" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">state</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>AG-UI shared state for this run.</p>
+<p>Present so the deps satisfy <code>StateHandler</code>: the UI adapter checks
+<code>isinstance(deps, StateHandler)</code> and, when it matches, validates the
+client's <code>RunAgentInput.state</code> into this field — otherwise it drops the
+state and emits a <code>UserWarning</code> naming the deps type. So a run now
+<em>receives</em> client state instead of discarding it.</p>
+<p><strong>Inbound only, for now.</strong> Nothing emits <code>STATE_SNAPSHOT</code> / <code>STATE_DELTA</code>
+back; a tool has to return those itself as <code>ToolReturn</code> metadata, and
+wiring that end-to-end is its own piece of work.</p>
+<p>Left <code>None</code> (rather than typed) so the default is transport-agnostic: with
+a non-<code>BaseModel</code> value the adapter passes the raw mapping through
+unvalidated. To get validation, seed it with an instance of a Pydantic model
+— the adapter validates the incoming state against <code>type(deps.state)</code>.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
 </div><h2 id="build_agent"><code>build_agent</code><a class="headerlink" href="#build_agent" title="Permanent link">&para;</a></h2>
 
 
@@ -1434,7 +1660,7 @@ agent ungated.</p>
 
 
 <a href="#django_pydantic_agent.build_agent" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">build_agent</span><span class="p">(</span><span class="n">registry</span><span class="p">:</span> <span class="n">ToolRegistry</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">AgentConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Agent</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">build_agent</span><span class="p">(</span><span class="n">registry</span><span class="p">:</span> <span class="n">ToolRegistry</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">AgentConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Agent</span><span class="p">[</span><span class="n">AgentDeps</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -1452,6 +1678,8 @@ registered here.</p>
 MCP-client toolset) alongside the registry tools, so the agent can reach
 beyond the registered set. <code>tool_guard</code>, when enabled, adds a
 :class:<code>ToolGuard</code> that flips destructive tools to require approval.</p>
+<p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so a run must be given
+:class:<code>AgentDeps</code> (the transport builds one per run and passes <code>deps=</code>).</p>
 <p>Capabilities are composed <strong>order-independently</strong>: each declares its
 position via <code>get_ordering</code> (audit is outermost, the guard is orthogonal),
 and pydantic-ai's <code>CombinedCapability</code> topologically sorts them — so the
@@ -1531,6 +1759,12 @@ owns no settings namespace, so the second argument is whatever configuration
 record the calling transport resolved — <code>AGUIConfig</code> for the AG-UI
 transport, its own equivalent for another. Each transport documents the
 concrete type its users receive.</p>
+<p><strong>The returned agent must be typed</strong> <code>Agent[AgentDeps, ...]</code> — build it
+with <code>deps_type=AgentDeps</code>. Transports hand every run an
+:class:<code>~django_pydantic_agent.agent.types.agent_deps.AgentDeps</code>, and that
+is how the acting user reaches spec tools (<code>ctx.deps.user</code>) and how AG-UI
+state reaches <code>deps.state</code>. A factory that omits <code>deps_type</code> produces an
+agent whose tools see no user.</p>
 
 
 

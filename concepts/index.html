@@ -378,6 +378,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-run-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-run dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#model-resolution" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -801,6 +812,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-run-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-run dependencies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#model-resolution" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -910,12 +932,43 @@ not merely a default: the AG-UI adapter only augments <code>output_type</code> w
 carries <em>frontend</em> tools, so a run whose only gated tool is server-side would
 otherwise never defer. Setting it here makes the approval path independent of
 whether the client declared any tools of its own.</p>
+<h2 id="per-run-dependencies">Per-run dependencies<a class="headerlink" href="#per-run-dependencies" title="Permanent link">&para;</a></h2>
+<p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so every run is given an
+<code>AgentDeps</code> — pydantic-ai's own seam for request-scoped values. Tools, toolsets
+and capabilities read them off <code>RunContext.deps</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">deps</span> <span class="o">=</span> <span class="n">AgentDeps</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">)</span>
+</span></code></pre></div>
+<p>This is what a transport passes as <code>deps=</code> when it starts a run, and it is what
+replaced closing over the request. The difference matters beyond tidiness:</p>
+<ul>
+<li><strong>The acting user binds natively.</strong> <code>djangorestframework-pydantic-ai</code>'s
+  <code>SpecToolset</code> already defaults to reading <code>ctx.deps.user</code>, so spec tools act
+  as the right user with nothing passed at the call site.</li>
+<li><strong>The agent stops being request-shaped.</strong> A capability that closes over a
+  request can only serve that request, which forces a rebuild — schemas and all
+  — per call. Request-independent collaborators are the precondition for
+  reusing a built agent across runs.</li>
+<li><strong>AG-UI state has somewhere to land.</strong> <code>AgentDeps</code> satisfies pydantic-ai's
+  <code>StateHandler</code> protocol, so a run's <code>RunAgentInput.state</code> is validated into
+  <code>deps.state</code> instead of being dropped with a warning.</li>
+</ul>
+<p><code>AgentDeps</code> is deliberately <strong>not</strong> frozen, unlike every other record here: the
+UI adapter assigns <code>deps.state = ...</code> directly. Deps are per-run and never
+shared, so the mutability is contained.</p>
+<p>Projects needing more per-run context subclass it — <code>user</code> and <code>state</code> are the
+two fields the framework itself reads.</p>
+<div class="admonition note">
+<p class="admonition-title">Inbound state only</p>
+<p>Nothing emits <code>STATE_SNAPSHOT</code> / <code>STATE_DELTA</code> back to the client yet. A run
+<em>receives</em> client state; a tool returning those events as <code>ToolReturn</code>
+metadata is a separate piece of work.</p>
+</div>
 <h2 id="model-resolution">Model resolution<a class="headerlink" href="#model-resolution" title="Permanent link">&para;</a></h2>
 <p><code>AgentConfig.model</code> takes whatever Pydantic-AI takes — a <code>"provider:model"</code>
 string or a <code>Model</code> instance.</p>
 <p><code>pydantic-ai-slim</code> ships no providers, so a provider string needs its library
 installed. The extras exist for exactly that:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-pydantic-agent<span class="o">[</span>anthropic<span class="o">]</span><span class="w">   </span><span class="c1"># or [openai], [google]</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-pydantic-agent<span class="o">[</span>anthropic<span class="o">]</span><span class="w">   </span><span class="c1"># or [openai], [google]</span>
 </span></code></pre></div>
 <h2 id="replacing-construction-entirely">Replacing construction entirely<a class="headerlink" href="#replacing-construction-entirely" title="Permanent link">&para;</a></h2>
 <p>When <code>build_agent</code>'s composition isn't what a project wants — a custom output
