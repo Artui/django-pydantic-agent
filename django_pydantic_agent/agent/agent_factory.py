@@ -5,13 +5,14 @@ from typing import Any, cast
 from pydantic_ai import Agent, DeferredToolRequests
 
 from django_pydantic_agent.agent.types.agent_config import AgentConfig
+from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.policy.audit.audit_capability import AuditCapability
 from django_pydantic_agent.policy.audit.null_audit_logger import NullAuditLogger
 from django_pydantic_agent.policy.guard.tool_guard import ToolGuard
 from django_pydantic_agent.registry.tool_registry import ToolRegistry
 
 
-def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[None, Any]:
+def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps, Any]:
     """Build a Pydantic-AI ``Agent`` from a registry and an :class:`AgentConfig`.
 
     Each registry tool is registered as a plain Pydantic-AI tool. When
@@ -27,6 +28,9 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[None, Any]
     MCP-client toolset) alongside the registry tools, so the agent can reach
     beyond the registered set. ``tool_guard``, when enabled, adds a
     :class:`ToolGuard` that flips destructive tools to require approval.
+
+    The agent is typed ``Agent[AgentDeps, ...]``, so a run must be given
+    :class:`AgentDeps` (the transport builds one per run and passes ``deps=``).
 
     Capabilities are composed **order-independently**: each declares its
     position via ``get_ordering`` (audit is outermost, the guard is orthogonal),
@@ -44,6 +48,11 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[None, Any]
         capabilities.append(ToolGuard(registry, config=config.tool_guard))
     return Agent(
         model=config.model,
+        # Typed deps are what let every tool, toolset and capability read
+        # request-scoped values off ``ctx.deps`` instead of closing over a
+        # request — which in turn is what lets ``SpecToolset`` bind the user
+        # through its own default, and what makes the agent reusable across runs.
+        deps_type=AgentDeps,
         tools=[binding.spec.fn for binding in registry],
         # ``[str, DeferredToolRequests]`` turns on the tool-approval interrupt
         # loop for **server-side** tools. The AG-UI adapter only augments
