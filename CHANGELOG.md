@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`AgentDeps` — typed, per-run dependencies threaded through the agent.**
+  `build_agent` now returns `Agent[AgentDeps, Any]` (`deps_type=AgentDeps`), so
+  a transport hands each run an `AgentDeps(user=request.user)` and every tool,
+  toolset and capability reads request-scoped values off `RunContext.deps` —
+  pydantic-ai's own seam for exactly this.
+  - **The acting user binds natively.** `djangorestframework-pydantic-ai`'s
+    `SpecToolset` already defaults to reading `ctx.deps.user`; until now this
+    package overrode that with a closure over the request, so the upstream
+    default could never fire.
+  - **It unblocks reusing a built agent.** A capability that closes over a
+    request can only serve that request, forcing a per-request rebuild —
+    schemas and all. Request-independent collaborators are the precondition for
+    building once and binding the user per run.
+  - **AG-UI shared state now has somewhere to land.** `AgentDeps` satisfies
+    pydantic-ai's `StateHandler` protocol, so a run's `RunAgentInput.state` is
+    validated into `deps.state` rather than dropped with a `UserWarning`. Seed
+    `state` with a Pydantic model instance to get it validated against that
+    model. **Inbound only** — nothing emits `STATE_SNAPSHOT` / `STATE_DELTA`
+    back yet; a tool must return those as `ToolReturn` metadata.
+  - `AgentDeps` is the one record here that is **not frozen**: the UI adapter
+    assigns `deps.state = …` directly (it does *not* use `dataclasses.replace`,
+    despite what the protocol's own comment suggests). Deps are per-run and
+    never shared, so the mutability is contained.
+
+### Changed
+
+- **`build_spec_capability(specs, request, …)` → `build_spec_capability(specs, …)`
+  — the `request` argument is gone.** It existed solely to supply
+  `get_user=lambda _ctx: request.user`; with typed deps, `SpecToolset`'s own
+  default reads `ctx.deps.user` and the override is unnecessary. **Breaking for
+  direct callers** (pre-1.0): drop the positional `request`, and make sure runs
+  are given `deps=AgentDeps(user=…)`, or spec tools will act as `None`.
+
 ## [0.2.0] — 2026-07-27
 
 ### Added

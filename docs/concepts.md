@@ -60,6 +60,43 @@ carries *frontend* tools, so a run whose only gated tool is server-side would
 otherwise never defer. Setting it here makes the approval path independent of
 whether the client declared any tools of its own.
 
+## Per-run dependencies
+
+The agent is typed `Agent[AgentDeps, ...]`, so every run is given an
+`AgentDeps` — pydantic-ai's own seam for request-scoped values. Tools, toolsets
+and capabilities read them off `RunContext.deps`:
+
+```python
+deps = AgentDeps(user=request.user)
+```
+
+This is what a transport passes as `deps=` when it starts a run, and it is what
+replaced closing over the request. The difference matters beyond tidiness:
+
+- **The acting user binds natively.** `djangorestframework-pydantic-ai`'s
+  `SpecToolset` already defaults to reading `ctx.deps.user`, so spec tools act
+  as the right user with nothing passed at the call site.
+- **The agent stops being request-shaped.** A capability that closes over a
+  request can only serve that request, which forces a rebuild — schemas and all
+  — per call. Request-independent collaborators are the precondition for
+  reusing a built agent across runs.
+- **AG-UI state has somewhere to land.** `AgentDeps` satisfies pydantic-ai's
+  `StateHandler` protocol, so a run's `RunAgentInput.state` is validated into
+  `deps.state` instead of being dropped with a warning.
+
+`AgentDeps` is deliberately **not** frozen, unlike every other record here: the
+UI adapter assigns `deps.state = ...` directly. Deps are per-run and never
+shared, so the mutability is contained.
+
+Projects needing more per-run context subclass it — `user` and `state` are the
+two fields the framework itself reads.
+
+!!! note "Inbound state only"
+
+    Nothing emits `STATE_SNAPSHOT` / `STATE_DELTA` back to the client yet. A run
+    *receives* client state; a tool returning those events as `ToolReturn`
+    metadata is a separate piece of work.
+
 ## Model resolution
 
 `AgentConfig.model` takes whatever Pydantic-AI takes — a `"provider:model"`

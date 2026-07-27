@@ -9,8 +9,9 @@ path: ``djangorestframework-pydantic-ai``'s ``SpecCapability`` wraps a
 ``SpecToolset`` that calls the specs in process through drf-services'
 transport-neutral surface (`dispatch_spec` + its off-HTTP helpers), enforcing
 each spec's ``permission_classes``. The agent acts as the **logged-in AG-UI
-user**: the user is bound from ``request`` here (rather than read off
-``RunContext.deps``), matching how :class:`DRFMCPToolset` carries the request.
+user**, bound the way pydantic-ai intends: ``SpecToolset``'s own default reads
+``ctx.deps.user`` off :class:`~django_pydantic_agent.agent.types.agent_deps.AgentDeps`,
+so nothing here closes over the request.
 
 Choosing the *capability* over the bare ``SpecToolset`` is deliberate — but the
 reason is no longer instructions. Since PAI 0.6.0 the conventions (``page`` /
@@ -29,19 +30,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from django.http import HttpRequest
-
 from django_pydantic_agent.integrations.resolve_spec_mapping import resolve_spec_mapping
 from django_pydantic_agent.integrations.types.spec_source import SpecSource
 
 
 def build_spec_capability(
     specs: Mapping[str, Any] | SpecSource,
-    request: HttpRequest,
     *,
     exclude_names: frozenset[str] = frozenset(),
 ) -> Any:
-    """A ``SpecCapability`` over ``specs``, acting as ``request.user``.
+    """A ``SpecCapability`` over ``specs``, acting as the run's ``deps.user``.
 
     ``specs`` is a ``name -> ServiceSpec/SelectorSpec`` mapping supplied by the
     caller, or a spec registry to read that mapping from. Names in
@@ -49,15 +47,19 @@ def build_spec_capability(
     higher-precedence source (the ``@tool`` registry, the drf-mcp bridge) already
     claimed — are dropped so that source wins a collision (the same rule
     ``build_tool_catalog`` applies); otherwise pydantic-ai raises ``UserError``
-    for the duplicate name at run time. The ``get_user`` hook ignores
-    ``ctx.deps`` and returns the request's user, which the view has already
-    materialized off the event loop.
+    for the duplicate name at run time.
+
+    **No ``get_user`` override, and no ``request``.** ``SpecToolset``'s default
+    extractor already reads ``ctx.deps.user``, so a run given
+    :class:`~django_pydantic_agent.agent.types.agent_deps.AgentDeps` binds the
+    acting user natively. The capability is therefore request-independent, which
+    is what makes an agent built once reusable across runs.
     """
     from rest_framework_pydantic_ai import SpecCapability
 
     resolved = resolve_spec_mapping(specs)
     selected = {name: spec for name, spec in resolved.items() if name not in exclude_names}
-    return SpecCapability(selected, get_user=lambda _ctx: request.user)
+    return SpecCapability(selected)
 
 
 __all__ = ["build_spec_capability"]
