@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`AgentFactoryFn` now returns `Agent[AgentDeps, Any]`.** A project using the
+  `agent_factory=` escape hatch must build its agent with
+  `deps_type=AgentDeps`; one that omits it produces an agent whose tools see no
+  acting user. Type checkers flag it, which is how this surfaced.
 - **`build_spec_capability(specs, request, …)` → `build_spec_capability(specs, …)`
   — the `request` argument is gone.** It existed solely to supply
   `get_user=lambda _ctx: request.user`; with typed deps, `SpecToolset`'s own
