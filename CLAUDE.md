@@ -20,8 +20,10 @@ Provides:
   `[spec-tools]` `SpecCapability`.
 - The `AuditLogger` protocol (`Null` / `Logging`) and the `get_user(request)`
   user-resolution hook.
-- Storage **contracts** — `ConversationStore` / `AttachmentStore` / `StepStore`
-  protocols — plus the reference `contrib.store` models and stores.
+- Storage **contracts** — `ConversationStore` / `AttachmentStore` protocols —
+  plus the reference `contrib.store` models and stores. (`DefaultStepStore`
+  ships too, but its protocol is `pydantic-ai-harness`'s; this package does
+  not declare a `StepStore` protocol of its own.)
 
 ### The one rule that defines this package
 
@@ -47,7 +49,7 @@ peer" is core.**
 | `ToolRegistry` + `@tool` + typed-schema derivation | **core** |
 | External toolsets / capabilities; the `[drf-mcp]` bridge and `[spec-tools]` composition | **core** (optional extras) |
 | `get_user(request)` + the `AuditLogger` protocol | **core** |
-| `ConversationStore` / `AttachmentStore` / `StepStore` protocols, the `read_attachment` tool, `contrib.store` models | **core** (storage contracts are transport-neutral) |
+| `ConversationStore` / `AttachmentStore` protocols, the `read_attachment` tool, `contrib.store` models and stores (incl. `DefaultStepStore`, satisfying harness's protocol) | **core** (storage contracts are transport-neutral) |
 | An HTTP view, an SSE/streaming encoder, a wire adapter, `.urls` | **a transport** |
 | Browser-facing sub-views (thread drawer, attachments, transcription, skills palette) | **a transport** |
 
