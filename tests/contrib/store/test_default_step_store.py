@@ -187,6 +187,48 @@ async def test_latest_snapshot_missing_returns_none() -> None:
     assert await _store().latest_snapshot(run_id="absent") is None
 
 
+async def test_snapshot_state_round_trips() -> None:
+    store = _store()
+    await store.save_snapshot(
+        ContinuableSnapshot(run_id="r1", step_index=1, messages=_messages(), state="interrupted")
+    )
+    got = await store.latest_snapshot(run_id="r1", include_interrupted=True)
+    assert got is not None and got.state == "interrupted"
+
+
+async def test_interrupted_snapshots_are_skipped_by_default() -> None:
+    # An interrupted snapshot is a mid-tool-cycle rescue point: pending calls may
+    # be re-executed or closed out with synthesized returns, so a plain resume
+    # must not land on one.
+    store = _store()
+    await store.save_snapshot(
+        ContinuableSnapshot(run_id="r1", step_index=1, messages=_messages(), state="interrupted")
+    )
+    assert await store.latest_snapshot(run_id="r1") is None
+
+
+async def test_newest_complete_wins_over_a_newer_interrupted() -> None:
+    # The state filter applies after ordering — walking back from the newest
+    # row, exactly as the harness reference stores do.
+    store = _store()
+    await store.save_snapshot(ContinuableSnapshot(run_id="r1", step_index=1, messages=_messages()))
+    await store.save_snapshot(
+        ContinuableSnapshot(run_id="r1", step_index=2, messages=_messages(), state="interrupted")
+    )
+    got = await store.latest_snapshot(run_id="r1")
+    assert got is not None and got.step_index == 1 and got.state == "complete"
+
+    including = await store.latest_snapshot(run_id="r1", include_interrupted=True)
+    assert including is not None and including.step_index == 2
+
+
+async def test_snapshots_default_to_complete() -> None:
+    store = _store()
+    await store.save_snapshot(ContinuableSnapshot(run_id="r1", step_index=0, messages=_messages()))
+    got = await store.latest_snapshot(run_id="r1")
+    assert got is not None and got.state == "complete"
+
+
 # -- Tool effects -------------------------------------------------------------
 
 

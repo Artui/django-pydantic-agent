@@ -158,11 +158,19 @@ class StoredSnapshot(models.Model):
     """A provider-valid :class:`ContinuableSnapshot` safe to resume from.
 
     ``messages`` is the full ``list[ModelMessage]`` serialised with
-    ``ModelMessagesTypeAdapter`` (JSON), saved only at boundaries where every
-    tool call has a matching return — pass it to
+    ``ModelMessagesTypeAdapter`` (JSON) — pass it to
     ``Agent.run(message_history=...)`` to continue or fork. :meth:`latest_snapshot`
     returns the most recent by **insertion order** (largest ``id``), not by
     ``step_index``, matching the harness stores. Scoped by ``(owner_id, run_id)``.
+
+    ``state`` mirrors the harness's ``SnapshotState``. A ``complete`` snapshot
+    sits at a boundary where every tool call has a matching return, so it is
+    always safe to resume from; an ``interrupted`` one is a rescue point captured
+    mid-tool-cycle (a crash), where pending calls may be re-executed or closed out
+    with synthesized returns. ``latest_snapshot`` skips ``interrupted`` rows
+    unless asked for them, which is why the state has to be *stored* rather than
+    inferred — by the time a resume is attempted, the run that produced the row
+    is long gone.
     """
 
     run_id = models.CharField(max_length=255)
@@ -173,6 +181,11 @@ class StoredSnapshot(models.Model):
     parent_run_id = models.CharField(max_length=255, null=True, blank=True, default=None)
     agent_name = models.CharField(max_length=255, null=True, blank=True, default=None)
     timestamp = models.DateTimeField()
+    state = models.CharField(
+        max_length=16,
+        default="complete",
+        choices=[("complete", "complete"), ("interrupted", "interrupted")],
+    )
 
     class Meta:
         indexes = [models.Index(fields=["owner_id", "run_id"])]

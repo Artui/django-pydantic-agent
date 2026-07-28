@@ -8,6 +8,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai_harness.step_persistence import (
     ContinuableSnapshot,
     RunRecord,
+    SnapshotState,
     StepEvent,
     ToolEffectRecord,
 )
@@ -96,8 +97,10 @@ class DefaultStepStore:
     async def save_snapshot(self, snapshot: ContinuableSnapshot) -> None:
         await sync_to_async(self._save_snapshot)(snapshot)
 
-    async def latest_snapshot(self, *, run_id: str) -> ContinuableSnapshot | None:
-        return await sync_to_async(self._latest_snapshot)(run_id)
+    async def latest_snapshot(
+        self, *, run_id: str, include_interrupted: bool = False
+    ) -> ContinuableSnapshot | None:
+        return await sync_to_async(self._latest_snapshot)(run_id, include_interrupted)
 
     # -- Tool effects ---------------------------------------------------------
 
@@ -192,15 +195,24 @@ class DefaultStepStore:
             parent_run_id=snapshot.parent_run_id,
             agent_name=snapshot.agent_name,
             timestamp=snapshot.timestamp,
+            state=snapshot.state,
         )
 
-    def _latest_snapshot(self, run_id: str) -> ContinuableSnapshot | None:
+    def _latest_snapshot(
+        self, run_id: str, include_interrupted: bool = False
+    ) -> ContinuableSnapshot | None:
         owner = self._owner()
         if owner is None:
             return None
         # Most recent by insertion order (largest pk), not by ``step_index`` —
-        # matching the harness stores' ``snaps[-1]`` semantics.
-        row = StoredSnapshot.objects.filter(owner_id=owner, run_id=run_id).order_by("-id").first()
+        # matching the harness stores' ``snaps[-1]`` semantics. The state filter
+        # is applied *after* ordering, mirroring the reference stores' walk back
+        # from the newest: the newest ``complete`` row wins, even when newer
+        # ``interrupted`` rows sit above it.
+        rows = StoredSnapshot.objects.filter(owner_id=owner, run_id=run_id).order_by("-id")
+        if not include_interrupted:
+            rows = rows.filter(state="complete")
+        row = rows.first()
         if row is None:
             return None
         return ContinuableSnapshot(
@@ -211,6 +223,7 @@ class DefaultStepStore:
             parent_run_id=row.parent_run_id,
             agent_name=row.agent_name,
             timestamp=row.timestamp,
+            state=cast("SnapshotState", row.state),
         )
 
     def _record_tool_effect(self, record: ToolEffectRecord) -> None:
