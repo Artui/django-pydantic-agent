@@ -1,14 +1,20 @@
 # Integrations
 
-Two optional bridges expose an existing DRF surface as agent tools, so you don't
-re-declare your API as `@tool` functions. Both are lazily imported — the base
-install stays slim and neither dependency is pulled unless configured.
+Three optional extras, all lazily imported — the base install stays slim and
+none of these dependencies is pulled unless configured.
 
-Both make the agent act as the **logged-in user**: the request is carried into
-every call, so your existing permission checks apply exactly as they would over
-HTTP.
+Two of them are **bridges**: `[spec-tools]` and `[drf-mcp]` expose an existing
+DRF surface as agent tools, so you don't re-declare your API as `@tool`
+functions. Both make the agent act as the **logged-in user** — the request is
+carried into every call, so your existing permission checks apply exactly as they
+would over HTTP.
 
-## Which one?
+The third, `[harness]`, is a different shape: it brings in ready-made
+**capabilities** (compaction, agent skills, step persistence and more) that plug
+into the same `AgentConfig.capabilities` seam this package's own audit and
+tool-guard capabilities use.
+
+## Which bridge?
 
 | | `[spec-tools]` | `[drf-mcp]` |
 | --- | --- | --- |
@@ -100,6 +106,101 @@ model gets to recover:
 
 Bridged tools also carry destructiveness into the [tool guard](policy.md): the
 bridge maps each tool's `readOnlyHint` annotation onto `DESTRUCTIVE_METADATA_KEY`.
+
+## `[harness]` — upstream capabilities
+
+```bash
+pip install django-pydantic-agent[harness]
+```
+
+The other two extras bridge *your* API into the agent. This one is different: it
+pulls in [`pydantic-ai-harness`](https://github.com/pydantic/pydantic-ai-harness),
+a library of ready-made **capabilities** — the same seam this package's own audit
+and tool-guard capabilities use. Nothing here wraps or re-implements them; you
+construct one and hand it to `AgentConfig`:
+
+```python
+from pydantic_ai_harness.compaction import SlidingWindow
+
+config = AgentConfig(model=..., capabilities=[SlidingWindow(max_messages=80)])
+agent = build_agent(registry, config)
+```
+
+That is the whole integration. `capabilities` takes live instances (never dotted
+paths), so a harness capability, a first-party one, and your own all compose the
+same way, and pydantic-ai orders them by their own `get_ordering()`.
+
+!!! warning "Version-sensitive"
+    `pydantic-ai-harness` is 0.x and its minors may break. This package pins
+    `>=0.12,<0.13`; check the changelog before widening it. The 0.7 → 0.12 jump
+    changed the `StepStore` protocol, which is why `DefaultStepStore` grew an
+    `include_interrupted` argument and a `state` column.
+
+### Long runs: compaction
+
+A tool-heavy run grows its message history until it crowds the context window.
+The `compaction` module trims it, and the choice is mostly about cost:
+
+| Strategy | Cost | What it does |
+| --- | --- | --- |
+| `SlidingWindow(max_messages=80, keep_messages=40)` | free | Drops the oldest messages once a threshold is crossed, preserving tool-call / tool-return pairs. No model calls. |
+| `ClearToolResults(max_messages=60, keep_pairs=3)` | free | Keeps the conversation shape but blanks old tool *results*, which are usually the bulk of the tokens. |
+| `SummarizingCompaction(max_messages=60, keep_messages=20)` | **a model call** | Replaces the trimmed span with an LLM-written summary, so older context survives in compressed form. |
+| `TieredCompaction(tiers=[...], target_tokens=…)` | varies | Applies cheaper strategies first, escalating only if still over target. |
+
+Start with `SlidingWindow` — it is free and transparent. Reach for
+`SummarizingCompaction` only when losing the old turns outright actually hurts,
+since it spends a model call on every compaction.
+
+Trimming happens inside `before_model_request` and is deliberately invisible to
+the rest of the run: **nothing is emitted when a compaction fires**. A transport
+that wants to tell the user "earlier turns were condensed" has to observe it
+itself — `CompactionStrategy` is a one-method protocol
+(`compact(messages, ctx) -> messages`), so a thin wrapper that compares its input
+to its output is the seam for that.
+
+### Progressive disclosure: agent skills
+
+A *skill* is a folder with a `SKILL.md` — a name, a description, and a body of
+instructions. `Skills` discovers them and exposes each as a **deferred**
+capability: the model sees only the name and description up front, and the body
+loads into context if it selects that skill. A dozen skills therefore cost a
+dozen one-line descriptions, not a dozen instruction blocks.
+
+```python
+from pydantic_ai_harness.skills import Skills
+
+config = AgentConfig(
+    model=...,
+    capabilities=[Skills("/srv/app/skills")],
+)
+```
+
+`directories` takes one path or several. Discovery scans *immediate* child
+directories for a `SKILL.md`, so `/srv/app/skills/summarise/SKILL.md` registers a
+skill named `summarise` (the frontmatter `name` wins over the directory name when
+both are present).
+
+`include` / `exclude` select by exact skill name — and are **validated against
+what was actually discovered**, so `exclude={"draft-only"}` raises `ValueError`
+when no such skill exists rather than silently excluding nothing. That is the
+behaviour you want (a typo'd name fails loudly), but it does mean a selection
+list and a skills directory have to be kept in step.
+
+!!! note "Instructions only, in v1"
+    Upstream loads the `SKILL.md` body and nothing else — bundled scripts and
+    resources are deferred to a future sandbox integration. A skill that assumes
+    it can execute its own files will not work yet.
+
+Each skill becomes one capability whose `id` is the skill name, which is what a
+client needs to show "using skill X". Enumerate them with `skills.apply(visitor)`.
+
+### Also available
+
+`step_persistence` (used by [`DefaultStepStore`](storage.md)), `subagents`,
+`code_mode`, `overflowing_tool_output`, `guardrails`, `filesystem`, `shell` and
+`ManagedPrompt` all compose the same way. None of them need support from this
+package — if it is a pydantic-ai capability, `capabilities=[...]` takes it.
 
 ## Name collisions
 

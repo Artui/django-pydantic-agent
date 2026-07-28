@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Document the `[harness]` extra** — it has existed since the CodeMode work but
+  `integrations.md` only covered the two DRF bridges, so the third extra was
+  undiscoverable. The new section covers the seam (`AgentConfig.capabilities`
+  takes live capability instances, so a harness capability composes exactly like
+  a first-party one), **compaction** for long tool-heavy runs, and **agent
+  skills** for progressive disclosure.
+  - Compaction is presented by **cost**, since that is the real choice:
+    `SlidingWindow` / `ClearToolResults` are free and transparent,
+    `SummarizingCompaction` spends a model call per compaction,
+    `TieredCompaction` escalates between them.
+  - Two gotchas found by running the snippets rather than reading the source:
+    `SummarizingCompaction` **requires** `max_messages` or `max_tokens`, and
+    `Skills(include=…/exclude=…)` **validates** the names against what discovery
+    actually found — a name that matches no skill raises rather than being
+    ignored.
+  - Also recorded: nothing is emitted when a compaction fires, so a transport
+    that wants to tell the user "earlier turns were condensed" has to observe it
+    via the one-method `CompactionStrategy` protocol.
+
 ## [0.4.0] — 2026-07-28
 
 ### Added
