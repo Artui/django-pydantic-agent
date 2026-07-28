@@ -9,19 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] — 2026-07-28
 
-### Changed
-
-- **`[harness]` now requires `pydantic-ai-harness>=0.12,<0.13`** (was `>=0.7,<0.8`).
-  The ceiling had gone five minors stale, which on a 0.x library is where breakage
-  accumulates — and it did. It also gated
-  [`pydantic_ai_harness.skills`](https://github.com/pydantic/pydantic-ai-harness/pull/396),
-  which does not exist below 0.11 and is the prerequisite for adopting agent skills.
-- **⚠ `DefaultStepStore.latest_snapshot()` gained an `include_interrupted`
-  keyword**, matching the harness's `StepStore` protocol. Harness's own
-  `continue_run()` passes it, so before this the resume path raised
-  `TypeError: latest_snapshot() got an unexpected keyword argument`. **Any custom
-  `StepStore` implementation must add the same parameter.**
-
 ### Added
 
 - **⚠ New migration `0002_snapshot_state` — run `migrate` when upgrading.**
@@ -42,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`[harness]` now requires `pydantic-ai-harness>=0.12,<0.13`** (was `>=0.7,<0.8`).
+  The ceiling had gone five minors stale, which on a 0.x library is where breakage
+  accumulates — and it did. It also gated
+  [`pydantic_ai_harness.skills`](https://github.com/pydantic/pydantic-ai-harness/pull/396),
+  which does not exist below 0.11 and is the prerequisite for adopting agent skills.
+- **⚠ `DefaultStepStore.latest_snapshot()` gained an `include_interrupted`
+  keyword**, matching the harness's `StepStore` protocol. Harness's own
+  `continue_run()` passes it, so before this the resume path raised
+  `TypeError: latest_snapshot() got an unexpected keyword argument`. **Any custom
+  `StepStore` implementation must add the same parameter.**
 - **Raise the drf-chain ceilings: `[drf-mcp]` → `djangorestframework-mcp-server>=0.17,<0.18`
   (was `>=0.15,<0.16`) and `[spec-tools]` → `djangorestframework-pydantic-ai>=0.9,<0.10`
   (was `>=0.8,<0.9`).** The MCP ceiling had gone stale a wave earlier — drf-mcp
