@@ -7,8 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-28
+
+### Added
+
+- **⚠ New migration `0002_snapshot_state` — run `migrate` when upgrading.**
+  `StoredSnapshot` gains a `state` column mirroring the harness's `SnapshotState`
+  (`complete` / `interrupted`, defaulting to `complete`, so existing rows keep
+  today's behaviour).
+
+  A `complete` snapshot sits at a boundary where every tool call has a matching
+  return, so resuming from it is always safe. An `interrupted` one is a rescue
+  point captured mid-tool-cycle — pending calls may be re-executed or closed out
+  with synthesized returns — so `latest_snapshot()` now **skips interrupted rows
+  unless asked for them**. The state has to be *stored* rather than inferred:
+  by the time a resume is attempted, the run that produced the row is gone.
+
+  When several snapshots exist, the state filter applies **after** ordering, so
+  the newest `complete` row wins even when newer `interrupted` rows sit above it
+  — the same walk-back-from-newest the harness reference stores do.
+
 ### Changed
 
+- **`[harness]` now requires `pydantic-ai-harness>=0.12,<0.13`** (was `>=0.7,<0.8`).
+  The ceiling had gone five minors stale, which on a 0.x library is where breakage
+  accumulates — and it did. It also gated
+  [`pydantic_ai_harness.skills`](https://github.com/pydantic/pydantic-ai-harness/pull/396),
+  which does not exist below 0.11 and is the prerequisite for adopting agent skills.
+- **⚠ `DefaultStepStore.latest_snapshot()` gained an `include_interrupted`
+  keyword**, matching the harness's `StepStore` protocol. Harness's own
+  `continue_run()` passes it, so before this the resume path raised
+  `TypeError: latest_snapshot() got an unexpected keyword argument`. **Any custom
+  `StepStore` implementation must add the same parameter.**
 - **Raise the drf-chain ceilings: `[drf-mcp]` → `djangorestframework-mcp-server>=0.17,<0.18`
   (was `>=0.15,<0.16`) and `[spec-tools]` → `djangorestframework-pydantic-ai>=0.9,<0.10`
   (was `>=0.8,<0.9`).** The MCP ceiling had gone stale a wave earlier — drf-mcp
@@ -159,7 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Artui/django-pydantic-agent/releases/tag/v0.1.0
