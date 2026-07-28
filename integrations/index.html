@@ -464,10 +464,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#which-one" class="md-nav__link">
+  <a href="#which-bridge" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Which one?
+        Which bridge?
       
     </span>
   </a>
@@ -519,6 +519,56 @@
     <span class="md-ellipsis">
       
         Error semantics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#harness-upstream-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [harness] — upstream capabilities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[harness] — upstream capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#long-runs-compaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Long runs: compaction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#progressive-disclosure-agent-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Progressive disclosure: agent skills
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#also-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Also available
       
     </span>
   </a>
@@ -802,10 +852,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#which-one" class="md-nav__link">
+  <a href="#which-bridge" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Which one?
+        Which bridge?
       
     </span>
   </a>
@@ -869,6 +919,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#harness-upstream-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [harness] — upstream capabilities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[harness] — upstream capabilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#long-runs-compaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Long runs: compaction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#progressive-disclosure-agent-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Progressive disclosure: agent skills
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#also-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Also available
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#name-collisions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -905,13 +1005,18 @@
 
 
 <h1 id="integrations">Integrations<a class="headerlink" href="#integrations" title="Permanent link">&para;</a></h1>
-<p>Two optional bridges expose an existing DRF surface as agent tools, so you don't
-re-declare your API as <code>@tool</code> functions. Both are lazily imported — the base
-install stays slim and neither dependency is pulled unless configured.</p>
-<p>Both make the agent act as the <strong>logged-in user</strong>: the request is carried into
-every call, so your existing permission checks apply exactly as they would over
-HTTP.</p>
-<h2 id="which-one">Which one?<a class="headerlink" href="#which-one" title="Permanent link">&para;</a></h2>
+<p>Three optional extras, all lazily imported — the base install stays slim and
+none of these dependencies is pulled unless configured.</p>
+<p>Two of them are <strong>bridges</strong>: <code>[spec-tools]</code> and <code>[drf-mcp]</code> expose an existing
+DRF surface as agent tools, so you don't re-declare your API as <code>@tool</code>
+functions. Both make the agent act as the <strong>logged-in user</strong> — the request is
+carried into every call, so your existing permission checks apply exactly as they
+would over HTTP.</p>
+<p>The third, <code>[harness]</code>, is a different shape: it brings in ready-made
+<strong>capabilities</strong> (compaction, agent skills, step persistence and more) that plug
+into the same <code>AgentConfig.capabilities</code> seam this package's own audit and
+tool-guard capabilities use.</p>
+<h2 id="which-bridge">Which bridge?<a class="headerlink" href="#which-bridge" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -1002,6 +1107,107 @@ model gets to recover:</p>
 </ul>
 <p>Bridged tools also carry destructiveness into the <a href="../policy/">tool guard</a>: the
 bridge maps each tool's <code>readOnlyHint</code> annotation onto <code>DESTRUCTIVE_METADATA_KEY</code>.</p>
+<h2 id="harness-upstream-capabilities"><code>[harness]</code> — upstream capabilities<a class="headerlink" href="#harness-upstream-capabilities" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-pydantic-agent<span class="o">[</span>harness<span class="o">]</span>
+</span></code></pre></div>
+<p>The other two extras bridge <em>your</em> API into the agent. This one is different: it
+pulls in <a href="https://github.com/pydantic/pydantic-ai-harness"><code>pydantic-ai-harness</code></a>,
+a library of ready-made <strong>capabilities</strong> — the same seam this package's own audit
+and tool-guard capabilities use. Nothing here wraps or re-implements them; you
+construct one and hand it to <code>AgentConfig</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.compaction</span><span class="w"> </span><span class="kn">import</span> <span class="n">SlidingWindow</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=...</span><span class="p">,</span> <span class="n">capabilities</span><span class="o">=</span><span class="p">[</span><span class="n">SlidingWindow</span><span class="p">(</span><span class="n">max_messages</span><span class="o">=</span><span class="mi">80</span><span class="p">)])</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">build_agent</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+</span></code></pre></div>
+<p>That is the whole integration. <code>capabilities</code> takes live instances (never dotted
+paths), so a harness capability, a first-party one, and your own all compose the
+same way, and pydantic-ai orders them by their own <code>get_ordering()</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Version-sensitive</p>
+<p><code>pydantic-ai-harness</code> is 0.x and its minors may break. This package pins
+<code>&gt;=0.12,&lt;0.13</code>; check the changelog before widening it. The 0.7 → 0.12 jump
+changed the <code>StepStore</code> protocol, which is why <code>DefaultStepStore</code> grew an
+<code>include_interrupted</code> argument and a <code>state</code> column.</p>
+</div>
+<h3 id="long-runs-compaction">Long runs: compaction<a class="headerlink" href="#long-runs-compaction" title="Permanent link">&para;</a></h3>
+<p>A tool-heavy run grows its message history until it crowds the context window.
+The <code>compaction</code> module trims it, and the choice is mostly about cost:</p>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Cost</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SlidingWindow(max_messages=80, keep_messages=40)</code></td>
+<td>free</td>
+<td>Drops the oldest messages once a threshold is crossed, preserving tool-call / tool-return pairs. No model calls.</td>
+</tr>
+<tr>
+<td><code>ClearToolResults(max_messages=60, keep_pairs=3)</code></td>
+<td>free</td>
+<td>Keeps the conversation shape but blanks old tool <em>results</em>, which are usually the bulk of the tokens.</td>
+</tr>
+<tr>
+<td><code>SummarizingCompaction(max_messages=60, keep_messages=20)</code></td>
+<td><strong>a model call</strong></td>
+<td>Replaces the trimmed span with an LLM-written summary, so older context survives in compressed form.</td>
+</tr>
+<tr>
+<td><code>TieredCompaction(tiers=[...], target_tokens=…)</code></td>
+<td>varies</td>
+<td>Applies cheaper strategies first, escalating only if still over target.</td>
+</tr>
+</tbody>
+</table>
+<p>Start with <code>SlidingWindow</code> — it is free and transparent. Reach for
+<code>SummarizingCompaction</code> only when losing the old turns outright actually hurts,
+since it spends a model call on every compaction.</p>
+<p>Trimming happens inside <code>before_model_request</code> and is deliberately invisible to
+the rest of the run: <strong>nothing is emitted when a compaction fires</strong>. A transport
+that wants to tell the user "earlier turns were condensed" has to observe it
+itself — <code>CompactionStrategy</code> is a one-method protocol
+(<code>compact(messages, ctx) -&gt; messages</code>), so a thin wrapper that compares its input
+to its output is the seam for that.</p>
+<h3 id="progressive-disclosure-agent-skills">Progressive disclosure: agent skills<a class="headerlink" href="#progressive-disclosure-agent-skills" title="Permanent link">&para;</a></h3>
+<p>A <em>skill</em> is a folder with a <code>SKILL.md</code> — a name, a description, and a body of
+instructions. <code>Skills</code> discovers them and exposes each as a <strong>deferred</strong>
+capability: the model sees only the name and description up front, and the body
+loads into context if it selects that skill. A dozen skills therefore cost a
+dozen one-line descriptions, not a dozen instruction blocks.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.skills</span><span class="w"> </span><span class="kn">import</span> <span class="n">Skills</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">model</span><span class="o">=...</span><span class="p">,</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">capabilities</span><span class="o">=</span><span class="p">[</span><span class="n">Skills</span><span class="p">(</span><span class="s2">&quot;/srv/app/skills&quot;</span><span class="p">)],</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><code>directories</code> takes one path or several. Discovery scans <em>immediate</em> child
+directories for a <code>SKILL.md</code>, so <code>/srv/app/skills/summarise/SKILL.md</code> registers a
+skill named <code>summarise</code> (the frontmatter <code>name</code> wins over the directory name when
+both are present).</p>
+<p><code>include</code> / <code>exclude</code> select by exact skill name — and are <strong>validated against
+what was actually discovered</strong>, so <code>exclude={"draft-only"}</code> raises <code>ValueError</code>
+when no such skill exists rather than silently excluding nothing. That is the
+behaviour you want (a typo'd name fails loudly), but it does mean a selection
+list and a skills directory have to be kept in step.</p>
+<div class="admonition note">
+<p class="admonition-title">Instructions only, in v1</p>
+<p>Upstream loads the <code>SKILL.md</code> body and nothing else — bundled scripts and
+resources are deferred to a future sandbox integration. A skill that assumes
+it can execute its own files will not work yet.</p>
+</div>
+<p>Each skill becomes one capability whose <code>id</code> is the skill name, which is what a
+client needs to show "using skill X". Enumerate them with <code>skills.apply(visitor)</code>.</p>
+<h3 id="also-available">Also available<a class="headerlink" href="#also-available" title="Permanent link">&para;</a></h3>
+<p><code>step_persistence</code> (used by <a href="../storage/"><code>DefaultStepStore</code></a>), <code>subagents</code>,
+<code>code_mode</code>, <code>overflowing_tool_output</code>, <code>guardrails</code>, <code>filesystem</code>, <code>shell</code> and
+<code>ManagedPrompt</code> all compose the same way. None of them need support from this
+package — if it is a pydantic-ai capability, <code>capabilities=[...]</code> takes it.</p>
 <h2 id="name-collisions">Name collisions<a class="headerlink" href="#name-collisions" title="Permanent link">&para;</a></h2>
 <p>Both bridges take <code>exclude_names</code>, and precedence is fixed: the <code>@tool</code> registry
 wins, then drf-mcp, then spec tools. A duplicate that slipped through would make
