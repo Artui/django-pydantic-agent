@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-29
+
+### Changed
+
+- **`[drf-mcp]` → `djangorestframework-mcp-server>=0.17,<0.20`**, so 0.19.0 is
+  installable. That release fixes dynamic client registration, which issued
+  credentials that could never authenticate: `token_endpoint_auth_method` was
+  not modelled, so every registration silently became a confidential client, and
+  the `client_secret` handed back was the stored PBKDF2 digest rather than the
+  secret. Both are confined to drf-mcp's `contrib.oauth` — the bridge this
+  extra backs consumes `MCPServer` and the tool registry, neither of which
+  changed, so the widening is purely a ceiling lift and this package's own
+  behaviour is unaffected.
+
+  Verified rather than assumed: the suite runs green against 0.19.0 with the
+  lock updated.
+
 ## [0.4.2] — 2026-07-29
 
 ### Changed
@@ -234,7 +251,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.3.0...v0.4.0
