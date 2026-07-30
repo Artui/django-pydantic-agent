@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`[drf-mcp]` → `djangorestframework-mcp-server>=0.17,<0.22`**, taking in both
+  0.20.0 and 0.21.0. Two consumer-reported blockers, neither of which touches
+  this bridge:
+  - **0.21.0** — `DjangoOAuthToolkitBackend` rejected every bearer token once a
+    resource URL was configured. Audience enforcement read a `resource` field
+    that DOT's `AccessToken` does not have, so it could never succeed;
+    enforcement is now the separate `ENFORCE_AUDIENCE`, default off.
+  - **0.20.0** — dynamically registered clients could not be issued an ID token
+    (`Application.algorithm` was never set), so the token endpoint 500'd whenever
+    the advertised `openid` scope was requested.
+
+  Both are confined to drf-mcp's OAuth surface. This bridge consumes `MCPServer`
+  and the tool registry in-process, so no adaptation was needed — verified with
+  the lock updated to 0.21.0 and the suite green.
+
+  0.20.0 also added `UndescribedToolWarning` for a tool registered with no
+  description. Two bridge fixtures do that on purpose, to cover the
+  no-description path, so the warning is filtered in `pyproject.toml` rather
+  than papered over by giving fixtures descriptions they are meant to lack.
+
 ## [0.4.3] — 2026-07-29
 
 ### Changed
