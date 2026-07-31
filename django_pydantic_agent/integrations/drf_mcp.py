@@ -184,13 +184,28 @@ class DRFMCPToolset(AbstractToolset[Any]):
         )
         if isinstance(result, JsonRpcError):
             if result.code == JsonRpcErrorCode.INVALID_PARAMS:
-                # Malformed arguments — the single most common failure mode.
-                # ``ModelRetry`` feeds the field errors back so the model
-                # corrects itself; anything else raised from a tool aborts
-                # the whole run with a dead chat.
-                raise ModelRetry(_retry_message(result.message, (result.data or {}).get("detail")))
-            # Genuine protocol faults (unknown tool, auth, rate limit) are
-            # unrecoverable mid-run.
+                # ⚠ **`-32602` now covers an unknown tool as well as malformed
+                # arguments, and the two can no longer be told apart by code.**
+                # drf-mcp emitted `-32004` for an unknown tool until 0.24.0,
+                # where the MCP spec's own worked example moved it onto
+                # `-32602`. This branch used to mean "bad arguments" alone.
+                #
+                # Both are now treated as retryable, deliberately. `-32602` is
+                # by definition a fault in the request *the model produced* —
+                # a wrong name or wrong arguments — and both are things it can
+                # change on a second attempt. Killing an entire run because a
+                # model guessed a tool name wrong is the harsher failure and
+                # the one a user notices; pydantic-ai bounds the retries, so a
+                # genuinely unfixable call still ends the run, just later.
+                raise ModelRetry(
+                    _retry_message(
+                        result.message,
+                        (result.data or {}).get("detail"),
+                        available=self._advertised_names(name),
+                    )
+                )
+            # Everything else — auth, rate limits, an internal fault — is not
+            # something the model can rewrite its way out of.
             raise RuntimeError(f"drf-mcp tool {name!r} failed: {result.message}")
         if result.get("isError"):
             # drf-mcp returns business failures as ``isError`` tool results.
@@ -206,6 +221,22 @@ class DRFMCPToolset(AbstractToolset[Any]):
                 raise ModelRetry(_retry_message(message, error.get("detail")))
             return {"error": error}
         return result.get("structuredContent", result.get("content"))
+
+    def _advertised_names(self, name: str) -> list[str] | None:
+        """The tools this toolset offers, when the failure looks like a bad name.
+
+        ⭐ This is what makes retrying an unknown tool worth doing rather than
+        merely survivable: a model that invented a name needs the real ones, and
+        a bare "unknown tool" tells it nothing it did not already know.
+
+        ``None`` whenever there is nothing useful to add — the name *was*
+        advertised (so the fault is the arguments, which the detail already
+        describes), or ``get_tools`` has not run yet and the cache is empty.
+        """
+        if self._tool_defs is None:
+            return None
+        names: list[str] = [d.name for d in self._tool_defs]
+        return None if name in names else names
 
 
 def _parse_tool_error(result: dict[str, Any]) -> dict[str, Any]:
@@ -223,8 +254,16 @@ def _parse_tool_error(result: dict[str, Any]) -> dict[str, Any]:
     return error if isinstance(error, dict) else {"type": "unknown", "message": str(error)}
 
 
-def _retry_message(message: str, detail: Any) -> str:
-    """Compose the ``ModelRetry`` text: human message + field-level detail."""
+def _retry_message(message: str, detail: Any, *, available: list[str] | None = None) -> str:
+    """Compose the ``ModelRetry`` text: the server's message, plus whichever of
+    field-level detail or the available tool names actually helps.
+
+    Never both: a `-32602` is either about the *name* or about the *arguments*,
+    and the caller already decided which by whether the name was advertised.
+    """
+    if available is not None:
+        names: str = ", ".join(sorted(available)) or "none"
+        return f"{message}. Available tools: {names}."
     if not detail:
         return message
     return f"{message}: {json.dumps(detail, default=str)}"

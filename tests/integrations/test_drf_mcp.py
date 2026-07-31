@@ -131,11 +131,54 @@ async def test_toolset_invokes_drf_tool_as_acting_user() -> None:
     assert result == {"result": 8}
 
 
-async def test_call_tool_raises_on_a_protocol_fault() -> None:
-    # Unknown tool is a genuine protocol fault — unrecoverable mid-run.
+async def test_an_unknown_tool_is_now_retryable_not_fatal() -> None:
+    """⚠ **Changed by drf-mcp 0.24.0, and the change is upstream's.** An unknown
+    tool used to arrive as `-32004` and this bridge killed the run. The MCP
+    spec's own worked example puts it on `-32602`, so it is no longer
+    distinguishable from malformed arguments by code.
+
+    Retrying is the deliberate choice: `-32602` is a fault in the request *the
+    model produced* — a wrong name or wrong arguments — and both are things it
+    can change. Ending a whole run because a model guessed a name wrong is the
+    harsher failure, and pydantic-ai bounds the retries anyway.
+    """
     toolset = DRFMCPToolset(server, _request())
-    with pytest.raises(RuntimeError, match="drf-mcp tool 'nope'"):
+    with pytest.raises(ModelRetry, match="Unknown tool"):
         await toolset.call_tool("nope", {}, None, None)
+
+
+async def test_a_bad_name_retry_names_the_real_tools() -> None:
+    """⭐ What makes retrying worth doing rather than merely survivable: a model
+    that invented a name needs the real ones. Requires ``get_tools`` to have run
+    — which, in a real agent run, it always has."""
+    toolset = DRFMCPToolset(server, _request())
+    await toolset.get_tools(None)  # type: ignore[arg-type]
+    with pytest.raises(ModelRetry, match="Available tools:.*add"):
+        await toolset.call_tool("nope", {}, None, None)
+
+
+async def test_a_bad_name_retry_says_nothing_extra_when_the_cache_is_cold() -> None:
+    """No ``get_tools`` yet, so there is no list to offer. The message must
+    still be the server's own rather than an empty enumeration."""
+    toolset = DRFMCPToolset(server, _request())
+    with pytest.raises(ModelRetry) as caught:
+        await toolset.call_tool("nope", {}, None, None)
+    assert "Available tools" not in str(caught.value)
+
+
+async def test_a_fault_the_model_cannot_rewrite_still_ends_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Auth, rate limits and internal faults are not retryable — nothing the
+    model writes changes them, so the run stops rather than burning its budget."""
+
+    async def denied(*_a: object, **_k: object) -> JsonRpcError:
+        return JsonRpcError(JsonRpcErrorCode.FORBIDDEN, "Insufficient permission")
+
+    toolset = DRFMCPToolset(server, _request())
+    monkeypatch.setattr(server, "acall_tool", denied)
+    with pytest.raises(RuntimeError, match="drf-mcp tool 'add'"):
+        await toolset.call_tool("add", {}, None, None)
 
 
 async def test_malformed_arguments_raise_model_retry_with_detail() -> None:
