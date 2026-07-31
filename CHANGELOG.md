@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-31
+
 ### Changed
 
 - ⚠ **Ceilings raised: drf-mcp-server to `<0.25` (was `<0.22`) and
@@ -307,7 +309,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.1...v0.4.2
