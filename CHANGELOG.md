@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-31
+
+### Changed
+
+- ⚠ **Ceilings raised: drf-mcp-server to `<0.25` (was `<0.22`) and
+  djangorestframework-pydantic-ai to `<0.12` (was `<0.11`).** ⛔ **This resolves a
+  live install conflict, not just staleness:** drf-mcp 0.24.0 requires
+  drf-services `>=0.32` while PAI `<0.11` required `<0.30`, so the `[drf-mcp]`
+  and `[spec-tools]` extras had become mutually unsatisfiable at their new
+  versions. PAI 0.11.0 moved first; this picks both up.
+
+- ⚠ **An unknown drf-mcp tool is now a `ModelRetry`, not a fatal
+  `RuntimeError`** — and the cause is upstream. drf-mcp emitted `-32004` for an
+  unknown tool until 0.24.0, where it moved onto **`-32602`** to match the MCP
+  spec's own worked example. The bridge branched on `-32602` to mean "malformed
+  arguments, let the model self-correct", so the two conditions are no longer
+  distinguishable by code and one policy has to cover both.
+
+  **Retrying is the deliberate choice.** `-32602` is by definition a fault in
+  the request *the model produced* — a wrong name or wrong arguments — and both
+  are things it can change on a second attempt. Ending an entire run because a
+  model guessed a tool name wrong is the harsher failure and the one a user
+  notices; pydantic-ai bounds the retries, so a genuinely unfixable call still
+  stops the run, just later.
+
+  ⭐ **The retry now names the real tools** when the failing name was not one of
+  them — a model that invented a name needs the available ones, and a bare
+  "unknown tool" tells it nothing it did not already know. Malformed arguments
+  keep the field-level detail instead; the message carries whichever of the two
+  actually helps, never both.
+
+  Auth, rate limits and internal faults are unchanged: still `RuntimeError`,
+  because nothing the model writes changes them.
+
 ## [0.4.4] — 2026-07-30
 
 ### Changed
@@ -275,7 +309,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.1...v0.4.2
