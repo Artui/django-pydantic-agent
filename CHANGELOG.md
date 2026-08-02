@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-08-02
+
 ### Changed
 
 - **Extra floors raised to `djangorestframework-mcp-server>=0.24.1` and
@@ -330,7 +332,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.2...v0.4.3

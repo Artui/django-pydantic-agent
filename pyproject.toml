@@ -148,7 +148,7 @@ root = ["./django_pydantic_agent"]
 # django_pydantic_agent/version.py and promotes the CHANGELOG [Unreleased] block
 # under a new dated heading.
 [tool.bumpversion]
-current_version = "0.5.0"
+current_version = "0.5.1"
 allow_dirty = false
 commit = false
 tag = false
