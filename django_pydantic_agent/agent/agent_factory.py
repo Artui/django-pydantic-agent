@@ -61,7 +61,11 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
         # gated tool is server-side would never defer. Setting it here makes the
         # approval path independent of frontend tools; when the adapter also
         # augments, pydantic-ai flattens and dedups the union.
-        output_type=[str, DeferredToolRequests],
+        # Cast for the same reason as ``model_settings`` below: ty cannot bind
+        # ``OutputDataT`` from a heterogeneous list literal, so the call matches
+        # no ``Agent.__init__`` overload and the inferred return degrades to
+        # unsolved typevars. ``Any`` binds it to the declared return type.
+        output_type=cast("Any", [str, DeferredToolRequests]),
         instructions=config.instructions,
         # ``model_settings`` is a plain dict at the settings boundary; Agent
         # types it as the ``ModelSettings`` TypedDict.
