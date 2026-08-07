@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-07
+
+### Changed
+
+- **`[drf-mcp]` requires `djangorestframework-mcp-server>=0.25`, `[spec-tools]`
+  requires `djangorestframework-pydantic-ai>=0.12`.**
+
+  ⚠ **These are floors, not merely widened ceilings, because 0.25 changes
+  behaviour the bridge sits on**: a tool registered with no permissions now
+  *raises* instead of warning, and a request with no `Mcp-Session-Id` returns
+  `400` rather than `404`. A range that merely admitted 0.25 while a consumer
+  resolved 0.24 would pair cleanly and behave differently — the pairing a
+  resolver cannot see.
+
+  ⭐ **The strict-permissions change reached here immediately**: three bridge
+  fixture servers registered tools without permissions and stopped importing.
+  They now declare `AllowAny` explicitly, which is the honest form for a
+  fixture — "deliberately open" said out loud. Consumers upgrading should expect
+  the same, and `REST_FRAMEWORK_MCP['REQUIRE_TOOL_PERMISSIONS'] = False` is the
+  migration escape hatch.
+
+  ⚠ This could not ship with the rest of the sweep. drf-mcp 0.25 requires
+  drf-services `>=0.34` while PAI 0.11.1 required `>=0.33,<0.34`, so a project
+  depending on both extras was **unsatisfiable** until PAI 0.12.0 was
+  *published*. Two siblings pinning a common upstream at incompatible ranges is
+  invisible to any per-package check.
+
 ## [0.5.1] — 2026-08-02
 
 ### Changed
@@ -332,7 +359,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.3...v0.4.4
