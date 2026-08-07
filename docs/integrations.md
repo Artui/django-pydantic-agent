@@ -70,8 +70,8 @@ duplicates:
 ```python
 from django_pydantic_agent.integrations.resolve_spec_mapping import resolve_spec_mapping
 
-specs = resolve_spec_mapping(source)   # mapping or registry -> mapping
-seen.update(specs)                     # names, as intended
+specs = resolve_spec_mapping(source)  # mapping or registry -> mapping
+seen.update(specs)  # names, as intended
 ```
 
 ## `[drf-mcp]` — an MCP registry as a toolset
