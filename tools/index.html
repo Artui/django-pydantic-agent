@@ -424,6 +424,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The tool catalog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-catalog-does-not-cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the catalog does not cover
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -820,6 +837,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The tool catalog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-catalog-does-not-cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the catalog does not cover
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -938,6 +972,21 @@ tools, <code>@tool(summary=…)</code> then a prettified name; for drf-mcp tools
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">catalog</span> <span class="o">=</span> <span class="n">build_tool_catalog</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">drf_mcp_server</span><span class="o">=</span><span class="n">server</span><span class="p">,</span> <span class="n">service_specs</span><span class="o">=</span><span class="n">specs</span><span class="p">)</span>
 </span></code></pre></div>
+<h3 id="what-the-catalog-does-not-cover">What the catalog does not cover<a class="headerlink" href="#what-the-catalog-does-not-cover" title="Permanent link">&para;</a></h3>
+<p>⚠ <strong>Only the sources above.</strong> A tool reaching the agent through a transport's
+<code>capabilities=</code> / <code>toolsets=</code> — an arbitrary <code>AbstractToolset</code> attached directly
+— is not listed, and its card falls back to a prettified tool name.</p>
+<p>⛔ <strong>This is a stated boundary, not a gap waiting to be filled.</strong> Pydantic-AI's
+enumeration is <code>AbstractToolset.get_tools</code>, which is <code>async</code> and takes a
+<code>RunContext</code>; the catalog is built at configuration time, from a view, with no
+run in sight. Enumerating "the toolsets we recognise" and skipping the rest
+would produce a catalog that <em>looks</em> complete and is not — the failure this
+stack spends its time removing, traded for cosmetics.</p>
+<p>⭐ <strong>Route spec tools through a covered source instead.</strong> A <code>SpecToolset</code> or
+<code>SpecCapability</code> passed to django-ag-ui's <code>service_specs=</code> (0.30+) is attached
+as itself <em>and</em> enumerated here, so it keeps its labels.</p>
+<p>An unlabelled card is a <strong>degraded label, not a broken call</strong>: the tool executes
+normally and the frontend shows a prettified name.</p>
 <h2 id="deriving-a-schema-on-its-own">Deriving a schema on its own<a class="headerlink" href="#deriving-a-schema-on-its-own" title="Permanent link">&para;</a></h2>
 <p><code>build_input_schema</code> is the same derivation the registry runs, exposed for
 projects that want a tool's schema outside the registration flow:</p>

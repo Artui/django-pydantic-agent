@@ -1724,6 +1724,26 @@ present, resolved from the single source of truth with a fallback chain:</p>
 <p><code>description</code> (a longer blurb for tooltips) is included when available
 (<code>ToolSpec.description</code> / drf-mcp <code>display_description</code> → <code>description</code>).
 Registry tools win on name collisions.</p>
+<p>⚠ <strong>The catalog covers the sources named here, and no others.</strong> Tools
+reaching the agent through a transport's <code>capabilities=</code> / <code>toolsets=</code>
+— an arbitrary <code>AbstractToolset</code> a project attaches directly — are <strong>not</strong>
+listed, and their cards fall back to a prettified name in the frontend.</p>
+<p>⛔ <strong>That boundary is deliberate, and enumerating them is not a missing
+feature.</strong> Pydantic-AI's enumeration is <code>AbstractToolset.get_tools</code>, which
+is <code>async</code> and takes a <code>RunContext</code>; this function runs at configuration
+time, from a view, with no run in sight. No common surface exposes tool
+names before a run, so any attempt here would work for the toolsets we
+happen to recognise and silently skip the rest — a catalog that <em>looks</em>
+complete and is not, which is the exact failure mode this stack keeps
+fixing everywhere else.</p>
+<p>⭐ <strong>Prefer routing spec tools through the source that is covered.</strong> A
+<code>SpecToolset</code> / <code>SpecCapability</code> handed to django-ag-ui's
+<code>service_specs=</code> (0.30+) is attached as itself <em>and</em> enumerated here, so
+the powerful form keeps its labels; only a toolset with no such route stays
+unlabelled.</p>
+<p>⚠ Unlabelled is a <strong>degraded label, not a broken call</strong> — the frontend
+prettifies the tool name and the tool works normally. That is why the
+boundary is documented rather than closed with a partial guess.</p>
 
 
     </div>
