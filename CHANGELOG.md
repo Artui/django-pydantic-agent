@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`[spec-tools]` now requires `djangorestframework-pydantic-ai>=0.15,<0.16`**
+  (was `>=0.13,<0.14`) and **`[harness]` requires
+  `pydantic-ai-harness[code-mode]>=0.13,<0.17`** (was `>=0.12,<0.13`), matching
+  the windows `django-ag-ui` already used.
+
+  ⛔ **They were disjoint, and the symptom was not an error.** Asking for both
+  packages' extras — `django-ag-ui[spec-tools]` alongside
+  `django-pydantic-agent[spec-tools]` — resolved *successfully* by silently
+  **downgrading `django-ag-ui` to 0.3.0**; the `[harness]` pair downgraded it to
+  0.17.0. A resolver satisfies disjoint windows by walking the consumer back to
+  a version whose pins overlap, and there is no version far enough back to be
+  refused. So the failure mode was an install that looked clean and shipped a
+  transport from months earlier — behind every security fix since, including
+  the fail-open auth transport and the closed-by-default authentication flip.
+
+  ⭐ **Neither package is wrong on its own**, which is why nothing caught it:
+  each resolves fine alone, and `django-ag-ui[spec-tools]` alone is fine too,
+  since this package arrives as a plain dependency with no extras. It takes
+  asking for both to see it.
+
+  ⚠ **The second-order cost was quieter still.** `build_spec_capability` is the
+  path *both* transports take, and this package's suite was exercising it
+  against PAI 0.13 while `django-ag-ui` ran it against 0.15. The shared wrapper
+  was tested against an upstream it does not meet in production.
+
+  No code changes: the suite passes unmodified against PAI 0.15 and harness
+  0.14, at 100% coverage.
+
+  ⚠ **A minor, and `django-ag-ui` must follow.** Its ceiling is
+  `django-pydantic-agent>=0.8,<0.9`, so this release is *excluded* until that
+  floor moves — the published-but-unreachable interval, deliberately entered
+  here rather than letting a two-minor upstream jump arrive under a patch.
+
 ## [0.8.0] — 2026-08-10
 
 ### Added
