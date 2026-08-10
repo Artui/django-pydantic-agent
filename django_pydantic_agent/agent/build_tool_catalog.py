@@ -30,6 +30,30 @@ def build_tool_catalog(
     ``description`` (a longer blurb for tooltips) is included when available
     (``ToolSpec.description`` / drf-mcp ``display_description`` → ``description``).
     Registry tools win on name collisions.
+
+    ⚠ **The catalog covers the sources named here, and no others.** Tools
+    reaching the agent through a transport's ``capabilities=`` / ``toolsets=``
+    — an arbitrary ``AbstractToolset`` a project attaches directly — are **not**
+    listed, and their cards fall back to a prettified name in the frontend.
+
+    ⛔ **That boundary is deliberate, and enumerating them is not a missing
+    feature.** Pydantic-AI's enumeration is ``AbstractToolset.get_tools``, which
+    is ``async`` and takes a ``RunContext``; this function runs at configuration
+    time, from a view, with no run in sight. No common surface exposes tool
+    names before a run, so any attempt here would work for the toolsets we
+    happen to recognise and silently skip the rest — a catalog that *looks*
+    complete and is not, which is the exact failure mode this stack keeps
+    fixing everywhere else.
+
+    ⭐ **Prefer routing spec tools through the source that is covered.** A
+    ``SpecToolset`` / ``SpecCapability`` handed to django-ag-ui's
+    ``service_specs=`` (0.30+) is attached as itself *and* enumerated here, so
+    the powerful form keeps its labels; only a toolset with no such route stays
+    unlabelled.
+
+    ⚠ Unlabelled is a **degraded label, not a broken call** — the frontend
+    prettifies the tool name and the tool works normally. That is why the
+    boundary is documented rather than closed with a partial guess.
     """
     catalog: list[dict[str, Any]] = []
     seen: set[str] = set()
