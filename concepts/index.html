@@ -936,7 +936,7 @@ whether the client declared any tools of its own.</p>
 <p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so every run is given an
 <code>AgentDeps</code> — pydantic-ai's own seam for request-scoped values. Tools, toolsets
 and capabilities read them off <code>RunContext.deps</code>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">deps</span> <span class="o">=</span> <span class="n">AgentDeps</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">deps</span> <span class="o">=</span> <span class="n">AgentDeps</span><span class="p">(</span><span class="n">user</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">ip_address</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;REMOTE_ADDR&quot;</span><span class="p">))</span>
 </span></code></pre></div>
 <p>This is what a transport passes as <code>deps=</code> when it starts a run, and it is what
 replaced closing over the request. The difference matters beyond tidiness:</p>
@@ -947,7 +947,11 @@ replaced closing over the request. The difference matters beyond tidiness:</p>
 <li><strong>The agent stops being request-shaped.</strong> A capability that closes over a
   request can only serve that request, which forces a rebuild — schemas and all
   — per call. Request-independent collaborators are the precondition for
-  reusing a built agent across runs.</li>
+  reusing a built agent across runs. <code>ip_address</code> is the worked example:
+  <code>AuditCapability</code> reads it off the run's deps, falling back to its
+  constructor argument, so one audited agent can serve requests from many
+  clients. Taken only from the constructor, building once would silently stamp
+  every audit record with the IP of whoever arrived first.</li>
 <li><strong>AG-UI state has somewhere to land.</strong> <code>AgentDeps</code> satisfies pydantic-ai's
   <code>StateHandler</code> protocol, so a run's <code>RunAgentInput.state</code> is validated into
   <code>deps.state</code> instead of being dropped with a warning.</li>
@@ -955,8 +959,8 @@ replaced closing over the request. The difference matters beyond tidiness:</p>
 <p><code>AgentDeps</code> is deliberately <strong>not</strong> frozen, unlike every other record here: the
 UI adapter assigns <code>deps.state = ...</code> directly. Deps are per-run and never
 shared, so the mutability is contained.</p>
-<p>Projects needing more per-run context subclass it — <code>user</code> and <code>state</code> are the
-two fields the framework itself reads.</p>
+<p>Projects needing more per-run context subclass it — <code>user</code>, <code>ip_address</code> and
+<code>state</code> are the three fields the framework itself reads.</p>
 <div class="admonition note">
 <p class="admonition-title">Inbound state only</p>
 <p>Nothing emits <code>STATE_SNAPSHOT</code> / <code>STATE_DELTA</code> back to the client yet. A run

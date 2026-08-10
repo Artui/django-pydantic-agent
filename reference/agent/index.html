@@ -731,6 +731,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.ip_address" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ip_address
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#django_pydantic_agent.AgentDeps.state" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1121,6 +1132,17 @@
     <span class="md-ellipsis">
       
         user
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.ip_address" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ip_address
       
     </span>
   </a>
@@ -1598,6 +1620,41 @@ itself reads.</p>
         <p>The acting Django user (<code>request.user</code>), or <code>None</code> for an
 unauthenticated run. <code>Any</code> because it is a Django boundary — it may be a
 <code>User</code>, an <code>AnonymousUser</code>, or a project's own model.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AgentDeps.ip_address" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">ip_address</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AgentDeps.ip_address" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">ip_address</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The client IP this run was driven from, stamped onto every audit event
+:class:<code>~django_pydantic_agent.policy.audit.audit_capability.AuditCapability</code>
+records.</p>
+<p>⭐ <strong>Here rather than on the capability's constructor because it is per-run
+data, and per-run data is what stops an agent having to be rebuilt.</strong> The
+constructor argument still works and is still the right home for a value
+that is genuinely fixed for the endpoint (an organization scope); an IP is
+not. A transport that closes over one has an agent it can only use for a
+single request — which is the closure this type exists to replace.</p>
+<p>A run that leaves it unset falls back to whatever the capability was
+constructed with, so nothing that already worked changes.</p>
 
     </div>
 

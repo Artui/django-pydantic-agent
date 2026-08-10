@@ -1610,8 +1610,17 @@ per-tool wrapper saw only the registry.</p>
 <code>django_pydantic_agent.audit</code> Python logger, so a broken audit backend degrades to
 lost audit records, never a broken agent run.</p>
 <p><code>ip_address</code> / <code>organization_id</code> pre-fill the matching
-:class:<code>AuditEvent</code> fields for every event this capability records — the
-view passes the client IP; a multi-tenant host can pass its org scope.</p>
+:class:<code>AuditEvent</code> fields for every event this capability records — a
+multi-tenant host can pass its org scope.</p>
+<p>⭐ <strong>The IP is read from the run's <code>deps</code> first, and only then from the
+constructor.</strong> <code>AgentDeps.ip_address</code> is per-run; a constructor argument
+is per-agent. Taking the IP only from the constructor is what forced a
+transport to build a fresh agent for every request — the exact closure
+<code>AgentDeps</code> exists to replace — and the failure it produces if you build
+once anyway is silent: every audit record carries the IP of whoever
+happened to arrive first. Deps that carry no <code>ip_address</code> (a project's own
+deps type, or a run that leaves it unset) fall back to the constructor
+value, so nothing that already worked changes.</p>
 
 
 
