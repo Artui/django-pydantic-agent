@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`[drf-mcp]` now requires `djangorestframework-mcp-server>=0.28,<0.29`**
+  (was `>=0.27,<0.28`).
+
+  ⛔ **The previous ceiling excluded a security release.** drf-mcp 0.28.0
+  refuses an authenticated caller with no `pk` instead of collapsing every such
+  caller onto the shared `"anonymous"` principal — where any two of them can
+  present each other's sessions. Every consumer of this extra pinned `<0.28`, so
+  the fix was **published and unreachable**, which is the quiet half of that
+  failure: the release announcement reads as completion while installs keep
+  resolving the vulnerable version.
+
+  The bridge reaches it directly. `DRFMCPToolset` calls `list_tools` /
+  `acall_tool`, so it runs the same principal resolution the HTTP transport
+  runs — this is not an HTTP-only concern.
+
+  No code changes; the suite passes unmodified at 100% coverage.
+
 ## [0.9.0] — 2026-08-10
 
 ### Changed
