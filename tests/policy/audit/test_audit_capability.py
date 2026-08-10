@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
 
+from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.policy.audit.audit_capability import AuditCapability
 from django_pydantic_agent.policy.audit.types.audit_event import AuditEvent
 
@@ -72,6 +74,54 @@ async def test_stamps_ip_and_organization_onto_events() -> None:
     event = audit.events[0]
     assert event.ip_address == "10.0.0.7"
     assert event.organization_id == "acme"
+
+
+async def test_the_runs_deps_supply_the_ip() -> None:
+    """The per-run IP wins, so one agent can serve requests from many clients.
+
+    Reading it only off the constructor is what forced a fresh agent per
+    request — and the failure mode if a transport builds once anyway is silent:
+    every record carries the IP of whoever arrived first.
+    """
+    audit = _CapturingLogger()
+    agent = _pinging_agent(AuditCapability(audit, ip_address="10.0.0.7"))
+
+    await agent.run("ping", deps=AgentDeps(ip_address="203.0.113.9"))
+    await agent.run("ping", deps=AgentDeps(ip_address="198.51.100.4"))
+
+    assert [e.ip_address for e in audit.events] == ["203.0.113.9", "198.51.100.4"]
+
+
+async def test_a_run_with_no_ip_falls_back_to_the_constructed_one() -> None:
+    audit = _CapturingLogger()
+    agent = _pinging_agent(AuditCapability(audit, ip_address="10.0.0.7"))
+
+    await agent.run("ping", deps=AgentDeps())
+
+    assert audit.events[0].ip_address == "10.0.0.7"
+
+
+async def test_deps_without_an_ip_field_are_not_an_error() -> None:
+    """The deps type is the host's to choose — a project's own class need not
+    carry the field, and `None` deps are what pydantic-ai passes by default."""
+    audit = _CapturingLogger()
+    agent = _pinging_agent(AuditCapability(audit, ip_address="10.0.0.7"))
+
+    await agent.run("ping", deps=object())
+
+    assert audit.events[0].ip_address == "10.0.0.7"
+
+
+def _pinging_agent(capability: AuditCapability) -> Agent[Any, Any]:
+    def ping() -> str:
+        """Ping."""
+        return "pong"
+
+    return Agent(
+        TestModel(call_tools=["ping"]),
+        toolsets=[FunctionToolset([ping])],
+        capabilities=[capability],
+    )
 
 
 async def test_failure_is_recorded_and_reraised() -> None:

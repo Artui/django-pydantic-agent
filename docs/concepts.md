@@ -67,7 +67,7 @@ The agent is typed `Agent[AgentDeps, ...]`, so every run is given an
 and capabilities read them off `RunContext.deps`:
 
 ```python
-deps = AgentDeps(user=request.user)
+deps = AgentDeps(user=request.user, ip_address=request.META.get("REMOTE_ADDR"))
 ```
 
 This is what a transport passes as `deps=` when it starts a run, and it is what
@@ -79,7 +79,11 @@ replaced closing over the request. The difference matters beyond tidiness:
 - **The agent stops being request-shaped.** A capability that closes over a
   request can only serve that request, which forces a rebuild — schemas and all
   — per call. Request-independent collaborators are the precondition for
-  reusing a built agent across runs.
+  reusing a built agent across runs. `ip_address` is the worked example:
+  `AuditCapability` reads it off the run's deps, falling back to its
+  constructor argument, so one audited agent can serve requests from many
+  clients. Taken only from the constructor, building once would silently stamp
+  every audit record with the IP of whoever arrived first.
 - **AG-UI state has somewhere to land.** `AgentDeps` satisfies pydantic-ai's
   `StateHandler` protocol, so a run's `RunAgentInput.state` is validated into
   `deps.state` instead of being dropped with a warning.
@@ -88,8 +92,8 @@ replaced closing over the request. The difference matters beyond tidiness:
 UI adapter assigns `deps.state = ...` directly. Deps are per-run and never
 shared, so the mutability is contained.
 
-Projects needing more per-run context subclass it — `user` and `state` are the
-two fields the framework itself reads.
+Projects needing more per-run context subclass it — `user`, `ip_address` and
+`state` are the three fields the framework itself reads.
 
 !!! note "Inbound state only"
 
