@@ -1055,7 +1055,7 @@ drf-services' transport-neutral surface and enforces the spec's own
 <code>permission_classes</code>.</p>
 <p>Choosing the capability over a bare toolset is deliberate, though the reason
 changed in PAI 0.6.0: the tool-set conventions (list-tool <code>page</code> / <code>limit</code> /
-<code>order</code>, and the error contract) now live on <code>SpecToolset.get_instructions()</code>,
+<code>ordering</code>, and the error contract) now live on <code>SpecToolset.get_instructions()</code>,
 so they reach the model either way and the capability <em>delegates</em> rather than
 re-emitting them. What wrapping buys is the capability seam itself —
 <code>defer_loading</code>, and a uniform place to compose spec tools alongside audit and

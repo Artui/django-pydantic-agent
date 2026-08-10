@@ -1121,6 +1121,26 @@ extractor already reads <code>ctx.deps.user</code>, so a run given
 :class:<code>~django_pydantic_agent.agent.types.agent_deps.AgentDeps</code> binds the
 acting user natively. The capability is therefore request-independent, which
 is what makes an agent built once reusable across runs.</p>
+<p>⚠ <strong>Every spec here needs its own <code>permission_classes</code>.</strong> Since PAI 0.13
+a spec with <code>permission_classes=None</code> makes <code>SpecCapability</code> raise
+<code>ImproperlyConfigured</code> rather than exposing an ungated tool: over HTTP
+<code>None</code> means <em>inherit</em> — the view's classes, then
+<code>DEFAULT_PERMISSION_CLASSES</code> — and off HTTP there is nothing to inherit
+from, so the same spec that is properly guarded behind a viewset becomes
+callable by whatever the model decides to call.</p>
+<p>This builder does not expose PAI's <code>require_permissions=False</code> migration
+flag, because a knob threaded through here would reach only callers that
+construct the capability themselves — a general "pass any <code>SpecToolset</code>
+option" seam is the right shape and is not built yet. Until it is, a project
+migrating a large registry can bypass this function and attach the
+capability directly::</p>
+<div class="language-text highlight"><pre><span></span><code>from rest_framework_pydantic_ai import SpecCapability
+
+AgentConfig(capabilities=[SpecCapability(specs, require_permissions=False)])
+</code></pre></div>
+<p>⛔ That path skips the tool-catalog registration this function participates
+in, so tool-call cards render unlabelled. It is a migration step, not a
+destination.</p>
 
 
     </div>
