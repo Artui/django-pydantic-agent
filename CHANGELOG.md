@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-10
+
+### Changed — BREAKING for `[spec-tools]`
+
+- **`[spec-tools]` requires `djangorestframework-pydantic-ai>=0.13`** (was
+  `>=0.12,<0.13`). No API changes here, but two of PAI's changes reach a
+  consumer straight through `build_spec_capability`:
+
+  ⛔ **A spec with no `permission_classes` now raises `ImproperlyConfigured`
+  instead of becoming an ungated tool.** Over HTTP `permission_classes=None`
+  means *inherit* — the viewset's own classes, then
+  `DEFAULT_PERMISSION_CLASSES` — and off HTTP neither exists. So a spec that is
+  correctly guarded behind a viewset, with passing HTTP tests, was callable by
+  whatever the model decided to call. **Set `spec.permission_classes` on every
+  spec you expose.**
+
+  ⚠ **`build_spec_capability` deliberately does not expose PAI's
+  `require_permissions=False` migration flag.** A knob threaded through here
+  would reach only callers that construct the capability themselves; the right
+  shape is a general "pass any `SpecToolset` option" seam, and that is not built
+  yet. A project migrating a large registry can attach the capability directly
+  in the meantime — `AgentConfig(capabilities=[SpecCapability(specs,
+  require_permissions=False)])` — at the cost of skipping this function's
+  tool-catalog registration, so tool-call cards render unlabelled. A migration
+  step, not a destination.
+
+  - **List tools advertise `ordering`, not `order`**, and only where the toolset
+    declares `ordering_fields`. Docs here referred to the old name; corrected.
+
+- **`[drf-mcp]` requires `djangorestframework-mcp-server>=0.27`** (was
+  `>=0.26,<0.27`).
+
+  ⛔ **Not optional — the two extras were mutually unsatisfiable without it.**
+  PAI 0.13 requires `djangorestframework-services>=0.35,<0.36` while drf-mcp
+  0.26 required `>=0.34.0,<0.35`. Disjoint, so
+  `django-pydantic-agent[drf-mcp,spec-tools]` **could not resolve at all**.
+  drf-mcp 0.27.0 moves its window to 0.35; nothing else about it changed.
+
+  ⚠ **Two siblings pinning one upstream to single-minor windows break every time
+  one moves first.** Worth knowing when scheduling the next drf-services bump:
+  the follow-up release is part of the cost of moving either package, not a
+  surprise.
+
 ## [0.6.1] — 2026-08-10
 
 ### Security
@@ -383,7 +426,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...v0.5.1
