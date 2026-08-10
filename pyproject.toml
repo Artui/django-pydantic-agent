@@ -51,10 +51,10 @@ openai = ["pydantic-ai-slim[openai]>=2,<3"]
 google = ["pydantic-ai-slim[google]>=2,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
 # toolset (the agent calls DRF tools without a network hop).
-drf-mcp = ["djangorestframework-mcp-server>=0.26,<0.27"]
+drf-mcp = ["djangorestframework-mcp-server>=0.27,<0.28"]
 # Expose drf-services specs directly as agent tools via djangorestframework-
 # pydantic-ai's SpecCapability — no MCP server in the path.
-spec-tools = ["djangorestframework-pydantic-ai>=0.12,<0.13"]
+spec-tools = ["djangorestframework-pydantic-ai>=0.13,<0.14"]
 # pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
 # CodeMode batching, compaction, step persistence, sub-agents.
 harness = ["pydantic-ai-harness[code-mode]>=0.12,<0.13"]
@@ -85,9 +85,9 @@ dev = [
     # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
     # ⚠ Must move in lockstep with the extra — a dev group pinning the old band
     # makes the project unsatisfiable against its own extra.
-    "djangorestframework-mcp-server>=0.26,<0.27",
+    "djangorestframework-mcp-server>=0.27,<0.28",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.
-    "djangorestframework-pydantic-ai>=0.12,<0.13",
+    "djangorestframework-pydantic-ai>=0.13,<0.14",
     # The [harness] extra's backing package, so the harness capabilities run in dev.
     "pydantic-ai-harness[code-mode]>=0.12,<0.13",
     # Provider libs so the api_key / provider model-building path is exercised

@@ -3,6 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+from django.core.exceptions import ImproperlyConfigured
+from rest_framework.permissions import AllowAny
 from rest_framework_services import ServiceSpec
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
@@ -14,8 +17,24 @@ def _ok(user: Any) -> dict[str, Any]:
     return {"ok": True}
 
 
+def test_an_unguarded_spec_is_refused_rather_than_exposed() -> None:
+    """The strict default reaches a consumer straight through this builder.
+
+    ``permission_classes=None`` means *inherit* over HTTP — the viewset's own
+    classes, then ``DEFAULT_PERMISSION_CLASSES``. A capability dispatches off
+    HTTP and has neither, so the same spec that is correctly guarded behind a
+    viewset would become callable by whatever the model decided to call.
+
+    Asserted here and not only upstream because this function is how both this
+    package and django-ag-ui build the capability: if the refusal ever stopped
+    propagating, every consumer of the wrapper would silently lose it.
+    """
+    with pytest.raises(ImproperlyConfigured, match="no permission_classes"):
+        build_spec_capability({"ping": ServiceSpec(service=_ok, atomic=False)})
+
+
 def test_excludes_registry_names() -> None:
-    spec = ServiceSpec(service=_ok, atomic=False)
+    spec = ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])
     capability = build_spec_capability(
         {"ping": spec, "dup": spec},
         exclude_names=frozenset({"dup"}),
@@ -31,7 +50,9 @@ async def test_carries_the_spec_conventions_to_the_model() -> None:
     # them onto ``SpecToolset.get_instructions()`` so they land whether a toolset
     # is attached directly or wrapped here, and made the capability delegate —
     # it returns None so pydantic-ai doesn't collect the same block twice.
-    capability = build_spec_capability({"ping": ServiceSpec(service=_ok, atomic=False)})
+    capability = build_spec_capability(
+        {"ping": ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])}
+    )
     assert capability.get_instructions() is None
 
     instructions = await capability.get_toolset().get_instructions(None)
@@ -50,7 +71,9 @@ async def test_binds_the_acting_user_from_the_run_deps() -> None:
         return {"ok": True}
 
     user = SimpleNamespace(name="alice")
-    capability = build_spec_capability({"ping": ServiceSpec(service=ping, atomic=False)})
+    capability = build_spec_capability(
+        {"ping": ServiceSpec(service=ping, atomic=False, permission_classes=[AllowAny])}
+    )
 
     toolset = capability.get_toolset()
     ctx = SimpleNamespace(deps=AgentDeps(user=user))
@@ -68,7 +91,9 @@ async def test_one_capability_serves_two_users() -> None:
         seen.append(user)
         return {"ok": True}
 
-    capability = build_spec_capability({"whoami": ServiceSpec(service=whoami, atomic=False)})
+    capability = build_spec_capability(
+        {"whoami": ServiceSpec(service=whoami, atomic=False, permission_classes=[AllowAny])}
+    )
     toolset = capability.get_toolset()
 
     alice, bob = SimpleNamespace(name="alice"), SimpleNamespace(name="bob")
@@ -82,7 +107,7 @@ def test_accepts_a_spec_registry() -> None:
     from rest_framework_services import SpecRegistry
 
     registry = SpecRegistry()
-    registry.register("ping", ServiceSpec(service=_ok, atomic=False))
+    registry.register("ping", ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]))
 
     capability = build_spec_capability(registry)
     assert set(capability.get_toolset()._specs) == {"ping"}
@@ -92,8 +117,8 @@ def test_exclude_names_apply_to_a_registry_too() -> None:
     from rest_framework_services import SpecRegistry
 
     registry = SpecRegistry()
-    registry.register("ping", ServiceSpec(service=_ok, atomic=False))
-    registry.register("dup", ServiceSpec(service=_ok, atomic=False))
+    registry.register("ping", ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]))
+    registry.register("dup", ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]))
 
     capability = build_spec_capability(registry, exclude_names=frozenset({"dup"}))
     assert set(capability.get_toolset()._specs) == {"ping"}

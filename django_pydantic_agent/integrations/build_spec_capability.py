@@ -15,7 +15,7 @@ so nothing here closes over the request.
 
 Choosing the *capability* over the bare ``SpecToolset`` is deliberate — but the
 reason is no longer instructions. Since PAI 0.6.0 the conventions (``page`` /
-``limit`` / ``order`` on list tools, and the error contract — an ``{"error": …}``
+``limit`` / ``ordering`` on list tools, and the error contract — an ``{"error": …}``
 result is a final answer, a retry message means fix the argument, a permission
 error is final) live on ``SpecToolset.get_instructions()``, so they reach the
 system prompt whether the toolset is attached directly or wrapped here; the
@@ -54,6 +54,29 @@ def build_spec_capability(
     :class:`~django_pydantic_agent.agent.types.agent_deps.AgentDeps` binds the
     acting user natively. The capability is therefore request-independent, which
     is what makes an agent built once reusable across runs.
+
+    ⚠ **Every spec here needs its own ``permission_classes``.** Since PAI 0.13
+    a spec with ``permission_classes=None`` makes ``SpecCapability`` raise
+    ``ImproperlyConfigured`` rather than exposing an ungated tool: over HTTP
+    ``None`` means *inherit* — the view's classes, then
+    ``DEFAULT_PERMISSION_CLASSES`` — and off HTTP there is nothing to inherit
+    from, so the same spec that is properly guarded behind a viewset becomes
+    callable by whatever the model decides to call.
+
+    This builder does not expose PAI's ``require_permissions=False`` migration
+    flag, because a knob threaded through here would reach only callers that
+    construct the capability themselves — a general "pass any ``SpecToolset``
+    option" seam is the right shape and is not built yet. Until it is, a project
+    migrating a large registry can bypass this function and attach the
+    capability directly::
+
+        from rest_framework_pydantic_ai import SpecCapability
+
+        AgentConfig(capabilities=[SpecCapability(specs, require_permissions=False)])
+
+    ⛔ That path skips the tool-catalog registration this function participates
+    in, so tool-call cards render unlabelled. It is a migration step, not a
+    destination.
     """
     from rest_framework_pydantic_ai import SpecCapability
 
