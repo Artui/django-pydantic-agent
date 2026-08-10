@@ -35,8 +35,18 @@ class AuditCapability(AbstractCapability[Any]):
     lost audit records, never a broken agent run.
 
     ``ip_address`` / ``organization_id`` pre-fill the matching
-    :class:`AuditEvent` fields for every event this capability records — the
-    view passes the client IP; a multi-tenant host can pass its org scope.
+    :class:`AuditEvent` fields for every event this capability records — a
+    multi-tenant host can pass its org scope.
+
+    ⭐ **The IP is read from the run's ``deps`` first, and only then from the
+    constructor.** ``AgentDeps.ip_address`` is per-run; a constructor argument
+    is per-agent. Taking the IP only from the constructor is what forced a
+    transport to build a fresh agent for every request — the exact closure
+    ``AgentDeps`` exists to replace — and the failure it produces if you build
+    once anyway is silent: every audit record carries the IP of whoever
+    happened to arrive first. Deps that carry no ``ip_address`` (a project's own
+    deps type, or a run that leaves it unset) fall back to the constructor
+    value, so nothing that already worked changes.
     """
 
     def __init__(
@@ -74,6 +84,9 @@ class AuditCapability(AbstractCapability[Any]):
         handler: WrapToolExecuteHandler,
     ) -> Any:
         started = time.perf_counter()
+        # Resolved per call, off the run: see the class docstring for why the
+        # constructor cannot be the only source.
+        ip_address = self._resolve_ip_address(ctx)
         try:
             result = await handler(args)
         except Exception as error:
@@ -81,12 +94,31 @@ class AuditCapability(AbstractCapability[Any]):
                 tool_def.name,
                 args,
                 started,
+                ip_address=ip_address,
                 success=False,
                 error=f"{type(error).__name__}: {error}",
             )
             raise
-        self._record(tool_def.name, args, started, success=True, result_size=len(str(result)))
+        self._record(
+            tool_def.name,
+            args,
+            started,
+            ip_address=ip_address,
+            success=True,
+            result_size=len(str(result)),
+        )
         return result
+
+    def _resolve_ip_address(self, ctx: RunContext[Any]) -> str | None:
+        """This run's client IP: ``deps.ip_address``, else the constructed one.
+
+        ``getattr`` rather than an attribute read because the deps type is the
+        host's to choose — a project passing its own deps class, or pydantic-ai
+        passing ``None``, simply has no such field, and that is the fallback
+        case rather than an error.
+        """
+        from_deps = getattr(ctx.deps, "ip_address", None)
+        return from_deps if from_deps is not None else self._ip_address
 
     def _record(
         self,
@@ -94,6 +126,7 @@ class AuditCapability(AbstractCapability[Any]):
         args: dict[str, Any],
         started: float,
         *,
+        ip_address: str | None,
         success: bool,
         error: str | None = None,
         result_size: int | None = None,
@@ -106,7 +139,7 @@ class AuditCapability(AbstractCapability[Any]):
             error=error,
             result_size=result_size,
             organization_id=self._organization_id,
-            ip_address=self._ip_address,
+            ip_address=ip_address,
         )
         try:
             self._logger.record(event)

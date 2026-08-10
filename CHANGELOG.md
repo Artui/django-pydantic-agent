@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-10
+
+### Added
+
+- **`AgentDeps.ip_address`**, and `AuditCapability` now reads the client IP from
+  the run's deps, falling back to its constructor argument.
+
+  ⭐ **This is what makes an audited agent reusable across requests.** The IP is
+  per-run data; a constructor argument is per-agent. Taking it only from the
+  constructor forces a transport to build a fresh agent — schemas and all — for
+  every request, which is the exact closure `AgentDeps` exists to replace. And
+  the failure if a transport builds once anyway is **silent**: every audit
+  record carries the IP of whoever happened to arrive first, and the records
+  look perfectly well-formed.
+
+  Nothing that already worked changes. A run whose deps carry no `ip_address` —
+  unset, a project's own deps class, or no deps at all — falls back to the
+  constructed value, so the constructor argument remains correct for a value
+  that really is fixed per endpoint (an organization scope).
+
 ## [0.7.1] — 2026-08-10
 
 ### Documentation
@@ -448,7 +468,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.0...v0.6.1

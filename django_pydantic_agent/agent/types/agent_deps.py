@@ -35,6 +35,21 @@ class AgentDeps:
     unauthenticated run. ``Any`` because it is a Django boundary — it may be a
     ``User``, an ``AnonymousUser``, or a project's own model."""
 
+    ip_address: str | None = None
+    """The client IP this run was driven from, stamped onto every audit event
+    :class:`~django_pydantic_agent.policy.audit.audit_capability.AuditCapability`
+    records.
+
+    ⭐ **Here rather than on the capability's constructor because it is per-run
+    data, and per-run data is what stops an agent having to be rebuilt.** The
+    constructor argument still works and is still the right home for a value
+    that is genuinely fixed for the endpoint (an organization scope); an IP is
+    not. A transport that closes over one has an agent it can only use for a
+    single request — which is the closure this type exists to replace.
+
+    A run that leaves it unset falls back to whatever the capability was
+    constructed with, so nothing that already worked changes."""
+
     state: Any = None
     """AG-UI shared state for this run.
 
