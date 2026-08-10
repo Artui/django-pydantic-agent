@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-10
+
+### Security
+
+- **`[drf-mcp]` now requires `djangorestframework-mcp-server>=0.26`** (was
+  `>=0.25,<0.26`), which closes a fail-open authentication defect. The old
+  exclusive ceiling *excluded* the fix, so installing this extra resolved to the
+  vulnerable release.
+
+  ⚠ **This one reaches through `DRFMCPToolset`, not only over HTTP.** The bridge
+  calls `MCPServer.list_tools` / `acall_tool`, so it runs the same permission
+  and listing checks the HTTP transport runs — and those were the sites that
+  failed open. A project whose `MCPPermission.has_permission` or `is_listable`
+  was written `async def` got an un-awaited coroutine back; a coroutine is
+  truthy and is never `None`, so **every binding was listed and every call was
+  granted**, to the model as much as to an HTTP client. Upstream now raises
+  `ImproperlyConfigured` naming the offending class. The same shape was swept
+  across the auth backend, rate limiters, and the sync transport's session
+  store.
+
+  Nothing in this package supplies those hooks, so no code changes here — but if
+  your project does write one `async def`, expect a loud refusal where there was
+  previously a silent yes. That is the fix working.
+
 ## [0.6.0] — 2026-08-07
 
 ### Changed
@@ -359,7 +383,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.4.4...v0.5.0
