@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-11
+
 ### Changed
 
 - **`[drf-mcp]` now requires `djangorestframework-mcp-server>=0.29,<0.30`**
@@ -596,7 +598,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.8.0...v0.9.0
