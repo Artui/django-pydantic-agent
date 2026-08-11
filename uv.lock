@@ -595,7 +595,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "djangorestframework-mcp-server", marker = "extra == 'drf-mcp'", specifier = ">=0.28,<0.29" },
+    { name = "djangorestframework-mcp-server", marker = "extra == 'drf-mcp'", specifier = ">=0.29,<0.30" },
     { name = "djangorestframework-pydantic-ai", marker = "extra == 'spec-tools'", specifier = ">=0.15,<0.16" },
     { name = "pydantic-ai-harness", extras = ["code-mode"], marker = "extra == 'harness'", specifier = ">=0.13,<0.17" },
     { name = "pydantic-ai-slim", specifier = ">=2,<3" },
@@ -608,7 +608,7 @@ provides-extras = ["anthropic", "drf-mcp", "google", "harness", "openai", "spec-
 [package.metadata.requires-dev]
 dev = [
     { name = "django-stubs", specifier = ">=5.0" },
-    { name = "djangorestframework-mcp-server", specifier = ">=0.28,<0.29" },
+    { name = "djangorestframework-mcp-server", specifier = ">=0.29,<0.30" },
     { name = "djangorestframework-pydantic-ai", specifier = ">=0.15,<0.16" },
     { name = "flake8-tidy-imports", specifier = ">=4.12.0" },
     { name = "pre-commit", specifier = ">=3.8.0" },
@@ -687,7 +687,7 @@ wheels = [
 
 [[package]]
 name = "djangorestframework-mcp-server"
-version = "0.28.1"
+version = "0.29.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django", version = "5.2.17", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -697,9 +697,9 @@ dependencies = [
     { name = "djangorestframework-services" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/55/6b/8211359d4798b9d6011d202af15b4f500caf9fb631d45e91e41c79405baa/djangorestframework_mcp_server-0.28.1.tar.gz", hash = "sha256:317e86db0597b9e5761c0c5fd15d4e0047ef011224672e13436a073ad25f3ced", size = 766389, upload-time = "2026-08-10T11:46:41.248Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/e2/e67e08f001cf3ef24f402bd5733c3c6df6a6688c35a48ceb9ab4ad4df108/djangorestframework_mcp_server-0.29.0.tar.gz", hash = "sha256:1de9b45c3fdf5c91ed429a800fa860308f8343fff43ea689ff34c1d07e08e20b", size = 767582, upload-time = "2026-08-11T06:17:38.114Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/9f/bf4c90789f65ea8257e99e27fc6541ba7530fa61b10274e246c5910e7bd5/djangorestframework_mcp_server-0.28.1-py3-none-any.whl", hash = "sha256:f7de375972dcd85a6151f385627db9a4b2920d23b2dd584edfff4fbf5a117e13", size = 414924, upload-time = "2026-08-10T11:46:39.665Z" },
+    { url = "https://files.pythonhosted.org/packages/01/71/9ee9e7d77899a85dc3dfdcf95d88af894a3ecca78d4c6cb0ac47c3457bd8/djangorestframework_mcp_server-0.29.0-py3-none-any.whl", hash = "sha256:152bdbe441d9d94374f110c1cfc01b48f69c6afac8a6396072d0a20659844db5", size = 415072, upload-time = "2026-08-11T06:17:36.277Z" },
 ]
 
 [[package]]
