@@ -1,7 +1,8 @@
 # Policy
 
-Audit and the destructive-tool gate — both ride the Pydantic-AI capability seam,
-both off by default. See [Policy](../policy.md) for the narrative.
+Audit, the destructive-tool gate and the tool-failure policy all ride the
+Pydantic-AI capability seam. The first two are off by default; the third is on.
+See [Policy](../policy.md) for the narrative.
 
 ## Audit
 
@@ -34,3 +35,13 @@ both off by default. See [Policy](../policy.md) for the narrative.
 ### `ToolGuard`
 
 ::: django_pydantic_agent.ToolGuard
+
+## Tool failure
+
+### `ToolFailureConfig`
+
+::: django_pydantic_agent.ToolFailureConfig
+
+### `ToolFailurePolicy`
+
+::: django_pydantic_agent.ToolFailurePolicy

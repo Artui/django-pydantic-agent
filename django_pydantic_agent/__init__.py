@@ -33,6 +33,8 @@ from django_pydantic_agent.policy.audit.logging_audit_logger import LoggingAudit
 from django_pydantic_agent.policy.audit.null_audit_logger import NullAuditLogger
 from django_pydantic_agent.policy.audit.types.audit_event import AuditEvent
 from django_pydantic_agent.policy.audit.types.audit_logger import AuditLogger
+from django_pydantic_agent.policy.failure.tool_failure_policy import ToolFailurePolicy
+from django_pydantic_agent.policy.failure.types.tool_failure_config import ToolFailureConfig
 from django_pydantic_agent.policy.guard.tool_guard import ToolGuard
 from django_pydantic_agent.policy.guard.types.tool_guard_config import ToolGuardConfig
 from django_pydantic_agent.registry.build_input_schema import build_input_schema
@@ -67,6 +69,8 @@ __all__ = [
     "ScopedConversationStore",
     "ToolBinding",
     "ToolCategory",
+    "ToolFailureConfig",
+    "ToolFailurePolicy",
     "ToolGuard",
     "ToolGuardConfig",
     "ToolRegistry",

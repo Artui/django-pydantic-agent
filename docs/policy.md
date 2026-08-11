@@ -91,11 +91,56 @@ That is why `DESTRUCTIVE_METADATA_KEY` rides tool *metadata* rather than the
 `x-destructive` JSON-Schema stamp: the schema keys are for the client, this one
 is read server-side at `prepare_tools` time.
 
+## What a raising tool costs
+
+A tool that raises used to end the run. The transport emitted `RUN_ERROR`, the
+turn stopped, and everything the model had already produced went with it —
+along with the results of every other tool in the same round. One broken
+integration cost the whole answer.
+
+`ToolFailurePolicy` changes what the failure stops, and nothing else. The call
+comes back to the model marked failed, naming the tool, and the run carries on:
+
+```python
+config = AgentConfig(model="openai:gpt-4o")  # on by default
+```
+
+Turn it off to restore the old behaviour, or opt into detail:
+
+```python
+from django_pydantic_agent import ToolFailureConfig
+
+AgentConfig(model=..., tool_failure=ToolFailureConfig(enabled=False))
+AgentConfig(model=..., tool_failure=ToolFailureConfig(include_detail=True))
+```
+
+**`include_detail` is off by default, and the split is deliberate.** Whether the
+run survives is a reliability question; whether the exception's text reaches the
+model is a disclosure one. A traceback message can carry a query, a path or a
+credential, and anything handed to the model is also handed to whatever renders
+the transcript. The operator's copy is never redacted — the full exception goes
+to the audit logger and to the `django_pydantic_agent.failure` logger either way.
+
+Two things worth knowing:
+
+- **It hangs off `on_tool_execute_error`, not a `try` around the handler.**
+  Pydantic-AI does not route control-flow exceptions to that hook —
+  `SkipToolExecution`, `CallDeferred`, `ApprovalRequired`, the `ModelRetry`
+  retry signal, or an explicit `ToolFailed`. So the approval gate above and the
+  model's retry budget both pass through untouched. A hand-written
+  `except Exception` would have caught `ApprovalRequired` and silently disabled
+  the gate.
+- **It spends no retry budget**, because `ToolFailed` deliberately doesn't.
+  A model can call a persistently broken tool again; bound that with run-level
+  `UsageLimits` rather than expecting this to stop it.
+
 ## Ordering
 
-Neither capability needs positioning. Each declares its place via
+No capability here needs positioning. Each declares its place via
 `get_ordering()` — audit outermost, the guard orthogonal — and pydantic-ai's
-`CombinedCapability` topologically sorts them. Append your own capabilities in
-any order.
+`CombinedCapability` topologically sorts them. The failure policy needs no
+constraint at all: it rides `on_tool_execute_error` while audit rides
+`wrap_tool_execute`, so the failure is recorded and then converted whichever
+way the list is sorted. Append your own capabilities in any order.
 
 Full signatures in the [policy reference](reference/policy.md).

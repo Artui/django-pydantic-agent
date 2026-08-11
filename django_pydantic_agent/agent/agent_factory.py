@@ -8,6 +8,7 @@ from django_pydantic_agent.agent.types.agent_config import AgentConfig
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.policy.audit.audit_capability import AuditCapability
 from django_pydantic_agent.policy.audit.null_audit_logger import NullAuditLogger
+from django_pydantic_agent.policy.failure.tool_failure_policy import ToolFailurePolicy
 from django_pydantic_agent.policy.guard.tool_guard import ToolGuard
 from django_pydantic_agent.registry.tool_registry import ToolRegistry
 
@@ -27,7 +28,9 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     ``capabilities`` compose external Pydantic-AI toolsets/capabilities (e.g. an
     MCP-client toolset) alongside the registry tools, so the agent can reach
     beyond the registered set. ``tool_guard``, when enabled, adds a
-    :class:`ToolGuard` that flips destructive tools to require approval.
+    :class:`ToolGuard` that flips destructive tools to require approval, and
+    ``tool_failure`` (on unless turned off) adds a :class:`ToolFailurePolicy`
+    so a raising tool fails its own call instead of the whole run.
 
     The agent is typed ``Agent[AgentDeps, ...]``, so a run must be given
     :class:`AgentDeps` (the transport builds one per run and passes ``deps=``).
@@ -46,6 +49,12 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
         )
     if config.tool_guard is not None and config.tool_guard.enabled:
         capabilities.append(ToolGuard(registry, config=config.tool_guard))
+    if config.tool_failure.enabled:
+        # Needs no ordering constraint against the audit capability above: the
+        # two ride different hooks (``on_tool_execute_error`` here,
+        # ``wrap_tool_execute`` there), so the failure is recorded and then
+        # converted, whichever way the list is sorted.
+        capabilities.append(ToolFailurePolicy(config.tool_failure))
     return Agent(
         model=config.model,
         # Typed deps are what let every tool, toolset and capability read

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.models.test import TestModel
 
@@ -94,8 +93,10 @@ async def test_audited_sync_tool_records_failure() -> None:
 
     audit = _CapturingLogger()
     agent = build_agent(reg, AgentConfig(model=TestModel(), audit_logger=audit))
-    with pytest.raises(ValueError, match="kaboom"):
-        await agent.run("call boom with 1")
+    # The run survives the raising tool (the default tool-failure policy turns
+    # it into a failed result); what this test guards is that the operator's
+    # record still names the tool and carries the real exception text.
+    await agent.run("call boom with 1")
 
     failures = [e for e in audit.events if not e.success]
     assert failures
@@ -128,8 +129,7 @@ async def test_audited_async_tool_records_failure() -> None:
 
     audit = _CapturingLogger()
     agent = build_agent(reg, AgentConfig(model=TestModel(), audit_logger=audit))
-    with pytest.raises(RuntimeError, match="async kaboom"):
-        await agent.run("aboom x")
+    await agent.run("aboom x")
 
     failures = [e for e in audit.events if not e.success and e.tool_name == "aboom"]
     assert failures
