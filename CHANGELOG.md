@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Upstream windows moved to the releases that let a `FilterSet` own ordering**
+  — `djangorestframework-mcp-server>=0.30,<0.31` and
+  `djangorestframework-pydantic-ai>=0.16,<0.17`. ⛔ **The previous pins could not
+  admit either**: both siblings published while this package still required
+  `<0.30` / `<0.16`, so a project on the current dpa could not install the
+  ordering fix at all. Ordering itself needs no change here — dpa carries the
+  conventions text, and both upstreams now speak the FilterSet's vocabulary.
+
+- ⛔ **The `[harness]` window widened to `<0.19`, from a `<0.17` that had gone
+  stale against a published 0.18.1.** The extra resolved to 0.16.x and could not
+  combine with a project on the current harness — the third instance of
+  *published-and-unreachable* in this stack, and the first spotted by a consumer
+  reading our own changelog. ⇒ *The pattern is now legible from outside, which
+  makes leaving one open more expensive than the bump.*
+
+  ⚠ The relock carries `pydantic-ai-slim` 2.19 → **2.27.1** with it. The suite
+  passes unchanged at 100%, but that is eight minors of upstream in one step and
+  worth knowing before it is bisected from.
+
 ## [0.12.1] — 2026-08-11
 
 ### Fixed
