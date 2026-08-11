@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from django_pydantic_agent.policy.audit.types.audit_logger import AuditLogger
+from django_pydantic_agent.policy.failure.types.tool_failure_config import ToolFailureConfig
 from django_pydantic_agent.policy.guard.types.tool_guard_config import ToolGuardConfig
 
 
@@ -51,6 +52,14 @@ class AgentConfig:
     a :class:`~django_pydantic_agent.policy.guard.tool_guard.ToolGuard` capability built
     from the registry's destructive tools. ``None`` (or disabled) leaves the
     agent ungated."""
+
+    tool_failure: ToolFailureConfig = field(default_factory=ToolFailureConfig)
+    """What an unhandled tool exception costs. Defaults to on, so a raising
+    tool fails its own call and the run carries on; the exception still reaches
+    the audit logger and the Python logger. A plain record rather than
+    ``… | None`` because there is no third state: the policy is either composed
+    or it isn't, and ``None`` would have to mean "on" to keep the default,
+    which reads backwards next to ``tool_guard`` above."""
 
 
 __all__ = ["AgentConfig"]

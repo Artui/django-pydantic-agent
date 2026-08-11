@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A raising tool now fails its own call instead of the whole run.**
+  `ToolFailurePolicy` is composed by `build_agent` **by default**, so an
+  unhandled exception in a tool comes back to the model as a result marked
+  failed, naming the tool, and the turn continues.
+
+  The behaviour it replaces was the worse one: the exception propagated, the
+  transport emitted `RUN_ERROR`, and the answer the model had already assembled
+  was discarded along with the results of every other tool in the same round.
+  One broken integration cost the whole turn.
+
+  Tune it with `AgentConfig(tool_failure=ToolFailureConfig(...))` —
+  `enabled=False` restores the old behaviour, `include_detail=True` puts the
+  exception type and text in the model-facing message.
+
+  ⚠ **`include_detail` is off by default, and that split is the point.** Whether
+  the run survives is a reliability question; whether an exception's text
+  reaches the model is a disclosure one — a traceback message can carry a
+  query, a path or a credential, and anything handed to the model is also
+  handed to whatever renders the transcript. The operator's copy is never
+  redacted: the full exception still reaches the audit logger and the
+  `django_pydantic_agent.failure` logger.
+
+  ⭐ **It hangs off Pydantic-AI's `on_tool_execute_error` hook rather than
+  wrapping the handler in `except Exception`, and that is a correctness
+  difference rather than a stylistic one.** Pydantic-AI does not route
+  control-flow exceptions to that hook — `SkipToolExecution`, `CallDeferred`,
+  `ApprovalRequired`, the `ModelRetry` retry signal, or an explicit
+  `ToolFailed`. A hand-written catch would have swallowed `ApprovalRequired`
+  and silently disabled the destructive-tool gate.
+
+  It re-raises as `ToolFailed`, which spends no retry budget by design. A model
+  can therefore call a persistently broken tool again; bound that with run-level
+  `UsageLimits`.
+
+### Changed
+
+- ⚠ **`AgentConfig` gained `tool_failure`, and its default changes existing
+  behaviour.** A run that previously died on a raising tool now completes. No
+  API is removed and nothing needs editing to upgrade, but a project relying on
+  the exception escaping `agent.run(...)` should set
+  `tool_failure=ToolFailureConfig(enabled=False)`.
+
 ## [0.10.0] — 2026-08-10
 
 ### Changed
