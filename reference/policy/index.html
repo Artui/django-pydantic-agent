@@ -959,6 +959,95 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#tool-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool failure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tool failure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#toolfailureconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailureConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailureConfig
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ToolFailureConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig.enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        enabled
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig.include_detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        include_detail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#toolfailurepolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailurePolicy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailurePolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailurePolicy
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1335,6 +1424,95 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#tool-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool failure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tool failure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#toolfailureconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailureConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailureConfig
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ToolFailureConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig.enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        enabled
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig.include_detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        include_detail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#toolfailurepolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailurePolicy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailurePolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ToolFailurePolicy
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1361,8 +1539,9 @@
 
 
 <h1 id="policy">Policy<a class="headerlink" href="#policy" title="Permanent link">&para;</a></h1>
-<p>Audit and the destructive-tool gate — both ride the Pydantic-AI capability seam,
-both off by default. See <a href="../../policy/">Policy</a> for the narrative.</p>
+<p>Audit, the destructive-tool gate and the tool-failure policy all ride the
+Pydantic-AI capability seam. The first two are off by default; the third is on.
+See <a href="../../policy/">Policy</a> for the narrative.</p>
 <h2 id="audit">Audit<a class="headerlink" href="#audit" title="Permanent link">&para;</a></h2>
 <h3 id="auditlogger"><code>AuditLogger</code><a class="headerlink" href="#auditlogger" title="Permanent link">&para;</a></h3>
 
@@ -1961,6 +2140,197 @@ is already gated client-side, and an <code>output</code> tool isn't executed.</p
 orthogonal to :class:<code>~django_pydantic_agent.policy.audit.audit_capability.AuditCapability</code>
 (which wraps execution) — audit's <code>get_ordering</code> pins it outermost, so
 audit still records the tool when an approved call finally runs.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="tool-failure">Tool failure<a class="headerlink" href="#tool-failure" title="Permanent link">&para;</a></h2>
+<h3 id="toolfailureconfig"><code>ToolFailureConfig</code><a class="headerlink" href="#toolfailureconfig" title="Permanent link">&para;</a></h3>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_pydantic_agent.ToolFailureConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ToolFailureConfig</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.ToolFailureConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Resolved policy for what an unhandled tool exception does to a run.</p>
+<p>Tunes the
+:class:<code>~django_pydantic_agent.policy.failure.tool_failure_policy.ToolFailurePolicy</code>
+capability. <strong>On by default</strong>, because the behaviour it replaces is the
+worse one: without it a single raising tool ends the whole run, discarding
+the answer the model had already assembled and every other tool result in
+the turn.</p>
+<p><code>include_detail</code> is separately off by default, and the split is the point.
+Whether the run survives is a reliability question; whether the exception's
+text reaches the model is a disclosure one. A traceback message can carry a
+query, a path or a credential, and anything handed to the model is also
+handed to whatever renders the transcript. The operator's copy is never
+redacted: the full exception goes to the audit logger and the
+<code>django_pydantic_agent.failure</code> Python logger regardless.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.ToolFailureConfig.enabled" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">enabled</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.ToolFailureConfig.enabled" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Whether the <code>ToolFailurePolicy</code> capability is composed into the agent.
+Set <code>False</code> to restore the fail-the-run behaviour.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.ToolFailureConfig.include_detail" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">include_detail</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.ToolFailureConfig.include_detail" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">include_detail</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Whether the model-facing failure message carries the exception type and
+text. Off by default: an exception message is written for an operator, not
+for a model or the browser that will render its answer.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h3 id="toolfailurepolicy"><code>ToolFailurePolicy</code><a class="headerlink" href="#toolfailurepolicy" title="Permanent link">&para;</a></h3>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_pydantic_agent.ToolFailurePolicy" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">ToolFailurePolicy</span>
+
+
+<a href="#django_pydantic_agent.ToolFailurePolicy" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="pydantic_ai.capabilities.AbstractCapability">AbstractCapability</span>[<span title="typing.Any">Any</span>]</code></p>
+
+
+
+        <p>Turns an unhandled tool exception into a failed result the model can read.</p>
+<p>Without it, a tool that raises takes the run down: the transport emits
+<code>RUN_ERROR</code>, the turn ends, and everything the model had already produced
+is discarded along with the results of every other tool in the round. One
+broken integration therefore costs the whole answer.</p>
+<p>The capability hangs off <code>on_tool_execute_error</code> rather than wrapping
+<code>wrap_tool_execute</code>, which matters for correctness rather than style:
+Pydantic-AI does <strong>not</strong> call that hook for control-flow exceptions
+(<code>SkipToolExecution</code> / <code>CallDeferred</code> / <code>ApprovalRequired</code>), retry
+signals (<code>ToolRetryError</code> from <code>ModelRetry</code>) or failure signals
+(<code>ToolFailedError</code> from <code>ToolFailed</code>). So the approval interrupt the
+tool guard depends on, and the model's own retry budget, pass through
+untouched — where a hand-rolled <code>except Exception</code> around the handler
+would have swallowed them and quietly disabled the gate.</p>
+<p>It re-raises as :class:<code>~pydantic_ai.exceptions.ToolFailed</code>, the upstream
+primitive for a terminal tool failure, so the model sees a result marked
+failed rather than one that reads as success. <code>ToolFailed</code> also spends no
+retry budget, so bound a persistently broken tool with run-level
+<code>UsageLimits</code> rather than expecting this to stop the model calling it
+again.</p>
+<p><strong>Nothing is swallowed.</strong> The exception is logged with its traceback to the
+<code>django_pydantic_agent.failure</code> logger, and an <code>AuditCapability</code> in the
+same chain still records the failure against the tool that caused it -- the
+two hooks are independent, so no ordering constraint is needed between
+them. What changes is only who the failure stops.</p>
 
 
 

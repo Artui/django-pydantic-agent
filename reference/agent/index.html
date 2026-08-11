@@ -691,6 +691,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentConfig.tool_failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tool_failure
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1093,6 +1104,17 @@
     <span class="md-ellipsis">
       
         tool_guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentConfig.tool_failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tool_failure
       
     </span>
   </a>
@@ -1536,6 +1558,36 @@ agent ungated.</p>
 
 </div>
 
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AgentConfig.tool_failure" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">tool_failure</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AgentConfig.tool_failure" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">tool_failure</span><span class="p">:</span> <span class="n">ToolFailureConfig</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="n">ToolFailureConfig</span><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>What an unhandled tool exception costs. Defaults to on, so a raising
+tool fails its own call and the run carries on; the exception still reaches
+the audit logger and the Python logger. A plain record rather than
+<code>… | None</code> because there is no third state: the policy is either composed
+or it isn't, and <code>None</code> would have to mean "on" to keep the default,
+which reads backwards next to <code>tool_guard</code> above.</p>
+
+    </div>
+
+</div>
+
 
 
 
@@ -1734,7 +1786,9 @@ registered here.</p>
 <code>capabilities</code> compose external Pydantic-AI toolsets/capabilities (e.g. an
 MCP-client toolset) alongside the registry tools, so the agent can reach
 beyond the registered set. <code>tool_guard</code>, when enabled, adds a
-:class:<code>ToolGuard</code> that flips destructive tools to require approval.</p>
+:class:<code>ToolGuard</code> that flips destructive tools to require approval, and
+<code>tool_failure</code> (on unless turned off) adds a :class:<code>ToolFailurePolicy</code>
+so a raising tool fails its own call instead of the whole run.</p>
 <p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so a run must be given
 :class:<code>AgentDeps</code> (the transport builds one per run and passes <code>deps=</code>).</p>
 <p>Capabilities are composed <strong>order-independently</strong>: each declares its

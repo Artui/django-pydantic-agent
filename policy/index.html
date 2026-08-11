@@ -504,6 +504,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-raising-tool-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a raising tool costs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ordering" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -869,6 +880,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-raising-tool-costs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a raising tool costs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ordering" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -974,11 +996,47 @@ regardless of origin:</p>
 <p>That is why <code>DESTRUCTIVE_METADATA_KEY</code> rides tool <em>metadata</em> rather than the
 <code>x-destructive</code> JSON-Schema stamp: the schema keys are for the client, this one
 is read server-side at <code>prepare_tools</code> time.</p>
+<h2 id="what-a-raising-tool-costs">What a raising tool costs<a class="headerlink" href="#what-a-raising-tool-costs" title="Permanent link">&para;</a></h2>
+<p>A tool that raises used to end the run. The transport emitted <code>RUN_ERROR</code>, the
+turn stopped, and everything the model had already produced went with it —
+along with the results of every other tool in the same round. One broken
+integration cost the whole answer.</p>
+<p><code>ToolFailurePolicy</code> changes what the failure stops, and nothing else. The call
+comes back to the model marked failed, naming the tool, and the run carries on:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;openai:gpt-4o&quot;</span><span class="p">)</span>  <span class="c1"># on by default</span>
+</span></code></pre></div>
+<p>Turn it off to restore the old behaviour, or opt into detail:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">ToolFailureConfig</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=...</span><span class="p">,</span> <span class="n">tool_failure</span><span class="o">=</span><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">enabled</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=...</span><span class="p">,</span> <span class="n">tool_failure</span><span class="o">=</span><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">include_detail</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+</span></code></pre></div>
+<p><strong><code>include_detail</code> is off by default, and the split is deliberate.</strong> Whether the
+run survives is a reliability question; whether the exception's text reaches the
+model is a disclosure one. A traceback message can carry a query, a path or a
+credential, and anything handed to the model is also handed to whatever renders
+the transcript. The operator's copy is never redacted — the full exception goes
+to the audit logger and to the <code>django_pydantic_agent.failure</code> logger either way.</p>
+<p>Two things worth knowing:</p>
+<ul>
+<li><strong>It hangs off <code>on_tool_execute_error</code>, not a <code>try</code> around the handler.</strong>
+  Pydantic-AI does not route control-flow exceptions to that hook —
+  <code>SkipToolExecution</code>, <code>CallDeferred</code>, <code>ApprovalRequired</code>, the <code>ModelRetry</code>
+  retry signal, or an explicit <code>ToolFailed</code>. So the approval gate above and the
+  model's retry budget both pass through untouched. A hand-written
+  <code>except Exception</code> would have caught <code>ApprovalRequired</code> and silently disabled
+  the gate.</li>
+<li><strong>It spends no retry budget</strong>, because <code>ToolFailed</code> deliberately doesn't.
+  A model can call a persistently broken tool again; bound that with run-level
+  <code>UsageLimits</code> rather than expecting this to stop it.</li>
+</ul>
 <h2 id="ordering">Ordering<a class="headerlink" href="#ordering" title="Permanent link">&para;</a></h2>
-<p>Neither capability needs positioning. Each declares its place via
+<p>No capability here needs positioning. Each declares its place via
 <code>get_ordering()</code> — audit outermost, the guard orthogonal — and pydantic-ai's
-<code>CombinedCapability</code> topologically sorts them. Append your own capabilities in
-any order.</p>
+<code>CombinedCapability</code> topologically sorts them. The failure policy needs no
+constraint at all: it rides <code>on_tool_execute_error</code> while audit rides
+<code>wrap_tool_execute</code>, so the failure is recorded and then converted whichever
+way the list is sorted. Append your own capabilities in any order.</p>
 <p>Full signatures in the <a href="../reference/policy/">policy reference</a>.</p>
 
 
