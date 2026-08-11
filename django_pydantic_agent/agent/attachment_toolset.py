@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django.http import HttpRequest
+from pydantic_ai.messages import BinaryContent, ToolReturn
 from pydantic_ai.toolsets.function import FunctionToolset
 
+from django_pydantic_agent.agent.types.attachment_inline_config import AttachmentInlineConfig
 from django_pydantic_agent.persistence.types.attachment_store import AttachmentStore
 from django_pydantic_agent.persistence.types.opened_attachment import OpenedAttachment
 
@@ -20,7 +22,12 @@ _TEXTUAL_MIMES = frozenset(
 )
 
 
-def build_attachment_toolset(store: AttachmentStore, request: HttpRequest) -> FunctionToolset[None]:
+def build_attachment_toolset(
+    store: AttachmentStore,
+    request: HttpRequest,
+    *,
+    inline: AttachmentInlineConfig | None = None,
+) -> FunctionToolset[None]:
     """Build a per-request toolset exposing ``read_attachment`` over ``store``.
 
     Mirrors the per-request ``drf-mcp`` bridge: the request is captured in a
@@ -29,19 +36,30 @@ def build_attachment_toolset(store: AttachmentStore, request: HttpRequest) -> Fu
     transport's agent build when an attachment store is configured, so the wire
     stays protocol-vanilla: attachments travel as lightweight refs and the bytes
     are reached here, server-side, only when the model asks.
-    """
 
-    async def read_attachment(attachment_id: str) -> str:
+    ``inline`` decides which binary types come back as file content the model
+    can actually look at, and how large a file may be before it is described
+    rather than attached; ``None`` takes the
+    :class:`~django_pydantic_agent.agent.types.attachment_inline_config.AttachmentInlineConfig`
+    defaults. Read its docstring before widening either — inlined bytes are
+    persisted into the conversation and replayed on every following turn.
+    """
+    resolved = AttachmentInlineConfig() if inline is None else inline
+
+    async def read_attachment(attachment_id: str) -> str | ToolReturn:
         """Read a file the user attached to this conversation.
 
-        Pass the ``id`` from an attachment chip on the user's message. Returns
-        the file's text when it is textual; for binary files (images, PDFs, …)
-        returns a short note with the name, type, and size rather than raw bytes.
+        Pass the ``id`` from an attachment chip on the user's message. A textual
+        file comes back as its text. A binary file whose type can be read —
+        a PDF or an image — comes back as attached file content, so read it
+        directly rather than asking the user to send it again. A file that is
+        too large, or of a type that cannot be read, comes back as a short note
+        giving its name, type and size.
         """
         opened = await store.open(attachment_id, request=request)
         if opened is None:
             return f"No attachment with id {attachment_id!r} is available."
-        return _render(opened)
+        return _render(opened, resolved)
 
     # ``read_attachment`` is a plain (no-``RunContext``) tool; pydantic-ai's
     # FunctionToolset overloads only type the ctx-taking form, so cast at the
@@ -49,8 +67,8 @@ def build_attachment_toolset(store: AttachmentStore, request: HttpRequest) -> Fu
     return FunctionToolset([cast("Any", read_attachment)], id="django-pydantic-agent-attachments")
 
 
-def _render(opened: OpenedAttachment) -> str:
-    """Decoded text for a textual attachment, else a one-line binary manifest."""
+def _render(opened: OpenedAttachment, inline: AttachmentInlineConfig) -> str | ToolReturn:
+    """Decoded text, else the bytes as file content, else a one-line manifest."""
     ref = opened.ref
     # The tool needs the whole content to decode / classify; read it under a
     # ``with`` so the streaming handle is always closed.
@@ -59,6 +77,23 @@ def _render(opened: OpenedAttachment) -> str:
     text = _as_text(data, ref.mime)
     if text is not None:
         return text
+    if ref.mime in inline.media_types:
+        # Size the cap off the bytes in hand, not ``ref.size``: a store's
+        # declared size and what it hands back need not agree, and only the
+        # bytes reach the provider.
+        if len(data) <= inline.max_bytes:
+            return ToolReturn(
+                return_value=(
+                    f"[{ref.name}] is a {ref.mime} file ({len(data)} bytes); "
+                    "its contents are attached below."
+                ),
+                content=[BinaryContent(data=data, media_type=ref.mime)],
+            )
+        return (
+            f"[{ref.name}] is a {ref.mime} file ({len(data)} bytes), over the "
+            f"{inline.max_bytes}-byte limit for attaching a file's contents; "
+            "it was described rather than attached."
+        )
     return (
         f"[{ref.name}] is a {ref.mime or 'binary'} file ({ref.size} bytes); "
         "its content is not text and was not inlined."

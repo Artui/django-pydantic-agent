@@ -7,6 +7,10 @@ Construction: a [`ToolRegistry`](registry.md) plus an `AgentConfig` in, a
 
 ::: django_pydantic_agent.AgentConfig
 
+## `AttachmentInlineConfig`
+
+::: django_pydantic_agent.AttachmentInlineConfig
+
 ## `AgentDeps`
 
 ::: django_pydantic_agent.AgentDeps
