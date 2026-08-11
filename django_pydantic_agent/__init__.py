@@ -5,6 +5,7 @@ from django_pydantic_agent.agent.build_tool_catalog import build_tool_catalog
 from django_pydantic_agent.agent.types.agent_config import AgentConfig
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.agent.types.agent_factory_fn import AgentFactoryFn
+from django_pydantic_agent.agent.types.attachment_inline_config import AttachmentInlineConfig
 from django_pydantic_agent.constants import (
     DESTRUCTIVE_METADATA_KEY,
     X_CATEGORY_KEY,
@@ -50,6 +51,7 @@ __all__ = [
     "AgentDeps",
     "AgentFactoryFn",
     "AnonymousOperationError",
+    "AttachmentInlineConfig",
     "AttachmentRef",
     "AttachmentStore",
     "AuditCapability",

@@ -30,6 +30,64 @@ distinguishable from a missing one.
 is the calling view's job, from its own config; the store just persists bytes
 and returns a durable `AttachmentRef`.
 
+## The `read_attachment` tool
+
+The bytes never travel on the wire. A transport that has an attachment store
+composes `build_attachment_toolset(store, request)` into the agent, and the
+model reaches a file server-side, by id, only when it asks — through the same
+owner-scoped `open` a download view would use.
+
+Reading one has three outcomes:
+
+| The attachment | What the model gets |
+| --- | --- |
+| Textual (`text/*`, JSON, XML, JavaScript, YAML, SVG) and valid UTF-8 | Its text, inline. |
+| A type providers can read — PDF, PNG, JPEG, GIF, WebP — within the size cap | The bytes, as attached file content it can look at directly. |
+| Anything else: an unreadable type, an oversized file, undecodable "text" | A one-line note with the name, type and size. |
+
+Tune the middle row with `AttachmentInlineConfig`:
+
+```python
+from django_pydantic_agent import AttachmentInlineConfig
+from django_pydantic_agent.agent.attachment_toolset import build_attachment_toolset
+
+toolset = build_attachment_toolset(
+    store,
+    request,
+    inline=AttachmentInlineConfig(max_bytes=1024 * 1024),
+)
+```
+
+**The type list is an allowlist rather than "everything that is not text", and
+that is on purpose.** Bytes a provider cannot interpret are worse than useless:
+a `.zip` or a `.exe` handed over as file content makes the provider reject the
+whole request, so a broad rule would trade a model that cannot read your PDF
+for a run that does not start.
+
+**The size cap is much smaller than any upload cap you would set**, and for a
+different reason. An inlined file is carried in a synthetic `user` message that
+the tool return serialises into — so it is persisted into the stored
+conversation, shipped to the browser on every thread load, and re-sent by the
+client on every following turn. Base64 adds about a third: a 4 MiB PDF costs
+roughly 5.5 MiB in the conversation row. That round trip is what lets a
+*follow-up* question about the same file be answered without a second
+`read_attachment` call, so it buys something real — but it is why the default
+sits at 4 MiB rather than at whatever your upload endpoint accepts.
+
+To keep the old behaviour and never attach bytes:
+
+```python
+toolset = build_attachment_toolset(
+    store,
+    request,
+    inline=AttachmentInlineConfig(media_types=frozenset()),
+)
+```
+
+`AttachmentRef.mime` is client-declared, so the decision is made on a hint. The
+failure mode of a mislabelled file is a provider rejecting the request, not a
+disclosure — the store is owner-scoped either way.
+
 ## Threads key by `(owner_id, thread_id)`
 
 Which has a consequence worth knowing before you mount two endpoints: **two

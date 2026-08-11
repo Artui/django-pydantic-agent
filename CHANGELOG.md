@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A PDF or an image the user attached came back to the model as a note saying
+  "its content is not text and was not inlined", so the agent asked for a file
+  it had already been given.** The user drops a PDF into the composer, asks
+  about the budget in it, and the answer is "please attach the PDF here" — the
+  model called `read_attachment` correctly and still never saw the file.
+  `read_attachment` now returns the bytes as attached file content for the
+  types providers can actually read: PDF, PNG, JPEG, GIF and WebP.
+
+  ⛔ **It is an allowlist, not "everything that is not text".** A `.zip` or an
+  `.exe` handed over as file content is not merely useless to the model — the
+  provider rejects the request — so a broad rule would have traded a model that
+  cannot read your PDF for a run that does not start. Everything outside the
+  list still returns the same note it returned before.
+
+  ⚠ **`read_attachment` no longer always returns `str`.** For a PDF or image
+  inside the size cap it returns a `pydantic_ai.messages.ToolReturn`. Nothing
+  about the model-facing text changes for **textual** attachments — those are
+  byte-identical to before — and every non-inlined case still returns the exact
+  same string, but code that calls the tool function directly and assumes a
+  string sees the difference.
+
+  ⚠ **Inlined bytes are persisted into the stored thread and replayed to the
+  client.** The bytes ride in a synthetic `user` message that the tool return
+  serialises into, so they land in the conversation row, ship to the browser on
+  every thread load, and are re-sent by the client on every following turn.
+  Base64 adds about a third: a 4 MiB PDF costs roughly 5.5 MiB in the row. That
+  round trip is also what lets a *follow-up* question about the same file be
+  answered without a second `read_attachment` call. To turn inlining off
+  entirely, pass `AttachmentInlineConfig(media_types=frozenset())`.
+
+### Added
+
+- **`AttachmentInlineConfig`, and an `inline=` keyword on
+  `build_attachment_toolset`.** `media_types` is the set of content types whose
+  bytes are attached rather than described; `max_bytes` (default 4 MiB, checked
+  against the bytes the store returns rather than the declared
+  `AttachmentRef.size`) is where a file is described instead. `inline=None`
+  keeps the defaults, so an existing call site needs no edit.
+
+  The cap sits far below any upload limit you would set, for the persistence
+  reason above rather than a provider one. Raise it knowing what it costs per
+  turn.
+
+  ⚠ **The escape hatch is constructor-only for now**, because this substrate
+  reads no Django settings by design. A future release of the transports will
+  surface it through their own settings namespaces — that needs this package
+  released first, so until then a project overriding it passes an
+  `AttachmentInlineConfig` at the call site.
+
 ## [0.14.0] — 2026-08-11
 
 ### Changed
