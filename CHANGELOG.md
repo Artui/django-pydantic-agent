@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The upper bound came off every sibling window: `djangorestframework-mcp-server>=0.30`,
+  `djangorestframework-pydantic-ai>=0.16`, `pydantic-ai-harness[code-mode]>=0.13`.**
+  Each was a one-minor window over a package we ship ourselves, which is not a
+  compatibility statement but a *schedule*: every upstream release made this
+  package unresolvable until someone re-cut it, whether or not anything broke.
+  Against that there is no recorded case of a ceiling here catching a real
+  incompatibility — while they caused four incidents in this ecosystem,
+  including a **Security** release published-and-unreachable, and two disjoint
+  windows that resolved *successfully* by silently downgrading a consumer past
+  every fix. ⇒ *A consumer can now combine this package with the current
+  sibling on the day it ships.*
+
+  ⚠ **`pydantic-ai-harness` is an external 0.x package, where a minor bump is
+  breaking by SemVer and we do not control the release.** That is the risky part
+  of this change and it is a bet, not a proof: that the weekly drift job finds a
+  breaking 0.x minor faster than a stale ceiling would have been noticed. The
+  evidence behind the bet is that a stale harness ceiling has already made this
+  stack unreachable twice, and neither was caught by the ceiling itself.
+
+- **`pydantic-ai-slim` keeps its `<3`.** A major bound is a real compatibility
+  statement — the v2 capability seam is what this package is built on — and
+  nothing here argues for dropping it.
+
+### Added
+
+- **A `floor` job in `tests.yml`, wired into the `tests` aggregate gate.** It
+  resolves every *declared* dependency at `--resolution lowest-direct` and runs
+  the suite, then installs the package **alone** — no extras, no dev group — and
+  imports it plus a few public symbols. ⇒ *The two measurements that replace the
+  ceiling are now both in place: `upstream-drift.yml` resolves unpinned weekly
+  (the newest end), and `floor` resolves lowest-direct per PR (the oldest end).*
+  An all-extras install cannot check a floor on its own, because one extra can
+  hold a shared dependency above the floor being claimed.
+
 ## [0.13.0] — 2026-08-11
 
 ### Changed
