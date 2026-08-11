@@ -40,15 +40,22 @@ dependencies = [
     # Slim core only. Unlike a transport package this pulls **no** wire extra —
     # the AG-UI adapter (and its ag-ui-protocol floor) belongs to django-ag-ui,
     # A2A's belongs to django-a2a. The substrate just builds the agent.
-    "pydantic-ai-slim>=2,<3",
+    #
+    # ⚠ The floor is 2.16 because ``ToolFailurePolicy`` imports
+    # ``pydantic_ai.exceptions.ToolFailed`` at module scope, and that symbol
+    # first exists in 2.16.0. A wider floor is not "more compatible" here: the
+    # capability is composed by default, so importing this package at all fails
+    # on 2.15 and below. Raise it whenever a new default reaches for a newer
+    # upstream symbol.
+    "pydantic-ai-slim>=2.16,<3",
 ]
 
 [project.optional-dependencies]
 # Model-provider extras (slim ships none). Install one to use a "provider:model"
 # string, e.g. `pip install django-pydantic-agent[anthropic]`.
-anthropic = ["pydantic-ai-slim[anthropic]>=2,<3"]
-openai = ["pydantic-ai-slim[openai]>=2,<3"]
-google = ["pydantic-ai-slim[google]>=2,<3"]
+anthropic = ["pydantic-ai-slim[anthropic]>=2.16,<3"]
+openai = ["pydantic-ai-slim[openai]>=2.16,<3"]
+google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
 # toolset (the agent calls DRF tools without a network hop).
 drf-mcp = ["djangorestframework-mcp-server>=0.29,<0.30"]
@@ -92,7 +99,7 @@ dev = [
     "pydantic-ai-harness[code-mode]>=0.13,<0.17",
     # Provider libs so the api_key / provider model-building path is exercised
     # in dev/CI (the extras above ship to consumers, not the dev env).
-    "pydantic-ai-slim[anthropic,openai,google]>=2",
+    "pydantic-ai-slim[anthropic,openai,google]>=2.16",
 ]
 docs = [
     "mkdocs>=1.6",

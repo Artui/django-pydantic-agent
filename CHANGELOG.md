@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- ⛔ **`pydantic-ai-slim` floor raised to `>=2.16`, because 0.11.0 and 0.12.0 do
+  not import on anything older.** `ToolFailurePolicy` imports
+  `pydantic_ai.exceptions.ToolFailed` at module scope, and that symbol first
+  exists in **2.16.0** — while the declared floor was `>=2,<3`. Since
+  `build_agent` composes the policy by default, the failure is not a missing
+  feature but an `ImportError` on `import django_pydantic_agent`.
+
+  ⭐ **The floor was verified against the wrong thing.** Development and CI
+  resolve the *newest* in-range pydantic-ai (2.19 at the time), so every gate
+  passed; a consumer whose own constraints pulled an older 2.x got a package
+  that would not import. `django-admin-agent` resolved 2.9.1 and was the first
+  to hit it. ⇒ *a dependency floor is a claim about the oldest version that
+  works, and a lockfile can only ever check the newest — so a new import of an
+  upstream symbol is a floor change, not just a code change.*
+
+  The excluded range never worked, so nothing that previously installed
+  successfully is affected.
+
 ## [0.12.0] — 2026-08-11
 
 ### Changed
