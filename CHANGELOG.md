@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-11
+
+### Changed
+
+- **`[drf-mcp]` now requires `djangorestframework-mcp-server>=0.29,<0.30`**
+  (was `>=0.28,<0.29`), and the dev group moves with it.
+
+  ⛔ **The previous ceiling made 0.29.0 published-and-unreachable.** Its change
+  is a default rather than a fix — drf-mcp's `MAX_PAGE_SIZE` drops from 500 to
+  100, so a `paginate=True` selector tool stops advertising a `limit.maximum`
+  five times its own dispatch default — but the shape is the one this project
+  has been bitten by twice: a release announcement reads as completion while
+  every install keeps resolving the previous version.
+
+  drf-mcp 0.29.0 and `djangorestframework-pydantic-ai` 0.15.0 both require
+  `djangorestframework-services>=0.35,<0.36`, so the `[drf-mcp]` and
+  `[spec-tools]` extras stay co-installable; verified by resolving the pair and
+  asserting the versions, not merely that resolution succeeded.
+
+  No code changes; the suite passes unmodified at 100% coverage.
+
+  ⚠ **A minor, and `django-ag-ui` must follow.** Its ceiling is
+  `django-pydantic-agent>=0.11,<0.12`, so this release is excluded until that
+  floor moves — the published-but-unreachable interval, entered deliberately
+  here rather than letting a ceiling move arrive under a patch.
+
 ## [0.11.0] — 2026-08-11
 
 ### Added
@@ -572,7 +598,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.8.0...v0.9.0
