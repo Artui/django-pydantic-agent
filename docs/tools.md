@@ -75,18 +75,18 @@ catalog = build_tool_catalog(registry, drf_mcp_server=server, service_specs=spec
 
 ### What the catalog does not cover
 
-⚠ **Only the sources above.** A tool reaching the agent through a transport's
+**Only the sources above.** A tool reaching the agent through a transport's
 `capabilities=` / `toolsets=` — an arbitrary `AbstractToolset` attached directly
 — is not listed, and its card falls back to a prettified tool name.
 
-⛔ **This is a stated boundary, not a gap waiting to be filled.** Pydantic-AI's
+**This is a stated boundary, not a gap waiting to be filled.** Pydantic-AI's
 enumeration is `AbstractToolset.get_tools`, which is `async` and takes a
 `RunContext`; the catalog is built at configuration time, from a view, with no
 run in sight. Enumerating "the toolsets we recognise" and skipping the rest
 would produce a catalog that *looks* complete and is not — the failure this
 stack spends its time removing, traded for cosmetics.
 
-⭐ **Route spec tools through a covered source instead.** A `SpecToolset` or
+**Route spec tools through a covered source instead.** A `SpecToolset` or
 `SpecCapability` passed to django-ag-ui's `service_specs=` (0.30+) is attached
 as itself *and* enumerated here, so it keeps its labels.
 

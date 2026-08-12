@@ -17,35 +17,31 @@ from django_pydantic_agent.registry.tool_registry import ToolRegistry
 class ToolGuard(AbstractCapability[Any]):
     """Gates destructive server-side tools behind the AG-UI approval loop.
 
-    pydantic-ai supplies the *mechanism* — a tool whose definition is
-    ``kind="unapproved"`` defers to a ``RUN_FINISHED`` interrupt the client
-    approves or denies (see the HITL wave). ``ToolGuard`` supplies the
-    *policy*: at ``prepare_tools`` time it flips a plain ``function`` tool to
-    ``unapproved`` when the tool is destructive, so **server-side** tools get
-    the same confirmation gate the web component already applies to
-    client-registered destructive tools.
+    pydantic-ai supplies the mechanism — a tool whose definition is
+    ``kind="unapproved"`` defers to an interrupt the client approves or denies —
+    and this supplies the policy, flipping a plain ``function`` tool to
+    ``unapproved`` at ``prepare_tools`` time when it is destructive. Server-side
+    tools thereby get the confirmation gate the web component already applies to
+    client-registered ones.
 
-    Destructiveness is read from three sources, unified here so one hook covers
-    every tool the agent sees regardless of where it came from:
+    Destructiveness is read from three sources, so one hook covers every tool the
+    agent sees wherever it came from:
 
-    - **Registry** ``@tool(destructive=True)`` — its name is collected from the
-      registry at construction (the ``destructive`` flag lives on the spec and
-      never reaches pydantic-ai as a bare callable, so the capability reads it
-      directly).
-    - **drf-mcp bridged tools** — the bridge stamps
-      :data:`~django_pydantic_agent.constants.DESTRUCTIVE_METADATA_KEY` into
-      ``ToolDefinition.metadata`` for any tool whose MCP ``readOnlyHint`` is
-      ``False``; the guard reads that metadata.
-    - **Project overrides** — ``require_approval`` force-gates a name;
-      ``exempt`` un-gates one (``exempt`` wins).
+    - **Registry** ``@tool(destructive=True)``, collected at construction: the
+      flag lives on the spec and never reaches pydantic-ai, which sees a bare
+      callable, so the capability reads it directly.
+    - **drf-mcp bridged tools**, through the
+      :data:`~django_pydantic_agent.constants.DESTRUCTIVE_METADATA_KEY` the
+      bridge stamps into ``ToolDefinition.metadata``.
+    - **Project overrides**: ``require_approval`` force-gates a name, ``exempt``
+      un-gates one, and ``exempt`` wins.
 
-    Only ``kind="function"`` tools are flipped: an ``external`` (frontend) tool
-    is already gated client-side, and an ``output`` tool isn't executed.
+    Only ``kind="function"`` tools are flipped — an ``external`` tool is already
+    gated client-side, and an ``output`` tool is not executed.
 
-    Ordering: the guard touches only the ``prepare_tools`` hook, so it is
-    orthogonal to :class:`~django_pydantic_agent.policy.audit.audit_capability.AuditCapability`
-    (which wraps execution) — audit's ``get_ordering`` pins it outermost, so
-    audit still records the tool when an approved call finally runs.
+    The guard touches only ``prepare_tools``, so it is orthogonal to
+    :class:`~django_pydantic_agent.policy.audit.audit_capability.AuditCapability`
+    and audit still records the tool when an approved call finally runs.
     """
 
     def __init__(self, registry: ToolRegistry, *, config: ToolGuardConfig) -> None:

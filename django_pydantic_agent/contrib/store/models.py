@@ -4,25 +4,15 @@ from django.db import models
 
 
 class StoredConversation(models.Model):
-    """The reference durable conversation row for a model-backed store.
+    """The reference durable conversation row, one per ``(owner_id, thread_id)``.
 
-    One row per ``(owner_id, thread_id)``. ``messages`` holds the AG-UI message
-    list as JSON (the same shape every store round-trips); ``title`` and
-    ``preview`` are denormalised so the thread drawer's list query never loads
-    message bodies, and ``updated_at`` orders it. ``owner_id`` is the resolved
-    owner (the user's pk, or an ``anon:<session_key>`` bucket under
-    ``ALLOW_ANONYMOUS``) — the store always filters by it, the security boundary.
+    ``owner_id`` is the resolved owner (the user's pk, or an
+    ``anon:<session_key>`` bucket) and every query filters by it: it is the
+    security boundary. ``title`` / ``preview`` are denormalised so the thread
+    drawer's list query never loads message bodies. ``attachments`` is derived
+    from ``messages`` on every save and is what attachment lifecycle runs on.
 
-    ``attachments`` is the reconciled set of files this conversation refers to,
-    derived from ``messages`` on every save (see
-    :func:`~django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments`)
-    and authoritative for attachment lifecycle: deleting the conversation drops
-    the attachments nothing else still points at.
-
-    Used by
-    :class:`~django_pydantic_agent.contrib.store.default_conversation_store.DefaultConversationStore`.
-    Run lineage (``run_id`` / step ledger) is intentionally out of scope here;
-    a future durability layer can extend the schema.
+    Used by ``DefaultConversationStore``.
     """
 
     thread_id = models.CharField(max_length=255)
@@ -55,26 +45,19 @@ class StoredConversation(models.Model):
 class StoredAttachment(models.Model):
     """The reference durable attachment row for a model-backed store.
 
-    The opaque ``attachment_id`` is the handle the wire ref carries; ``file``
-    holds the bytes via Django ``Storage`` (so S3 etc. come free through
-    ``STORAGES``/``DEFAULT_FILE_STORAGE``), while ``name`` / ``mime`` / ``size``
-    are the denormalised metadata returned without reading the file back.
-    ``owner_id`` is the resolved owner (the user's pk, or an ``anon:<session_key>``
-    bucket under ``ALLOW_ANONYMOUS``) — the store always filters by it, the
-    security boundary. ``thread_id`` is a loose label a subclass or a project may
-    set to tie an attachment to one conversation; the reference store leaves it
-    blank, and it is *not* what lifecycle runs on — the
-    :class:`ConversationAttachment` relation is. It is kept because projects read
-    it.
+    ``attachment_id`` is the opaque handle the wire ref carries; ``file`` holds
+    the bytes via Django ``Storage``; ``name`` / ``mime`` / ``size`` are
+    denormalised so metadata is returned without reading the file back.
+    ``owner_id`` is the resolved owner and every query filters by it: it is the
+    security boundary. ``sha256`` is the chunked digest that lets a re-upload of
+    the same bytes reuse the blob already in storage, blank on rows predating the
+    column until ``agent_store_backfill_hashes`` fills them in.
 
-    ``sha256`` is the hex digest of the file's bytes, computed chunked at upload.
-    It is what makes a re-upload of the same bytes reuse the blob already in
-    storage instead of writing a second copy. It is blank on rows written before
-    the column existed; the ``agent_store_backfill_hashes`` management command
-    fills those in.
+    ``thread_id`` is a loose label a project may set; the reference store leaves
+    it blank. Lifecycle runs on the :class:`ConversationAttachment` relation, not
+    on this column, which is kept only because projects read it.
 
-    Used by
-    :class:`~django_pydantic_agent.contrib.store.default_attachment_store.DefaultAttachmentStore`.
+    Used by ``DefaultAttachmentStore``.
     """
 
     attachment_id = models.CharField(max_length=255)
@@ -98,9 +81,9 @@ class StoredAttachment(models.Model):
         ]
         indexes = [
             models.Index(fields=["owner_id", "-created_at"]),
-            # Owner first, and only ever queried with an owner. A plain index on
-            # ``sha256`` alone would make exactly the query this store must never
-            # run — "who else holds these bytes?" across tenants — the cheap one.
+            # Owner first, and only ever queried with an owner. An index on
+            # ``sha256`` alone would make the query this store must never run —
+            # "who else holds these bytes?", across tenants — the cheap one.
             models.Index(fields=["owner_id", "sha256"]),
         ]
 
@@ -111,16 +94,15 @@ class StoredAttachment(models.Model):
 class ConversationAttachment(models.Model):
     """One conversation's reference to one attachment.
 
-    The through model behind ``StoredConversation.attachments``. It is a
+    The through model behind ``StoredConversation.attachments``, a
     many-to-many rather than a foreign key on the attachment because both ends
-    are plural: deduplication means several rows may describe the same bytes,
-    and the same attachment id may be quoted by more than one thread once a user
-    forwards a file into a second conversation.
+    are plural: deduplication lets several rows describe the same bytes, and one
+    attachment id may be quoted by more than one thread.
 
-    Rows are derived, never hand-written: a conversation's save reconciles them
-    from the attachment ids carried by its own messages. Both sides cascade, so
-    deleting either end drops the link; the attachment row itself outlives the
-    link and is collected separately, once nothing references it.
+    Rows are derived, never hand-written — a conversation's save reconciles them
+    from the attachment ids its own messages carry. Both sides cascade, so
+    deleting either end drops the link; the attachment row outlives the link and
+    is collected separately once nothing references it.
     """
 
     conversation = models.ForeignKey(
@@ -145,28 +127,22 @@ class ConversationAttachment(models.Model):
 
 # --- Durable run lineage -----------------------------------------------------
 #
-# The four rows below back a model-backed step store for the
-# ``pydantic-ai-harness`` step-persistence capability — the durable, owner-scoped
-# equivalent of the harness's own ``SqliteStepStore`` / ``FileStepStore``. Each
-# mirrors one harness dataclass (``RunRecord`` / ``StepEvent`` /
-# ``ContinuableSnapshot`` / ``ToolEffectRecord``) with an added ``owner_id`` — the
-# resolved owner (the user's pk, or an ``anon:<session_key>`` bucket under
-# ``ALLOW_ANONYMOUS``) that every query filters by, the security boundary the
-# harness types themselves do not carry. Genuinely-optional lineage strings are
-# ``null=True`` so a ``None`` sentinel round-trips exactly (``list_runs`` filters
-# on it). Backed by
-# :class:`~django_pydantic_agent.contrib.store.default_step_store.DefaultStepStore`.
+# The four models below back ``DefaultStepStore``. Each mirrors one
+# ``pydantic-ai-harness`` dataclass (``RunRecord`` / ``StepEvent`` /
+# ``ContinuableSnapshot`` / ``ToolEffectRecord``) plus an ``owner_id`` every query
+# filters by — the security boundary, which the harness types do not carry.
+# Optional lineage strings are ``null=True`` rather than blank so a ``None``
+# sentinel round-trips exactly; ``list_runs`` filters on it.
 
 
 class StoredRun(models.Model):
-    """Lineage metadata for one agent run — the durable :class:`RunRecord`.
+    """Lineage metadata for one agent run, one row per ``(owner_id, run_id)``.
 
-    One row per ``(owner_id, run_id)``. ``conversation_id`` groups the runs of a
-    dialogue; ``parent_run_id`` is the hierarchical link (which run spawned this
-    one) — two independent axes, so a delegated run may share a conversation
-    across attempts while pointing at a different orchestrator run. ``started_at``
-    is the harness-supplied run-start instant (persisted verbatim, not stamped at
-    insert), and orders :meth:`list_runs`.
+    ``conversation_id`` groups a dialogue's runs and ``parent_run_id`` records
+    which run spawned this one — two independent axes, so a delegated run may
+    share a conversation while pointing at a different orchestrator run.
+    ``started_at`` is the harness-supplied instant persisted verbatim, not
+    stamped at insert, and orders ``list_runs``.
     """
 
     run_id = models.CharField(max_length=255)
@@ -190,12 +166,11 @@ class StoredRun(models.Model):
 
 
 class StoredStepEvent(models.Model):
-    """One append-only :class:`StepEvent` at a run/model/tool boundary.
+    """One append-only step event at a run/model/tool boundary.
 
-    Never mutated: a correction is a follow-up row, and :meth:`list_events`
-    returns them in insertion order (by ``id``). ``kind`` is one of the harness
-    ``EventKind`` literals; ``error`` carries ``repr(exc)`` on the ``*_failed``
-    kinds. Scoped and read by ``(owner_id, run_id)``.
+    Never mutated — a correction is a follow-up row, and ``list_events`` returns
+    them in insertion order (by ``id``). ``kind`` is a harness ``EventKind``
+    literal; ``error`` carries ``repr(exc)`` on the ``*_failed`` kinds.
     """
 
     run_id = models.CharField(max_length=255)
@@ -219,22 +194,19 @@ class StoredStepEvent(models.Model):
 
 
 class StoredSnapshot(models.Model):
-    """A provider-valid :class:`ContinuableSnapshot` safe to resume from.
+    """A message history a run can be resumed or forked from.
 
     ``messages`` is the full ``list[ModelMessage]`` serialised with
-    ``ModelMessagesTypeAdapter`` (JSON) — pass it to
-    ``Agent.run(message_history=...)`` to continue or fork. :meth:`latest_snapshot`
-    returns the most recent by **insertion order** (largest ``id``), not by
-    ``step_index``, matching the harness stores. Scoped by ``(owner_id, run_id)``.
+    ``ModelMessagesTypeAdapter``, ready for ``Agent.run(message_history=...)``.
+    ``latest_snapshot`` picks the most recent by insertion order (largest
+    ``id``), not by ``step_index``, matching the harness stores.
 
-    ``state`` mirrors the harness's ``SnapshotState``. A ``complete`` snapshot
-    sits at a boundary where every tool call has a matching return, so it is
-    always safe to resume from; an ``interrupted`` one is a rescue point captured
-    mid-tool-cycle (a crash), where pending calls may be re-executed or closed out
-    with synthesized returns. ``latest_snapshot`` skips ``interrupted`` rows
-    unless asked for them, which is why the state has to be *stored* rather than
-    inferred — by the time a resume is attempted, the run that produced the row
-    is long gone.
+    ``state`` mirrors harness's ``SnapshotState``: ``complete`` sits at a
+    boundary where every tool call has a matching return and is always safe to
+    resume from, while ``interrupted`` is a mid-tool-cycle rescue point whose
+    pending calls may need re-executing or closing out. It is stored rather than
+    inferred because by the time a resume is attempted the run that produced the
+    row is gone.
     """
 
     run_id = models.CharField(max_length=255)
@@ -259,14 +231,13 @@ class StoredSnapshot(models.Model):
 
 
 class StoredToolEffect(models.Model):
-    """A tool call's side-effect status — the durable :class:`ToolEffectRecord`.
+    """A tool call's side-effect status.
 
     Upserted on ``(owner_id, run_id, tool_call_id)`` as the call moves
-    ``started`` → ``completed`` / ``failed``. A record still ``started`` after a
-    process restart means the external side effect may or may not have landed
-    (``unknown_after_crash``); ``idempotency_key`` / ``effect_summary`` let an
-    orchestrator decide whether replay is safe. :meth:`list_unresolved_tool_effects`
-    returns the ``started`` rows for a run.
+    ``started`` to ``completed`` / ``failed``. Still ``started`` after a process
+    restart means the external effect may or may not have landed;
+    ``idempotency_key`` / ``effect_summary`` are what let an orchestrator decide
+    whether replay is safe. ``list_unresolved_tool_effects`` returns those rows.
     """
 
     run_id = models.CharField(max_length=255)

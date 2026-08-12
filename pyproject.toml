@@ -41,7 +41,7 @@ dependencies = [
     # the AG-UI adapter (and its ag-ui-protocol floor) belongs to django-ag-ui,
     # A2A's belongs to django-a2a. The substrate just builds the agent.
     #
-    # ⚠ The floor is 2.16 because ``ToolFailurePolicy`` imports
+    # The floor is 2.16 because ``ToolFailurePolicy`` imports
     # ``pydantic_ai.exceptions.ToolFailed`` at module scope, and that symbol
     # first exists in 2.16.0. A wider floor is not "more compatible" here: the
     # capability is composed by default, so importing this package at all fails
@@ -90,7 +90,7 @@ dev = [
     "flake8-tidy-imports>=4.12.0",
     "django-stubs>=5.0",
     # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
-    # ⚠ Must move in lockstep with the extra — a dev group pinning the old band
+    # Must move in lockstep with the extra — a dev group pinning the old band
     # makes the project unsatisfiable against its own extra.
     "djangorestframework-mcp-server>=0.30",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.

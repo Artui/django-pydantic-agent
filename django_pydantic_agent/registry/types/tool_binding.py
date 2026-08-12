@@ -10,9 +10,8 @@ from django_pydantic_agent.registry.types.tool_spec import ToolSpec
 class ToolBinding:
     """A registered tool plus the JSON Schema derived from its signature.
 
-    The schema is computed once at registration (including the
-    ``x-destructive`` / ``x-category`` extensions) and carried alongside
-    the spec so tool listings don't re-introspect on every request.
+    The schema is computed once at registration and carried alongside the spec,
+    so a tool listing does not re-introspect on every request.
     """
 
     spec: ToolSpec

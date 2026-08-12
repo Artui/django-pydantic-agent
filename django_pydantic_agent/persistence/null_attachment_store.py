@@ -10,13 +10,12 @@ from django_pydantic_agent.persistence.types.opened_attachment import OpenedAtta
 class NullAttachmentStore:
     """The default attachment store: uploads disabled, server stays stateless.
 
-    ``save`` is never reached — the
-    A transport's attachments view detects this store and returns ``410 Gone`` so a
-    misconfigured client gets a clear "uploads are off" signal instead of a
-    silent success. ``open`` returns ``None`` (every fetch is a 404) and
-    ``delete`` is a no-op, so the endpoint is inert until a real store is
-    configured. ``save`` still raises if called directly, to fail loudly rather
-    than fabricate a ref.
+    A transport's attachments view detects this store and answers ``410 Gone``,
+    so a misconfigured client gets a clear "uploads are off" signal rather than a
+    silent success, and ``save`` is never reached. Called directly it raises,
+    rather than fabricating a ref. ``open`` returns ``None`` so every fetch is a
+    404, and ``delete`` is a no-op: the endpoint is inert until a real store is
+    configured.
     """
 
     async def save(self, upload: UploadedFile, *, request: HttpRequest) -> AttachmentRef:

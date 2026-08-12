@@ -26,27 +26,22 @@ class AuditCapability(AbstractCapability[Any]):
     """Records every tool execution to an :class:`AuditLogger` sink.
 
     A Pydantic-AI capability on the ``wrap_tool_execute`` lifecycle hook, so it
-    times and records **every** tool the agent runs — registry tools, drf-mcp /
-    spec-toolset bridges, attachment and skill tools alike — where the old
-    per-tool wrapper saw only the registry.
+    times and records **every** tool the agent runs: registry tools, the drf-mcp
+    and spec bridges, attachment and skill tools alike.
 
-    Recording is **non-raising**: a sink that throws is caught and logged to the
-    ``django_pydantic_agent.audit`` Python logger, so a broken audit backend degrades to
-    lost audit records, never a broken agent run.
+    Recording is **non-raising**. A sink that throws is caught and logged to the
+    ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
+    costs audit records rather than the run.
 
-    ``ip_address`` / ``organization_id`` pre-fill the matching
-    :class:`AuditEvent` fields for every event this capability records — a
-    multi-tenant host can pass its org scope.
-
-    ⭐ **The IP is read from the run's ``deps`` first, and only then from the
-    constructor.** ``AgentDeps.ip_address`` is per-run; a constructor argument
-    is per-agent. Taking the IP only from the constructor is what forced a
-    transport to build a fresh agent for every request — the exact closure
-    ``AgentDeps`` exists to replace — and the failure it produces if you build
-    once anyway is silent: every audit record carries the IP of whoever
-    happened to arrive first. Deps that carry no ``ip_address`` (a project's own
-    deps type, or a run that leaves it unset) fall back to the constructor
-    value, so nothing that already worked changes.
+    Args:
+        logger: The sink each :class:`AuditEvent` is recorded to.
+        ip_address: Fallback client IP, used only when the run's deps carry no
+            ``ip_address``. Per-run deps come first because a constructor
+            argument is per-agent: taking the IP from it alone forces a fresh
+            agent per request, and building once anyway fails silently, with
+            every record carrying the IP of whoever arrived first.
+        organization_id: Org scope stamped onto every event, for a multi-tenant
+            host.
     """
 
     def __init__(
@@ -63,14 +58,11 @@ class AuditCapability(AbstractCapability[Any]):
     def get_ordering(self) -> CapabilityOrdering:
         """Pin audit as the **outermost** capability in the chain.
 
-        Audit is the observability layer: its ``wrap_tool_execute`` should
-        surround every other capability's execution hooks so it records the tool
-        regardless of what else composes the run. Declaring the position here
-        (rather than relying on list order at the ``build_agent`` call site)
-        makes composition deterministic once a second capability — e.g.
-        :class:`~django_pydantic_agent.policy.guard.tool_guard.ToolGuard` — joins the
-        chain: pydantic-ai's ``CombinedCapability`` topologically sorts by these
-        constraints, so audit stays outermost no matter the insertion order.
+        Its ``wrap_tool_execute`` has to surround every other capability's
+        execution hooks so the tool is recorded whatever else composes the run.
+        Declaring it here rather than relying on list order at the
+        ``build_agent`` call site keeps that true however the capabilities are
+        inserted, since pydantic-ai sorts by these constraints.
         """
         return CapabilityOrdering(position="outermost")
 
@@ -84,8 +76,6 @@ class AuditCapability(AbstractCapability[Any]):
         handler: WrapToolExecuteHandler,
     ) -> Any:
         started = time.perf_counter()
-        # Resolved per call, off the run: see the class docstring for why the
-        # constructor cannot be the only source.
         ip_address = self._resolve_ip_address(ctx)
         try:
             result = await handler(args)
@@ -112,9 +102,8 @@ class AuditCapability(AbstractCapability[Any]):
     def _resolve_ip_address(self, ctx: RunContext[Any]) -> str | None:
         """This run's client IP: ``deps.ip_address``, else the constructed one.
 
-        ``getattr`` rather than an attribute read because the deps type is the
-        host's to choose — a project passing its own deps class, or pydantic-ai
-        passing ``None``, simply has no such field, and that is the fallback
+        ``getattr`` because the deps type is the host's to choose: a project's
+        own deps class, or ``None``, has no such field, and that is the fallback
         case rather than an error.
         """
         from_deps = getattr(ctx.deps, "ip_address", None)

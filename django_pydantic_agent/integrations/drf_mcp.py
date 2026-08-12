@@ -1,31 +1,7 @@
 """In-process bridge from a ``drf-mcp-server`` registry to a Pydantic-AI toolset.
 
-Requires the ``django-pydantic-agent[drf-mcp]`` extra. Imported lazily, only when
-a drf-mcp server is configured, so the dependency on ``rest_framework_mcp``
-stays optional.
-
-The agent acts as the **logged-in user**: every call hands ``request`` and
-``request.user`` to drf-mcp's public in-process surface
-(:meth:`~rest_framework_mcp.MCPServer.list_tools` /
-:meth:`~rest_framework_mcp.MCPServer.acall_tool`, drf-mcp 0.9+), so drf-mcp's own
-validation and permission checks apply exactly as they would over HTTP — just
-without the network hop, and without reaching into handler internals.
-
-Tool schemas are sourced from drf-mcp's own ``tools/list`` (via ``list_tools``)
-rather than re-derived locally, so the in-process bridge advertises the *same*
-merged ``inputSchema`` the HTTP transport would — including a selector tool's
-filter / ordering / pagination arguments and the ``additionalProperties`` policy,
-not just the input serializer's fields.
-
-Error semantics follow the MCP protocol-vs-tool boundary:
-
-- malformed *arguments shape* (JSON-RPC ``-32602``) and tool-level
-  ``validation_error`` results → :class:`pydantic_ai.ModelRetry`, so the
-  model retries with the field errors instead of the run dying;
-- other tool-level failures (``service_error`` / ``not_found`` ``isError``
-  results) → returned as the tool's content, model-readable;
-- genuine protocol faults (unknown tool, auth, rate limits) → a hard
-  ``RuntimeError`` that aborts the run.
+Requires the ``django-pydantic-agent[drf-mcp]`` extra, so consumers import this
+module lazily and the dependency on ``rest_framework_mcp`` stays optional.
 """
 
 from __future__ import annotations
@@ -43,34 +19,45 @@ from rest_framework_mcp import JsonRpcError, JsonRpcErrorCode
 
 from django_pydantic_agent.constants import DESTRUCTIVE_METADATA_KEY
 
-# Tool args pass through unvalidated: the parameter schemas advertised to the
-# model come verbatim from drf-mcp's ``tools/list`` (advisory, not a Pydantic
-# model), and the real validation is drf-mcp's own serializer at call time — so
-# the per-tool validator is a no-op, exactly the split the HTTP transport has.
+# A no-op validator: the parameter schemas advertised to the model come verbatim
+# from drf-mcp's ``tools/list`` (advisory, not a Pydantic model), and the real
+# validation is drf-mcp's own serializer at call time — the same split the HTTP
+# transport has.
 _TOOL_ARGS_VALIDATOR = SchemaValidator(schema=core_schema.any_schema())
 
 
 class DRFMCPToolset(AbstractToolset[Any]):
     """Exposes a drf-mcp ``MCPServer``'s tools as a Pydantic-AI toolset.
 
-    Built per request so the acting user is the current AG-UI user. Tool
-    schemas and execution both route through drf-mcp's public in-process
-    surface (``MCPServer.list_tools`` / ``acall_tool``), so the advertised
-    parameters, serializer validation, and permissions match the HTTP transport
-    exactly. Tool definitions carry the default ``kind="function"`` — the
-    in-process kind the run loop routes into ``call_tool``, which then emits a
-    ``TOOL_CALL_RESULT`` and lets the model continue (an ``external`` tool
-    would instead be deferred to the client and never run).
+    Built per request, so the agent acts as the request's logged-in user. Both
+    schemas and execution route through drf-mcp's public in-process surface
+    (``MCPServer.list_tools`` / ``acall_tool``, drf-mcp 0.9+), so the advertised
+    parameters, serializer validation and permissions match the HTTP transport
+    exactly — without the network hop. Tool definitions carry the default
+    ``kind="function"``, the in-process kind the run loop calls itself; an
+    ``external`` tool would instead be deferred to the client and never run.
 
-    ``exclude_names`` carries the ``@tool`` registry's names: on a collision
-    the registry tool wins (the same rule ``build_tool_catalog`` applies) and
-    the drf-mcp twin is skipped — otherwise pydantic-ai raises ``UserError``
-    for the duplicate name at run time.
+    Failures split three ways, along MCP's protocol-vs-tool boundary:
 
-    ``max_retries`` is each tool's retry budget: how many times a
-    :class:`pydantic_ai.ModelRetry` (malformed arguments, a service-raised
-    validation error) is fed back to the model before the run aborts. Defaults
-    to ``1``, matching pydantic-ai's own function-tool default.
+    - JSON-RPC ``-32602`` and tool-level ``validation_error`` results raise
+      :class:`pydantic_ai.ModelRetry`, so the model retries with the field
+      errors instead of the run dying;
+    - other tool-level failures (``service_error`` / ``not_found``) are returned
+      as the tool's content, for the model to read;
+    - protocol faults (auth, rate limits, an internal error) raise
+      ``RuntimeError`` and abort the run.
+
+    Args:
+        server: The drf-mcp ``MCPServer`` whose registry is bridged.
+        request: The request carried into every call; its ``user`` is the
+            acting user.
+        exclude_names: Names the ``@tool`` registry has already claimed. A
+            colliding drf-mcp tool is skipped, so the registry wins — the rule
+            ``build_tool_catalog`` applies — because pydantic-ai raises
+            ``UserError`` for a duplicate name at run time.
+        max_retries: Per-tool retry budget: how many times a ``ModelRetry`` is
+            fed back to the model before the run aborts. The default matches
+            pydantic-ai's own function-tool default.
     """
 
     def __init__(
@@ -85,9 +72,9 @@ class DRFMCPToolset(AbstractToolset[Any]):
         self._request = request
         self._exclude_names = exclude_names
         self._max_retries = max_retries
-        # Tool defs are loaded lazily in ``get_tools`` (async): drf-mcp's
-        # ``tools/list`` may touch the DB (per-user listing permissions), which
-        # is unsafe to run synchronously inside the async view's ``__init__``.
+        # Loaded lazily in ``get_tools``: drf-mcp's ``tools/list`` may touch the
+        # DB for per-user listing permissions, which Django forbids on the async
+        # event loop this is constructed in.
         self._tool_defs: list[ToolDefinition] | None = None
 
     @property
@@ -95,12 +82,7 @@ class DRFMCPToolset(AbstractToolset[Any]):
         return "drf-mcp"
 
     async def get_tools(self, ctx: Any) -> dict[str, ToolsetTool[Any]]:
-        """Load tool defs from drf-mcp's ``tools/list`` once, then wrap them.
-
-        Loading runs in a thread (``sync_to_async``) because the sync
-        ``list_tools`` may evaluate per-user listing permissions against the DB,
-        which Django forbids on the async event loop.
-        """
+        """Load tool defs from drf-mcp's ``tools/list`` once, then wrap them."""
         if self._tool_defs is None:
             self._tool_defs = await sync_to_async(self._load_tool_defs)()
         return {
@@ -116,28 +98,8 @@ class DRFMCPToolset(AbstractToolset[Any]):
     def _load_tool_defs(self) -> list[ToolDefinition]:
         """Page through drf-mcp's ``tools/list``, mapping each tool to a def.
 
-        Uses the authoritative merged ``inputSchema`` (serializer fields + a
-        selector's filter / ordering / pagination args + the
-        ``additionalProperties`` policy) verbatim, so nothing the model could
-        send over HTTP is silently dropped in-process. Names colliding with
-        the ``@tool`` registry are skipped (registry wins).
-
-        Carries each tool's **destructiveness** onto the def's ``metadata`` so a
-        server-side gate (``ToolGuard``) can require approval for mutating
-        tools. drf-mcp already derives MCP ``ToolAnnotations`` per tool
-        (``readOnlyHint`` true for selectors, false for services) and lets a
-        project override them per registration — so we trust the *annotation*
-        (``readOnlyHint is False`` → mutates) rather than re-deriving from the
-        DRF kind. ``destructiveHint`` is omitted on read-only tools, so keying
-        on ``readOnlyHint`` (not ``destructiveHint``) is what lets a project's
-        ``annotations={"destructiveHint": False}`` override exempt a mutation.
-
-        Also carries drf-mcp's ``outputSchema`` (advertised by default via
-        ``INCLUDE_OUTPUT_SCHEMA``) onto ``return_schema`` so the tool's return
-        type reaches the model — chiefly so a harness ``CodeMode`` capability
-        renders each bridged tool as a **typed** Python stub (``-> <Model>``)
-        inside its ``run_code`` sandbox instead of ``-> Any``. Absent when a
-        project turns the output schema off, in which case the stub is untyped.
+        The merged ``inputSchema`` is used verbatim, so nothing the model could
+        send over HTTP is silently dropped in process.
         """
         defs: list[ToolDefinition] = []
         cursor: str | None = None
@@ -151,11 +113,20 @@ class DRFMCPToolset(AbstractToolset[Any]):
                 if tool["name"] in self._exclude_names:
                     continue
                 annotations = tool.get("annotations") or {}
+                # Destructiveness rides ``metadata`` so ``ToolGuard`` can gate a
+                # bridged mutation. Key on ``readOnlyHint``, not
+                # ``destructiveHint``: drf-mcp omits the latter on read-only
+                # tools, so only the former lets a project's per-registration
+                # ``annotations`` override exempt a mutation.
                 metadata = (
                     {DESTRUCTIVE_METADATA_KEY: True}
                     if annotations.get("readOnlyHint") is False
                     else None
                 )
+                # Passing drf-mcp's ``outputSchema`` through as ``return_schema``
+                # is what lets a harness ``CodeMode`` capability render the tool
+                # as a typed stub rather than ``-> Any``. Absent when a project
+                # turns ``INCLUDE_OUTPUT_SCHEMA`` off.
                 output_schema = tool.get("outputSchema")
                 defs.append(
                     ToolDefinition(
@@ -184,19 +155,13 @@ class DRFMCPToolset(AbstractToolset[Any]):
         )
         if isinstance(result, JsonRpcError):
             if result.code == JsonRpcErrorCode.INVALID_PARAMS:
-                # ⚠ **`-32602` now covers an unknown tool as well as malformed
-                # arguments, and the two can no longer be told apart by code.**
-                # drf-mcp emitted `-32004` for an unknown tool until 0.24.0,
-                # where the MCP spec's own worked example moved it onto
-                # `-32602`. This branch used to mean "bad arguments" alone.
-                #
-                # Both are now treated as retryable, deliberately. `-32602` is
-                # by definition a fault in the request *the model produced* —
-                # a wrong name or wrong arguments — and both are things it can
-                # change on a second attempt. Killing an entire run because a
-                # model guessed a tool name wrong is the harsher failure and
-                # the one a user notices; pydantic-ai bounds the retries, so a
-                # genuinely unfixable call still ends the run, just later.
+                # Since drf-mcp 0.24.0 `-32602` covers an unknown tool as well
+                # as malformed arguments (it emitted `-32004` for the former
+                # before), so the two can no longer be told apart by code. Both
+                # are retried deliberately: `-32602` is by definition a fault in
+                # the request the model produced, and both a wrong name and
+                # wrong arguments are things it can change. pydantic-ai bounds
+                # the retries, so an unfixable call still ends the run.
                 raise ModelRetry(
                     _retry_message(
                         result.message,
@@ -208,15 +173,11 @@ class DRFMCPToolset(AbstractToolset[Any]):
             # something the model can rewrite its way out of.
             raise RuntimeError(f"drf-mcp tool {name!r} failed: {result.message}")
         if result.get("isError"):
-            # drf-mcp returns business failures as ``isError`` tool results.
-            # Service-raised validation still earns a retry; other tool-level
-            # failures (business rules, missing rows) are returned as content
-            # the model can read and act on.
             error = _parse_tool_error(result)
             if error.get("type") == "validation_error":
-                # Single-line statements: Python 3.11's tracer attributes a
-                # multi-line ``raise X(...)`` to the argument line, leaving
-                # the ``raise`` line "uncovered" and tripping the 100% gate.
+                # Kept on separate lines: Python 3.11's tracer attributes a
+                # multi-line ``raise X(...)`` to the argument line, leaving the
+                # ``raise`` line uncovered and tripping the 100% gate.
                 message = error.get("message", "invalid arguments")
                 raise ModelRetry(_retry_message(message, error.get("detail")))
             return {"error": error}
@@ -225,13 +186,10 @@ class DRFMCPToolset(AbstractToolset[Any]):
     def _advertised_names(self, name: str) -> list[str] | None:
         """The tools this toolset offers, when the failure looks like a bad name.
 
-        ⭐ This is what makes retrying an unknown tool worth doing rather than
-        merely survivable: a model that invented a name needs the real ones, and
-        a bare "unknown tool" tells it nothing it did not already know.
-
-        ``None`` whenever there is nothing useful to add — the name *was*
-        advertised (so the fault is the arguments, which the detail already
-        describes), or ``get_tools`` has not run yet and the cache is empty.
+        Naming them is what makes retrying an invented name worth doing rather
+        than merely survivable. ``None`` when there is nothing useful to add:
+        the name *was* advertised, so the fault is the arguments, or
+        ``get_tools`` has not run and the cache is empty.
         """
         if self._tool_defs is None:
             return None
@@ -242,8 +200,9 @@ class DRFMCPToolset(AbstractToolset[Any]):
 def _parse_tool_error(result: dict[str, Any]) -> dict[str, Any]:
     """Extract the ``{"error": {...}}`` payload from an ``isError`` result.
 
-    drf-mcp encodes it as JSON text in ``content[0]``; fall back to a generic
-    shape if a future encoding changes (never raise while reporting an error).
+    drf-mcp encodes it as JSON text in ``content[0]``. Falls back to a generic
+    shape rather than raising, so a changed encoding cannot turn reporting an
+    error into a second error.
     """
     content = result.get("content") or []
     text: Any = content[0].get("text", "") if content else ""
@@ -256,10 +215,10 @@ def _parse_tool_error(result: dict[str, Any]) -> dict[str, Any]:
 
 def _retry_message(message: str, detail: Any, *, available: list[str] | None = None) -> str:
     """Compose the ``ModelRetry`` text: the server's message, plus whichever of
-    field-level detail or the available tool names actually helps.
+    field-level detail or the available tool names helps.
 
-    Never both: a `-32602` is either about the *name* or about the *arguments*,
-    and the caller already decided which by whether the name was advertised.
+    Never both — a `-32602` is about either the name or the arguments, and the
+    caller already decided which by whether the name was advertised.
     """
     if available is not None:
         names: str = ", ".join(sorted(available)) or "none"

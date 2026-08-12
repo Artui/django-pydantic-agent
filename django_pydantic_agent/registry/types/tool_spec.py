@@ -11,42 +11,35 @@ from django_pydantic_agent.constants import ToolCategory
 class ToolSpec:
     """Canonical declaration of a server-side tool.
 
-    A ``ToolSpec`` bundles the callable with the metadata the registry
-    needs to expose it to a Pydantic-AI agent and to a frontend: a
-    stable name, a human-facing description, a ``destructive`` risk
-    flag, and a coarse ``category``.
+    Bundles the callable with the metadata the registry needs to expose it to a
+    Pydantic-AI agent and to a frontend.
     """
 
     name: str
-    """Stable identifier exposed to the agent. Must be unique within a
+    """Stable identifier exposed to the agent, unique within a
     :class:`~django_pydantic_agent.registry.tool_registry.ToolRegistry`."""
 
     fn: Callable[..., Any]
-    """The Python callable that implements the tool. Must have typed
-    parameters; the registry derives a JSON Schema from the signature."""
+    """The callable implementing the tool. Its parameters must be typed; the
+    registry derives a JSON Schema from the signature."""
 
     description: str
-    """User-facing summary shown to the agent. The first line is what
-    most clients display."""
+    """Summary shown to the agent. Most clients display the first line."""
 
     destructive: bool = False
-    """If ``True``, calling this tool may mutate state. The registry
-    stamps ``x-destructive: true`` into the tool's JSON Schema so
-    frontends can gate it behind a confirmation step."""
+    """Whether calling this tool may mutate state. Stamped as
+    ``x-destructive`` so a frontend can gate it behind a confirmation step."""
 
     category: ToolCategory = ToolCategory.OTHER
-    """Coarse capability grouping. Surfaced as ``x-category`` in the
-    JSON Schema."""
+    """Coarse capability grouping, stamped as ``x-category``."""
 
     confirm: str | None = None
-    """Optional human-readable confirmation prompt for a destructive tool
-    (e.g. "Activate this project?"). Stamped as ``x-confirm`` so the frontend
-    can show it instead of a generic "Run <tool>?"."""
+    """A confirmation prompt for a destructive tool, stamped as ``x-confirm``,
+    shown instead of a generic "Run <tool>?"."""
 
     summary: str | None = None
-    """Optional short label for the tool (e.g. "Query orders"). Stamped as
-    ``x-summary`` so the frontend shows it on the tool-call card instead of the
-    raw tool name."""
+    """A short label, stamped as ``x-summary``, shown on the tool-call card
+    instead of the raw tool name."""
 
 
 __all__ = ["ToolSpec"]

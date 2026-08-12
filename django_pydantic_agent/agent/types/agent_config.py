@@ -27,8 +27,8 @@ class AgentConfig:
     """System/instructions prompt for the agent."""
 
     audit_logger: AuditLogger | None = None
-    """Wraps every server-side tool call for timing + success/failure
-    records. ``None`` means no auditing (a no-op logger)."""
+    """Wraps every server-side tool call for timing and success/failure
+    records. ``None`` means no auditing."""
 
     audit_ip_address: str | None = None
     """Client IP stamped onto every audit event this agent records (the view
@@ -47,19 +47,18 @@ class AgentConfig:
     """Pydantic-AI capabilities passed to the ``Agent``."""
 
     tool_guard: ToolGuardConfig | None = None
-    """Server-side destructive-tool approval policy. When set and
-    ``enabled``, :func:`~django_pydantic_agent.agent.agent_factory.build_agent` composes
-    a :class:`~django_pydantic_agent.policy.guard.tool_guard.ToolGuard` capability built
-    from the registry's destructive tools. ``None`` (or disabled) leaves the
-    agent ungated."""
+    """Server-side destructive-tool approval policy. When set and ``enabled``,
+    ``build_agent`` composes a
+    :class:`~django_pydantic_agent.policy.guard.tool_guard.ToolGuard` built from
+    the registry's destructive tools; ``None`` or disabled leaves the agent
+    ungated."""
 
     tool_failure: ToolFailureConfig = field(default_factory=ToolFailureConfig)
-    """What an unhandled tool exception costs. Defaults to on, so a raising
-    tool fails its own call and the run carries on; the exception still reaches
+    """What an unhandled tool exception costs. On by default, so a raising tool
+    fails its own call and the run carries on, with the exception still reaching
     the audit logger and the Python logger. A plain record rather than
-    ``… | None`` because there is no third state: the policy is either composed
-    or it isn't, and ``None`` would have to mean "on" to keep the default,
-    which reads backwards next to ``tool_guard`` above."""
+    ``... | None`` because there is no third state, and ``None`` would have to
+    mean "on" to keep that default — backwards next to ``tool_guard``."""
 
 
 __all__ = ["AgentConfig"]

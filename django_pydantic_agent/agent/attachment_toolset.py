@@ -30,19 +30,16 @@ def build_attachment_toolset(
 ) -> FunctionToolset[None]:
     """Build a per-request toolset exposing ``read_attachment`` over ``store``.
 
-    Mirrors the per-request ``drf-mcp`` bridge: the request is captured in a
-    closure so ``store.open`` is owner-scoped to the acting user — the model can
-    only read files that user uploaded, never another's by id. Wired in by a
-    transport's agent build when an attachment store is configured, so the wire
-    stays protocol-vanilla: attachments travel as lightweight refs and the bytes
-    are reached here, server-side, only when the model asks.
+    The request is captured in a closure so ``store.open`` stays owner-scoped to
+    the acting user: the model can only read files that user uploaded, never
+    another's by id. Attachments therefore travel the wire as lightweight refs
+    and the bytes are reached here, server-side, only when the model asks.
 
-    ``inline`` decides which binary types come back as file content the model
-    can actually look at, and how large a file may be before it is described
-    rather than attached; ``None`` takes the
+    ``inline`` decides which binary types come back as file content and how large
+    a file may be before it is described rather than attached; ``None`` takes the
     :class:`~django_pydantic_agent.agent.types.attachment_inline_config.AttachmentInlineConfig`
-    defaults. Read its docstring before widening either — inlined bytes go to
-    the provider on every model request left in the run.
+    defaults. Read its docstring before widening either — inlined bytes go to the
+    provider on every model request left in the run.
     """
     resolved = AttachmentInlineConfig() if inline is None else inline
 
@@ -61,26 +58,24 @@ def build_attachment_toolset(
             return f"No attachment with id {attachment_id!r} is available."
         return _render(opened, resolved)
 
-    # ``read_attachment`` is a plain (no-``RunContext``) tool; pydantic-ai's
-    # FunctionToolset overloads only type the ctx-taking form, so cast at the
-    # boundary rather than reshape the function around the type checker.
+    # ``read_attachment`` takes no ``RunContext``, and pydantic-ai's
+    # ``FunctionToolset`` overloads only type the ctx-taking form.
     return FunctionToolset([cast("Any", read_attachment)], id="django-pydantic-agent-attachments")
 
 
 def _render(opened: OpenedAttachment, inline: AttachmentInlineConfig) -> str | ToolReturn:
     """Decoded text, else the bytes as file content, else a one-line manifest."""
     ref = opened.ref
-    # The tool needs the whole content to decode / classify; read it under a
-    # ``with`` so the streaming handle is always closed.
+    # Read under a ``with`` so the streaming handle is always closed.
     with opened.content as handle:
         data = handle.read()
     text = _as_text(data, ref.mime)
     if text is not None:
         return text
     if ref.mime in inline.media_types:
-        # Size the cap off the bytes in hand, not ``ref.size``: a store's
-        # declared size and what it hands back need not agree, and only the
-        # bytes reach the provider.
+        # Cap against the bytes in hand, not ``ref.size``: a store's declared
+        # size need not match what it hands back, and only bytes reach the
+        # provider.
         if len(data) <= inline.max_bytes:
             return ToolReturn(
                 return_value=(

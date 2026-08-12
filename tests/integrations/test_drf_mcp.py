@@ -29,11 +29,10 @@ async def test_toolset_exposes_drf_tools_with_schemas() -> None:
     schema = tool_def.parameters_json_schema
     assert schema["type"] == "object"
     # Sourced from drf-mcp's own tools/list, so the merged inputSchema carries
-    # the `additionalProperties` policy too (the old serializer-only path never
-    # stamped it). `add` defaults to UnknownArguments.REJECT → a closed schema.
+    # the `additionalProperties` policy too; `add` defaults to REJECT.
     assert schema["additionalProperties"] is False
-    # Advertised as an in-process function (not a deferred `external` call), so
-    # Pydantic-AI's run loop actually invokes our `call_tool`.
+    # An in-process function rather than a deferred `external` call, so
+    # pydantic-ai's run loop actually invokes our `call_tool`.
     assert tool_def.kind == "function"
 
 
@@ -132,15 +131,11 @@ async def test_toolset_invokes_drf_tool_as_acting_user() -> None:
 
 
 async def test_an_unknown_tool_is_now_retryable_not_fatal() -> None:
-    """⚠ **Changed by drf-mcp 0.24.0, and the change is upstream's.** An unknown
-    tool used to arrive as `-32004` and this bridge killed the run. The MCP
-    spec's own worked example puts it on `-32602`, so it is no longer
-    distinguishable from malformed arguments by code.
-
-    Retrying is the deliberate choice: `-32602` is a fault in the request *the
-    model produced* — a wrong name or wrong arguments — and both are things it
-    can change. Ending a whole run because a model guessed a name wrong is the
-    harsher failure, and pydantic-ai bounds the retries anyway.
+    """**Changed by drf-mcp 0.24.0, and the change is upstream's.** An unknown
+    tool used to arrive as `-32004` and this bridge killed the run; the MCP spec's
+    own worked example puts it on `-32602`, indistinguishable from malformed
+    arguments. Retrying is the deliberate choice, since both are faults in the
+    request the model produced and both are things it can change.
     """
     toolset = DRFMCPToolset(server, _request())
     with pytest.raises(ModelRetry, match="Unknown tool"):
@@ -148,7 +143,7 @@ async def test_an_unknown_tool_is_now_retryable_not_fatal() -> None:
 
 
 async def test_a_bad_name_retry_names_the_real_tools() -> None:
-    """⭐ What makes retrying worth doing rather than merely survivable: a model
+    """What makes retrying worth doing rather than merely survivable: a model
     that invented a name needs the real ones. Requires ``get_tools`` to have run
     — which, in a real agent run, it always has."""
     toolset = DRFMCPToolset(server, _request())
@@ -193,10 +188,9 @@ async def test_malformed_arguments_raise_model_retry_with_detail() -> None:
 
 
 async def test_invalid_params_error_raises_model_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Twin of the test above driven at the payload level: on Python 3.11 the C
-    # tracer drops the bridge frame across drf-mcp's real ``acall_tool`` executor
-    # hop, leaving the ``INVALID_PARAMS`` → ``ModelRetry`` branch "uncovered" there
-    # even though it runs — this monkeypatched twin records it reliably.
+    # Payload-level twin of the test above: on Python 3.11 the C tracer drops the
+    # bridge frame across drf-mcp's real executor hop, leaving the branch
+    # uncovered there even though it runs.
     async def fake_call(name: str, arguments: object = None, **_kwargs: object) -> JsonRpcError:
         return JsonRpcError(JsonRpcErrorCode.INVALID_PARAMS, "Invalid arguments")
 
@@ -223,10 +217,8 @@ async def test_service_error_result_returns_model_readable_content() -> None:
 
 
 async def test_validation_error_payload_raises_model_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Same branch as the integration test above, driven at the payload level:
-    # Python 3.11's C tracer intermittently drops the bridge frames when the
-    # call rides drf-mcp's real executor hop, leaving the branch "uncovered"
-    # there even though it runs — this monkeypatched twin records reliably.
+    # Payload-level twin of the integration test above, for the same Python 3.11
+    # tracer reason: the branch runs there but is not recorded.
     import json as json_module
 
     async def fake_call(

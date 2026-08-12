@@ -15,45 +15,31 @@ def build_tool_catalog(
 ) -> list[dict[str, Any]]:
     """The agent's server-tool catalog for the frontend to label tool-call cards.
 
-    Server-side tools (the ``@tool`` registry, and drf-mcp tools when a
-    ``drf_mcp_server`` is passed) execute server-side, so their
-    JSON Schema never reaches the browser — the web component can't read an
-    ``x-summary`` off it. This catalog is the channel for those labels: the
-    component fetches it via ``data-tools-url`` and maps tool name → label.
+    Server-side tools execute server-side, so their JSON Schema never reaches the
+    browser and a web component cannot read an ``x-summary`` off it. This catalog
+    is that channel: the component fetches it and maps tool name to label.
 
     Each entry is ``{"name", "summary", "description"?}``. ``summary`` is always
-    present, resolved from the single source of truth with a fallback chain:
+    present, resolved from ``@tool(summary=...)`` for registry tools and from
+    ``display_name`` then ``title`` for drf-mcp ones, falling back to a
+    prettified name. ``description`` is carried through when the source has one.
 
-    - registry tools → ``@tool(summary=…)`` → a prettified name;
-    - drf-mcp tools → ``display_name`` → ``title`` → a prettified name.
+    **The catalog covers these sources and no others.** A tool attached through
+    a transport's ``capabilities=`` / ``toolsets=`` is not listed and its card
+    falls back to a prettified name — a degraded label, not a broken call.
+    Enumerating those is not possible here: pydantic-ai exposes tool names only
+    through ``AbstractToolset.get_tools``, which is async and needs a
+    ``RunContext``, while this runs at configuration time with no run in sight.
+    Route spec tools through a transport's ``service_specs=`` to keep labels.
 
-    ``description`` (a longer blurb for tooltips) is included when available
-    (``ToolSpec.description`` / drf-mcp ``display_description`` → ``description``).
-    Registry tools win on name collisions.
+    Args:
+        registry: The ``@tool`` registry, listed first; it wins name collisions.
+        drf_mcp_server: A drf-mcp server whose registered tools are appended.
+        service_specs: A ``name -> spec`` mapping whose tools are appended, each
+            described by its service or selector callable's docstring.
 
-    ⚠ **The catalog covers the sources named here, and no others.** Tools
-    reaching the agent through a transport's ``capabilities=`` / ``toolsets=``
-    — an arbitrary ``AbstractToolset`` a project attaches directly — are **not**
-    listed, and their cards fall back to a prettified name in the frontend.
-
-    ⛔ **That boundary is deliberate, and enumerating them is not a missing
-    feature.** Pydantic-AI's enumeration is ``AbstractToolset.get_tools``, which
-    is ``async`` and takes a ``RunContext``; this function runs at configuration
-    time, from a view, with no run in sight. No common surface exposes tool
-    names before a run, so any attempt here would work for the toolsets we
-    happen to recognise and silently skip the rest — a catalog that *looks*
-    complete and is not, which is the exact failure mode this stack keeps
-    fixing everywhere else.
-
-    ⭐ **Prefer routing spec tools through the source that is covered.** A
-    ``SpecToolset`` / ``SpecCapability`` handed to django-ag-ui's
-    ``service_specs=`` (0.30+) is attached as itself *and* enumerated here, so
-    the powerful form keeps its labels; only a toolset with no such route stays
-    unlabelled.
-
-    ⚠ Unlabelled is a **degraded label, not a broken call** — the frontend
-    prettifies the tool name and the tool works normally. That is why the
-    boundary is documented rather than closed with a partial guess.
+    Returns:
+        One entry per tool, in that source order.
     """
     catalog: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -81,9 +67,8 @@ def build_tool_catalog(
 def _spec_description(spec: Any) -> str | None:
     """A spec tool's blurb: the docstring of its service / selector callable.
 
-    Read via ``getattr`` (not isinstance) so this never imports the drf-services
-    spec classes — the ``[spec-tools]`` extra need not be installed to fetch the
-    catalog when ``SERVICE_SPECS`` is unset.
+    Read through ``getattr`` rather than ``isinstance`` so this never imports the
+    drf-services spec classes; the ``[spec-tools]`` extra stays optional.
     """
     callable_ = getattr(spec, "service", None) or getattr(spec, "selector", None)
     return inspect.getdoc(callable_) if callable_ is not None else None

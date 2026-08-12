@@ -9,9 +9,9 @@ from django_pydantic_agent.persistence.types.conversation_meta import Conversati
 class NullConversationStore:
     """The default store: no-op, keeping the server stateless.
 
-    ``load`` always returns ``None`` and ``save`` / ``delete`` do nothing, so
-    the conversation lives entirely in the client's posted history (today's
-    behaviour). The view treats this store as "persistence off".
+    ``load`` returns ``None`` and ``save`` / ``delete`` do nothing, so the
+    conversation lives entirely in the client's posted history. A transport
+    treats this store as "persistence off".
     """
 
     async def load(self, thread_id: str, *, request: HttpRequest) -> Conversation | None:

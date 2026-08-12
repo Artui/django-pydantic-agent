@@ -7,19 +7,14 @@ from dataclasses import dataclass
 class AttachmentRef:
     """A durable, lightweight reference to one uploaded file.
 
-    What an upload returns and what travels on the wire — never the bytes.
-    A user drops a file into the composer, it is uploaded out-of-band to the
-    :class:`~django_pydantic_agent.persistence.attachments_view.AttachmentsView`, and the
-    server hands back this ref; the client holds it on the message and the agent
-    reads the actual bytes server-side via the ``read_attachment`` tool. Keeping
-    the AG-UI message stream free of base64 mirrors how the tool catalog keeps
-    schemas off the wire.
+    What an upload returns and what travels on the wire — never the bytes. The
+    file is uploaded out of band, the client holds this ref on the message, and
+    the agent reads the bytes server-side through the ``read_attachment`` tool.
 
-    ``id`` is the opaque, owner-scoped handle the store resolves back to bytes;
-    ``mime`` is the declared content type (client-supplied, so treat it as a
-    hint); ``size`` is the byte count; ``url`` is an optional direct fetch URL
-    (e.g. the owner-checked download endpoint) and stays ``None`` unless a store
-    fills it in.
+    ``id`` is the opaque, owner-scoped handle the store resolves back to bytes.
+    ``mime`` is client-declared, so treat it as a hint. ``url`` is an optional
+    direct fetch URL, such as an owner-checked download endpoint, and stays
+    ``None`` unless a store fills it in.
     """
 
     id: str

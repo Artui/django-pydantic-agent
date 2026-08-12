@@ -30,41 +30,33 @@ class DefaultStepStore:
     """A durable, owner-scoped ``StepStore`` over the reference models.
 
     The database equivalent of the harness's own ``SqliteStepStore`` /
-    ``FileStepStore``: it structurally satisfies ``pydantic-ai-harness``'s
-    ``StepStore`` protocol (the ten async methods a ``StepPersistence``
-    capability calls) while partitioning every row by the resolved owner — so
-    one user can never read or resume another's runs, even by guessing a
-    ``run_id`` (the harness types carry no owner; this store adds it).
+    ``FileStepStore``. It structurally satisfies ``pydantic-ai-harness``'s
+    ``StepStore`` protocol — that protocol is upstream's, not this package's —
+    while partitioning every row by the resolved owner, so one user can never
+    read or resume another's runs even by guessing a ``run_id``. The owner is
+    entirely ours; no harness record carries one.
 
-    **Per-request.** Unlike a ``ConversationStore`` (a singleton whose methods
-    take ``request``), the protocol's methods carry no request, so this store
-    binds one at construction and is built **per request** — pass it through the
-    ``AGUIServer(step_store=...)`` factory, which the view calls with the live
-    request. Owner resolution runs inside each ``sync_to_async`` hop (it may
-    create a session row for the anonymous bucket, so it must stay off the event
-    loop), exactly as :class:`~django_pydantic_agent.persistence.model_conversation_store.ModelConversationStore`
-    does.
+    **Built per request**, unlike a ``ConversationStore`` singleton whose methods
+    each take a request: the protocol's methods carry none, so the request is
+    bound at construction. Owner resolution runs inside each ``sync_to_async``
+    hop, because it may create a session row for the anonymous bucket and must
+    stay off the event loop.
 
-    **Anonymous requests degrade, they don't crash.** When the request has no
-    owner and ``ALLOW_ANONYMOUS`` is off, ``resolve_owner_id`` refuses — the
-    capability's lifecycle hooks fire mid-run, so a raise would abort the run.
-    Instead every write no-ops and every read returns empty: the run still
-    streams, it just isn't recorded (an anonymous visitor has no durable
-    identity to resume under anyway). Pair the store with
-    ``require_authenticated=True`` (or ``ALLOW_ANONYMOUS``) for it to persist.
+    **An anonymous request degrades rather than crashing.** With no owner and
+    ``allow_anonymous`` off, every write no-ops and every read returns empty: the
+    capability's hooks fire mid-run, so refusing by raising would abort the run,
+    and an anonymous visitor has no durable identity to resume under anyway. Pair
+    the store with an authenticated mount for it to persist.
 
-    Enable the backing tables by adding ``"django_pydantic_agent.contrib.store"`` to
-    ``INSTALLED_APPS`` and running ``migrate`` (the same app the reference
-    conversation store uses). Requires the ``django-pydantic-agent[harness]`` extra.
+    Add ``"django_pydantic_agent.contrib.store"`` to ``INSTALLED_APPS`` and run
+    ``migrate`` for the backing tables. Requires the
+    ``django-pydantic-agent[harness]`` extra.
     """
 
     def __init__(self, request: HttpRequest, *, allow_anonymous: bool = False) -> None:
-        """``allow_anonymous`` governs whether an anonymous request is recorded.
-
-        ``False`` (the default) refuses them. This substrate reads no Django
-        settings: pass the value explicitly, matching the conversation store's
-        policy so two endpoints sharing a persistence strategy agree on it.
-        """
+        """Pass ``allow_anonymous`` explicitly: this substrate reads no Django
+        settings, and the value should match the conversation store's, so two
+        endpoints sharing a persistence strategy agree on it."""
         self._request = request
         self._allow_anonymous: bool = allow_anonymous
 

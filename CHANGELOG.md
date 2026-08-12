@@ -158,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every fix. ⇒ *A consumer can now combine this package with the current
   sibling on the day it ships.*
 
-  ⚠ **`pydantic-ai-harness` is an external 0.x package, where a minor bump is
+  **`pydantic-ai-harness` is an external 0.x package, where a minor bump is
   breaking by SemVer and we do not control the release.** That is the risky part
   of this change and it is a bet, not a proof: that the weekly drift job finds a
   breaking 0.x minor faster than a stale ceiling would have been noticed. The
@@ -186,20 +186,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Upstream windows moved to the releases that let a `FilterSet` own ordering**
   — `djangorestframework-mcp-server>=0.30,<0.31` and
-  `djangorestframework-pydantic-ai>=0.16,<0.17`. ⛔ **The previous pins could not
+  `djangorestframework-pydantic-ai>=0.16,<0.17`. **The previous pins could not
   admit either**: both siblings published while this package still required
   `<0.30` / `<0.16`, so a project on the current dpa could not install the
   ordering fix at all. Ordering itself needs no change here — dpa carries the
   conventions text, and both upstreams now speak the FilterSet's vocabulary.
 
-- ⛔ **The `[harness]` window widened to `<0.19`, from a `<0.17` that had gone
+- **The `[harness]` window widened to `<0.19`, from a `<0.17` that had gone
   stale against a published 0.18.1.** The extra resolved to 0.16.x and could not
   combine with a project on the current harness — the third instance of
   *published-and-unreachable* in this stack, and the first spotted by a consumer
   reading our own changelog. ⇒ *The pattern is now legible from outside, which
   makes leaving one open more expensive than the bump.*
 
-  ⚠ The relock carries `pydantic-ai-slim` 2.19 → **2.27.1** with it. The suite
+  The relock carries `pydantic-ai-slim` 2.19 → **2.27.1** with it. The suite
   passes unchanged at 100%, but that is eight minors of upstream in one step and
   worth knowing before it is bisected from.
 
@@ -207,14 +207,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- ⛔ **`pydantic-ai-slim` floor raised to `>=2.16`, because 0.11.0 and 0.12.0 do
+- **`pydantic-ai-slim` floor raised to `>=2.16`, because 0.11.0 and 0.12.0 do
   not import on anything older.** `ToolFailurePolicy` imports
   `pydantic_ai.exceptions.ToolFailed` at module scope, and that symbol first
   exists in **2.16.0** — while the declared floor was `>=2,<3`. Since
   `build_agent` composes the policy by default, the failure is not a missing
   feature but an `ImportError` on `import django_pydantic_agent`.
 
-  ⭐ **The floor was verified against the wrong thing.** Development and CI
+  **The floor was verified against the wrong thing.** Development and CI
   resolve the *newest* in-range pydantic-ai (2.19 at the time), so every gate
   passed; a consumer whose own constraints pulled an older 2.x got a package
   that would not import. `django-admin-agent` resolved 2.9.1 and was the first
@@ -232,7 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`[drf-mcp]` now requires `djangorestframework-mcp-server>=0.29,<0.30`**
   (was `>=0.28,<0.29`), and the dev group moves with it.
 
-  ⛔ **The previous ceiling made 0.29.0 published-and-unreachable.** Its change
+  **The previous ceiling made 0.29.0 published-and-unreachable.** Its change
   is a default rather than a fix — drf-mcp's `MAX_PAGE_SIZE` drops from 500 to
   100, so a `paginate=True` selector tool stops advertising a `limit.maximum`
   five times its own dispatch default — but the shape is the one this project
@@ -246,7 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   No code changes; the suite passes unmodified at 100% coverage.
 
-  ⚠ **A minor, and `django-ag-ui` must follow.** Its ceiling is
+  **A minor, and `django-ag-ui` must follow.** Its ceiling is
   `django-pydantic-agent>=0.11,<0.12`, so this release is excluded until that
   floor moves — the published-but-unreachable interval, entered deliberately
   here rather than letting a ceiling move arrive under a patch.
@@ -269,7 +269,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `enabled=False` restores the old behaviour, `include_detail=True` puts the
   exception type and text in the model-facing message.
 
-  ⚠ **`include_detail` is off by default, and that split is the point.** Whether
+  **`include_detail` is off by default, and that split is the point.** Whether
   the run survives is a reliability question; whether an exception's text
   reaches the model is a disclosure one — a traceback message can carry a
   query, a path or a credential, and anything handed to the model is also
@@ -277,7 +277,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redacted: the full exception still reaches the audit logger and the
   `django_pydantic_agent.failure` logger.
 
-  ⭐ **It hangs off Pydantic-AI's `on_tool_execute_error` hook rather than
+  **It hangs off Pydantic-AI's `on_tool_execute_error` hook rather than
   wrapping the handler in `except Exception`, and that is a correctness
   difference rather than a stylistic one.** Pydantic-AI does not route
   control-flow exceptions to that hook — `SkipToolExecution`, `CallDeferred`,
@@ -291,7 +291,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- ⚠ **`AgentConfig` gained `tool_failure`, and its default changes existing
+- **`AgentConfig` gained `tool_failure`, and its default changes existing
   behaviour.** A run that previously died on a raising tool now completes. No
   API is removed and nothing needs editing to upgrade, but a project relying on
   the exception escaping `agent.run(...)` should set
@@ -304,7 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`[drf-mcp]` now requires `djangorestframework-mcp-server>=0.28,<0.29`**
   (was `>=0.27,<0.28`).
 
-  ⛔ **The previous ceiling excluded a security release.** drf-mcp 0.28.0
+  **The previous ceiling excluded a security release.** drf-mcp 0.28.0
   refuses an authenticated caller with no `pk` instead of collapsing every such
   caller onto the shared `"anonymous"` principal — where any two of them can
   present each other's sessions. Every consumer of this extra pinned `<0.28`, so
@@ -327,7 +327,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pydantic-ai-harness[code-mode]>=0.13,<0.17`** (was `>=0.12,<0.13`), matching
   the windows `django-ag-ui` already used.
 
-  ⛔ **They were disjoint, and the symptom was not an error.** Asking for both
+  **They were disjoint, and the symptom was not an error.** Asking for both
   packages' extras — `django-ag-ui[spec-tools]` alongside
   `django-pydantic-agent[spec-tools]` — resolved *successfully* by silently
   **downgrading `django-ag-ui` to 0.3.0**; the `[harness]` pair downgraded it to
@@ -337,12 +337,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport from months earlier — behind every security fix since, including
   the fail-open auth transport and the closed-by-default authentication flip.
 
-  ⭐ **Neither package is wrong on its own**, which is why nothing caught it:
+  **Neither package is wrong on its own**, which is why nothing caught it:
   each resolves fine alone, and `django-ag-ui[spec-tools]` alone is fine too,
   since this package arrives as a plain dependency with no extras. It takes
   asking for both to see it.
 
-  ⚠ **The second-order cost was quieter still.** `build_spec_capability` is the
+  **The second-order cost was quieter still.** `build_spec_capability` is the
   path *both* transports take, and this package's suite was exercising it
   against PAI 0.13 while `django-ag-ui` ran it against 0.15. The shared wrapper
   was tested against an upstream it does not meet in production.
@@ -350,7 +350,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No code changes: the suite passes unmodified against PAI 0.15 and harness
   0.14, at 100% coverage.
 
-  ⚠ **A minor, and `django-ag-ui` must follow.** Its ceiling is
+  **A minor, and `django-ag-ui` must follow.** Its ceiling is
   `django-pydantic-agent>=0.8,<0.9`, so this release is *excluded* until that
   floor moves — the published-but-unreachable interval, deliberately entered
   here rather than letting a two-minor upstream jump arrive under a patch.
@@ -362,7 +362,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`AgentDeps.ip_address`**, and `AuditCapability` now reads the client IP from
   the run's deps, falling back to its constructor argument.
 
-  ⭐ **This is what makes an audited agent reusable across requests.** The IP is
+  **This is what makes an audited agent reusable across requests.** The IP is
   per-run data; a constructor argument is per-agent. Taking it only from the
   constructor forces a transport to build a fresh agent — schemas and all — for
   every request, which is the exact closure `AgentDeps` exists to replace. And
@@ -384,14 +384,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AbstractToolset` attached directly — are not listed, and their cards fall
   back to a prettified name.
 
-  ⛔ **A stated boundary, not a gap left open.** Pydantic-AI's enumeration is
+  **A stated boundary, not a gap left open.** Pydantic-AI's enumeration is
   `AbstractToolset.get_tools`, which is `async` and takes a `RunContext`; the
   catalog is built at configuration time, from a view, with no run in sight.
   Enumerating the toolsets we happen to recognise and skipping the rest would
   produce a catalog that *looks* complete and is not — the failure mode this
   stack spends its time removing, traded here for cosmetics.
 
-  ⭐ **There is a covered route for the case that matters.** A `SpecToolset` /
+  **There is a covered route for the case that matters.** A `SpecToolset` /
   `SpecCapability` passed to django-ag-ui's `service_specs=` (0.30+) is attached
   as itself *and* enumerated, so the powerful form keeps its labels.
 
@@ -405,7 +405,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `>=0.12,<0.13`). No API changes here, but two of PAI's changes reach a
   consumer straight through `build_spec_capability`:
 
-  ⛔ **A spec with no `permission_classes` now raises `ImproperlyConfigured`
+  **A spec with no `permission_classes` now raises `ImproperlyConfigured`
   instead of becoming an ungated tool.** Over HTTP `permission_classes=None`
   means *inherit* — the viewset's own classes, then
   `DEFAULT_PERMISSION_CLASSES` — and off HTTP neither exists. So a spec that is
@@ -413,7 +413,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whatever the model decided to call. **Set `spec.permission_classes` on every
   spec you expose.**
 
-  ⚠ **`build_spec_capability` deliberately does not expose PAI's
+  **`build_spec_capability` deliberately does not expose PAI's
   `require_permissions=False` migration flag.** A knob threaded through here
   would reach only callers that construct the capability themselves; the right
   shape is a general "pass any `SpecToolset` option" seam, and that is not built
@@ -429,13 +429,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`[drf-mcp]` requires `djangorestframework-mcp-server>=0.27`** (was
   `>=0.26,<0.27`).
 
-  ⛔ **Not optional — the two extras were mutually unsatisfiable without it.**
+  **Not optional — the two extras were mutually unsatisfiable without it.**
   PAI 0.13 requires `djangorestframework-services>=0.35,<0.36` while drf-mcp
   0.26 required `>=0.34.0,<0.35`. Disjoint, so
   `django-pydantic-agent[drf-mcp,spec-tools]` **could not resolve at all**.
   drf-mcp 0.27.0 moves its window to 0.35; nothing else about it changed.
 
-  ⚠ **Two siblings pinning one upstream to single-minor windows break every time
+  **Two siblings pinning one upstream to single-minor windows break every time
   one moves first.** Worth knowing when scheduling the next drf-services bump:
   the follow-up release is part of the cost of moving either package, not a
   surprise.
@@ -449,7 +449,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exclusive ceiling *excluded* the fix, so installing this extra resolved to the
   vulnerable release.
 
-  ⚠ **This one reaches through `DRFMCPToolset`, not only over HTTP.** The bridge
+  **This one reaches through `DRFMCPToolset`, not only over HTTP.** The bridge
   calls `MCPServer.list_tools` / `acall_tool`, so it runs the same permission
   and listing checks the HTTP transport runs — and those were the sites that
   failed open. A project whose `MCPPermission.has_permission` or `is_listable`
@@ -471,21 +471,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`[drf-mcp]` requires `djangorestframework-mcp-server>=0.25`, `[spec-tools]`
   requires `djangorestframework-pydantic-ai>=0.12`.**
 
-  ⚠ **These are floors, not merely widened ceilings, because 0.25 changes
+  **These are floors, not merely widened ceilings, because 0.25 changes
   behaviour the bridge sits on**: a tool registered with no permissions now
   *raises* instead of warning, and a request with no `Mcp-Session-Id` returns
   `400` rather than `404`. A range that merely admitted 0.25 while a consumer
   resolved 0.24 would pair cleanly and behave differently — the pairing a
   resolver cannot see.
 
-  ⭐ **The strict-permissions change reached here immediately**: three bridge
+  **The strict-permissions change reached here immediately**: three bridge
   fixture servers registered tools without permissions and stopped importing.
   They now declare `AllowAny` explicitly, which is the honest form for a
   fixture — "deliberately open" said out loud. Consumers upgrading should expect
   the same, and `REST_FRAMEWORK_MCP['REQUIRE_TOOL_PERMISSIONS'] = False` is the
   migration escape hatch.
 
-  ⚠ This could not ship with the rest of the sweep. drf-mcp 0.25 requires
+  This could not ship with the rest of the sweep. drf-mcp 0.25 requires
   drf-services `>=0.34` while PAI 0.11.1 required `>=0.33,<0.34`, so a project
   depending on both extras was **unsatisfiable** until PAI 0.12.0 was
   *published*. Two siblings pinning a common upstream at incompatible ranges is
@@ -507,7 +507,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authenticated one in the pool that decides which row gets mutated and which set
   gets bulk-deleted. Fixed in drf-services 0.33.0.
 
-  ⚠ A version pair that resolves cleanly and leaves the bypass live is exactly
+  A version pair that resolves cleanly and leaves the bypass live is exactly
   what a resolver cannot see, which is why the floor moves rather than the
   ceiling. Installing this extra now gets the fix, rather than merely permitting
   it.
@@ -518,14 +518,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- ⚠ **Ceilings raised: drf-mcp-server to `<0.25` (was `<0.22`) and
-  djangorestframework-pydantic-ai to `<0.12` (was `<0.11`).** ⛔ **This resolves a
+- **Ceilings raised: drf-mcp-server to `<0.25` (was `<0.22`) and
+  djangorestframework-pydantic-ai to `<0.12` (was `<0.11`).** **This resolves a
   live install conflict, not just staleness:** drf-mcp 0.24.0 requires
   drf-services `>=0.32` while PAI `<0.11` required `<0.30`, so the `[drf-mcp]`
   and `[spec-tools]` extras had become mutually unsatisfiable at their new
   versions. PAI 0.11.0 moved first; this picks both up.
 
-- ⚠ **An unknown drf-mcp tool is now a `ModelRetry`, not a fatal
+- **An unknown drf-mcp tool is now a `ModelRetry`, not a fatal
   `RuntimeError`** — and the cause is upstream. drf-mcp emitted `-32004` for an
   unknown tool until 0.24.0, where it moved onto **`-32602`** to match the MCP
   spec's own worked example. The bridge branched on `-32602` to mean "malformed
@@ -539,7 +539,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notices; pydantic-ai bounds the retries, so a genuinely unfixable call still
   stops the run, just later.
 
-  ⭐ **The retry now names the real tools** when the failing name was not one of
+  **The retry now names the real tools** when the failing name was not one of
   them — a model that invented a name needs the available ones, and a bare
   "unknown tool" tells it nothing it did not already know. Malformed arguments
   keep the field-level detail instead; the message carries whichever of the two
@@ -638,7 +638,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **⚠ New migration `0002_snapshot_state` — run `migrate` when upgrading.**
+- **New migration `0002_snapshot_state` — run `migrate` when upgrading.**
   `StoredSnapshot` gains a `state` column mirroring the harness's `SnapshotState`
   (`complete` / `interrupted`, defaulting to `complete`, so existing rows keep
   today's behaviour).
@@ -661,7 +661,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accumulates — and it did. It also gated
   [`pydantic_ai_harness.skills`](https://github.com/pydantic/pydantic-ai-harness/pull/396),
   which does not exist below 0.11 and is the prerequisite for adopting agent skills.
-- **⚠ `DefaultStepStore.latest_snapshot()` gained an `include_interrupted`
+- **`DefaultStepStore.latest_snapshot()` gained an `include_interrupted`
   keyword**, matching the harness's `StepStore` protocol. Harness's own
   `continue_run()` passes it, so before this the resume path raised
   `TypeError: latest_snapshot() got an unexpected keyword argument`. **Any custom

@@ -12,16 +12,14 @@ from django_pydantic_agent.contrib.store.utils import hash_file
 class Command(BaseCommand):
     """Fill in ``sha256`` for attachments stored before the column existed.
 
-    Deduplication compares content hashes, so a row without one can never be
-    matched: until it is hashed, re-uploading the file it holds writes a second
-    copy of the bytes. This command is how an existing installation catches up.
+    Deduplication compares content hashes, so an unhashed row can never be
+    matched and re-uploading its file writes a second copy of the bytes.
 
-    It is a command rather than a data migration on purpose. Hashing means
-    reading every blob back — over the network, if storage is S3 — and a
-    migration that does that runs inside the deploy, holding it open for as long
-    as the bucket takes and failing the release if one object is missing. Run
-    here, it is interruptible, resumable (it only ever looks at unhashed rows),
-    and a missing file is a reported skip rather than a broken deploy.
+    A command rather than a data migration, because hashing reads every blob
+    back, over the network if storage is S3. A migration doing that holds the
+    deploy open for as long as the bucket takes and fails the release if one
+    object is missing. Here it is interruptible, resumable — only unhashed rows
+    are ever looked at — and a missing file is a reported skip.
     """
 
     help = "Compute the missing sha256 content hashes for stored attachments."
@@ -53,10 +51,9 @@ class Command(BaseCommand):
     def _digest(self, attachment: StoredAttachment) -> str | None:
         """The row's content hash, or ``None`` when its bytes cannot be read.
 
-        A row whose blob has gone missing — deleted out of band, or restored from
-        a database dump without the bucket behind it — must not stop the run: the
-        remaining rows are still worth hashing, and a hash invented for absent
-        bytes would be worse than none.
+        A blob gone missing — deleted out of band, or a database dump restored
+        without its bucket — must not stop the run: the remaining rows are worth
+        hashing, and a hash invented for absent bytes is worse than none.
         """
         try:
             with attachment.file.open("rb") as handle:

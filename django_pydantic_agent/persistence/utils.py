@@ -23,18 +23,13 @@ def owner_id_for(request: HttpRequest) -> str | None:
 def resolve_owner_id(request: HttpRequest, *, allow_anonymous: bool) -> str:
     """The owner-scoping id a model-backed store persists under (never ``None``).
 
-    Authenticated → the user's pk. Anonymous → governed by ``allow_anonymous``,
-    which the calling store holds (it is a store policy, not endpoint config —
-    two endpoints sharing a store must agree on it):
+    An authenticated request resolves to the user's pk. An anonymous one either
+    raises :class:`AnonymousOperationError`, or, with ``allow_anonymous``, gets a
+    per-browser ``anon:<session_key>`` bucket, creating the session if the
+    browser has none.
 
-    - **off** (default) → raise :class:`AnonymousOperationError`. Refusing beats
-      the old behaviour of collapsing every anonymous visitor into one ``""``
-      bucket, where they could read / delete each other's threads + attachments.
-    - **on** → a per-browser bucket derived from the session key
-      (``anon:<session_key>``), creating the session if the browser has none.
-
-    Call this **inside** a sync context (the model stores wrap it in
-    ``sync_to_async``): the anonymous branch may write a new session row.
+    Call this **inside** a sync context — the model stores wrap it in
+    ``sync_to_async`` — because the anonymous branch may write a session row.
     """
     user = getattr(request, "user", None)
     if user is not None and getattr(user, "is_authenticated", False):
@@ -53,11 +48,10 @@ def resolve_owner_id(request: HttpRequest, *, allow_anonymous: bool) -> str:
 
 
 def derive_title(messages: list[Any]) -> str:
-    """A thread title: the first user message, collapsed + truncated.
+    """A thread title: the first user message, collapsed and truncated.
 
-    Falls back to a generic label when there is no user text yet (a brand-new
-    or assistant-only thread). Stores that record an explicit rename use that
-    instead of calling this.
+    Falls back to a generic label when there is no user text yet. A store that
+    records an explicit rename uses that instead of calling this.
     """
     for message in messages:
         if message_field(message, "role") == "user":
@@ -77,12 +71,11 @@ def derive_preview(messages: list[Any]) -> str:
 
 
 def message_field(message: Any, name: str) -> Any:
-    """Read one field off a message record — mapping key or attribute.
+    """Read one field off a message record: mapping key or attribute.
 
-    The stored shape is JSON (mappings), but a transport may hand objects
-    straight through, so both are supported. Missing either way, and for a
-    record that is neither, the answer is ``None``: callers reading transport-
-    owned message shapes want a total accessor, not an exception.
+    The stored shape is JSON, but a transport may hand objects through, so both
+    work. Total rather than raising — a missing field, or a record that is
+    neither, answers ``None``, because callers read transport-owned shapes.
     """
     if isinstance(message, Mapping):
         return message.get(name)

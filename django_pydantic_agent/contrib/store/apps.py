@@ -4,19 +4,13 @@ from django.apps import AppConfig
 
 
 class StoreConfig(AppConfig):
-    """Opt-in app providing the reference persistence models + stores.
+    """Opt-in app providing the reference persistence models and stores.
 
-    Add ``"django_pydantic_agent.contrib.store"`` to ``INSTALLED_APPS`` and run
-    ``migrate`` to enable it, then pass the matching store instance to your
-    transport (``conversation_store=`` / ``attachment_store=`` / ``step_store=``).
-    The base package ships no model of its own, so projects that don't opt in get
-    no migration.
-
-    Backs
-    :class:`~django_pydantic_agent.contrib.store.default_conversation_store.DefaultConversationStore`,
-    :class:`~django_pydantic_agent.contrib.store.default_attachment_store.DefaultAttachmentStore`,
-    and
-    :class:`~django_pydantic_agent.contrib.store.default_step_store.DefaultStepStore`.
+    Add ``"django_pydantic_agent.contrib.store"`` to ``INSTALLED_APPS``, run
+    ``migrate``, then pass the matching store to your transport. The base package
+    ships no model of its own, so a project that does not opt in gets no
+    migration. Backs ``DefaultConversationStore``, ``DefaultAttachmentStore`` and
+    ``DefaultStepStore``.
     """
 
     name = "django_pydantic_agent.contrib.store"
