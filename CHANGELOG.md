@@ -93,13 +93,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `read_attachment` now returns the bytes as attached file content for the
   types providers can actually read: PDF, PNG, JPEG, GIF and WebP.
 
-  ⛔ **It is an allowlist, not "everything that is not text".** A `.zip` or an
+  **It is an allowlist, not "everything that is not text".** A `.zip` or an
   `.exe` handed over as file content is not merely useless to the model — the
   provider rejects the request — so a broad rule would have traded a model that
   cannot read your PDF for a run that does not start. Everything outside the
   list still returns the same note it returned before.
 
-  ⚠ **`read_attachment` no longer always returns `str`.** For a PDF or image
+  **`read_attachment` no longer always returns `str`.** For a PDF or image
   inside the size cap it returns a `pydantic_ai.messages.ToolReturn`. Nothing
   about the model-facing text changes for **textual** attachments — those are
   byte-identical to before — and every non-inlined case still returns the exact
@@ -134,7 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason above: the file goes to the provider on every model request left in the
   run. Raise it knowing what it costs per request.
 
-  ⚠ **The escape hatch is constructor-only for now**, because this substrate
+  **The escape hatch is constructor-only for now**, because this substrate
   reads no Django settings by design. A future release of the transports will
   surface it through their own settings namespaces — that needs this package
   released first, so until then a project overriding it passes an
