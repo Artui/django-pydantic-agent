@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from django.utils import timezone
 
-from django_pydantic_agent.contrib.store.models import StoredConversation
+from django_pydantic_agent.contrib.store.models import StoredAttachment, StoredConversation
+from django_pydantic_agent.contrib.store.reconcile_conversation_attachments import (
+    reconcile_conversation_attachments,
+)
+from django_pydantic_agent.contrib.store.utils import delete_attachments, unreferenced_attachments
 from django_pydantic_agent.persistence.model_conversation_store import ModelConversationStore
 from django_pydantic_agent.persistence.types.conversation import Conversation
 from django_pydantic_agent.persistence.types.conversation_meta import (
@@ -29,6 +33,12 @@ class DefaultConversationStore(ModelConversationStore):
     ``(owner_id, thread_id)`` constraint holds regardless. Titles are derived
     from the first user message at first save and then left alone except by
     :meth:`_rename`; ``preview`` re-derives on every save.
+
+    Saving also reconciles which attachments the thread refers to, and deleting
+    it drops the ones nothing else refers to. Attachments therefore have a
+    lifetime tied to the conversations that quote them rather than living
+    forever; uploads that were never sent belong to no conversation at all and
+    are collected by the ``agent_store_prune_attachments`` command instead.
     """
 
     def _fetch(self, thread_id: str, owner_id: str | None) -> Conversation | None:
@@ -62,9 +72,34 @@ class DefaultConversationStore(ModelConversationStore):
             StoredConversation.objects.filter(pk=row.pk).update(
                 **defaults, updated_at=timezone.now()
             )
+        # Reconciled from the messages just stored, not from ``row.messages``,
+        # which is a save behind on the update path.
+        reconcile_conversation_attachments(row, messages)
 
     def _remove(self, thread_id: str, owner_id: str | None) -> None:
-        StoredConversation.objects.filter(owner_id=owner_id or "", thread_id=thread_id).delete()
+        """Delete the thread, and with it the attachments nothing else holds.
+
+        The attachment rows this conversation referred to are collected first,
+        because the links go with the conversation row; whichever of them no
+        other conversation still references is then deleted, blobs included.
+        Anything a second thread quotes survives untouched.
+
+        Deleting ``StoredConversation`` rows by some other route — a queryset
+        ``delete()``, the admin, a raw cascade — skips this and leaves the
+        attachments behind with no reference. They are not lost bytes forever:
+        that is precisely what the ``agent_store_prune_attachments`` command
+        collects.
+        """
+        rows = StoredConversation.objects.filter(owner_id=owner_id or "", thread_id=thread_id)
+        referenced = list(
+            StoredAttachment.objects.filter(conversations__in=rows)
+            .distinct()
+            .values_list("pk", flat=True)
+        )
+        rows.delete()
+        delete_attachments(
+            unreferenced_attachments(StoredAttachment.objects.filter(pk__in=referenced))
+        )
 
     def _list(self, owner_id: str | None, limit: int | None) -> ConversationMetaList:
         rows = (
