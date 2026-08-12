@@ -17,8 +17,11 @@ class Command(BaseCommand):
     into the message list as base64, and the message list is persisted. A 2.6 MB
     PDF becomes roughly 3.5 MB of text in one row, loaded whole every time the
     thread is opened and sent to the browser with it. Transports have stopped
-    writing them and strip them on the way in, but a row already written keeps
-    its payload until something rewrites it. This is that something.
+    writing them, but a row already written keeps its payload until something
+    rewrites it. This is that something, and it is the only thing that is: a
+    transport deliberately does not strip what a client posts back, because a
+    client may legitimately post inline content of its own, and editing it in
+    passing would silently discard it. Stored data is a data migration's job.
 
     What survives is as important as what goes. Every message keeps its ``id``
     and every field the transport put on it, including the non-standard
