@@ -1081,6 +1081,56 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="DefaultStepStore">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#attachment-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attachment lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reconcile_conversation_attachments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.contrib.store.strip_inline_binary_parts.strip_inline_binary_parts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        strip_inline_binary_parts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.contrib.store.types.attachment_deletion.AttachmentDeletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AttachmentDeletion
+      
+    </span>
+  </a>
+  
 </li>
       
     </ul>
@@ -1633,6 +1683,56 @@
     <span class="md-ellipsis">
       
         DefaultStepStore
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="DefaultStepStore">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#attachment-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attachment lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reconcile_conversation_attachments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.contrib.store.strip_inline_binary_parts.strip_inline_binary_parts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        strip_inline_binary_parts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.contrib.store.types.attachment_deletion.AttachmentDeletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AttachmentDeletion
       
     </span>
   </a>
@@ -2501,6 +2601,11 @@ refused rather than sharing one <code>""</code> bucket). The unique
 <code>(owner_id, thread_id)</code> constraint holds regardless. Titles are derived
 from the first user message at first save and then left alone except by
 :meth:<code>_rename</code>; <code>preview</code> re-derives on every save.</p>
+<p>Saving also reconciles which attachments the thread refers to, and deleting
+it drops the ones nothing else refers to. Attachments therefore have a
+lifetime tied to the conversations that quote them rather than living
+forever; uploads that were never sent belong to no conversation at all and
+are collected by the <code>agent_store_prune_attachments</code> command instead.</p>
 
 
 
@@ -2563,6 +2668,10 @@ refused rather than sharing one <code>""</code> bucket) — so one user's id nev
 resolves another's file. The unique <code>(owner_id, attachment_id)</code> constraint
 holds regardless. The public <code>attachment_id</code> is an opaque UUID, kept
 separate from the storage filename.</p>
+<p>Uploads are <strong>deduplicated by content hash, within one owner</strong>. The same file
+sent into five threads is written to storage once and pointed at five times;
+see :meth:<code>_save</code> for why the row is still new every time, and why the scope
+is one owner rather than the whole table.</p>
 
 
 
@@ -2633,6 +2742,152 @@ identity to resume under anyway). Pair the store with
 <p>Enable the backing tables by adding <code>"django_pydantic_agent.contrib.store"</code> to
 <code>INSTALLED_APPS</code> and running <code>migrate</code> (the same app the reference
 conversation store uses). Requires the <code>django-pydantic-agent[harness]</code> extra.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h3 id="attachment-lifecycle">Attachment lifecycle<a class="headerlink" href="#attachment-lifecycle" title="Permanent link">&para;</a></h3>
+<p>Contrib-level, not part of either protocol. See
+<a href="../../storage/#attachment-lifecycle">Storage</a> for the semantics and the
+management commands.</p>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">reconcile_conversation_attachments</span>
+
+
+<a href="#django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">reconcile_conversation_attachments</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">conversation</span><span class="p">:</span> <span class="n">StoredConversation</span><span class="p">,</span> <span class="n">messages</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Point <code>conversation</code> at exactly the attachments its messages quote.</p>
+<p>The auto-resolver behind attachment lifecycle. Nothing on the wire changes
+and no client changes: the ids are already in the payload, because the web
+component augments the user message it posts with an <code>attachments</code> array of
+the refs the composer uploaded (<code>id</code> / <code>name</code> / <code>mime</code> / <code>size</code>). The
+protocol does not declare that field, but it survives into the stored message
+list, and reading it here is what turns "an id in some JSON" into a relation
+the database can enforce a lifecycle on.</p>
+<p>Reconciled rather than appended: a message removed from the thread on a
+re-save drops its reference too, so the relation always describes the
+conversation as it stands now.</p>
+<p><strong>Owner-scoped</strong>, and that is the load-bearing part. An id is resolved only
+against the attachments of the conversation's own owner, so a client that
+posts a guessed or copied id links nothing — the same rule that makes
+<code>AttachmentStore.open</code> return <code>None</code> across owners.</p>
+<p>The parse is deliberately total: a message that is not a mapping, an
+<code>attachments</code> field of the wrong type, an entry with no usable <code>id</code> — all
+are skipped in silence. This runs inside a conversation save, so a shape
+change upstream must degrade to "no reference", never to an exception that
+loses the user's message.</p>
+<p>An id that resolves to nothing simply produces no link. That is not an error
+either: an attachment may have been deleted through the store while the
+thread that mentions it lives on.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="django_pydantic_agent.contrib.store.strip_inline_binary_parts.strip_inline_binary_parts" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">strip_inline_binary_parts</span>
+
+
+<a href="#django_pydantic_agent.contrib.store.strip_inline_binary_parts.strip_inline_binary_parts" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">strip_inline_binary_parts</span><span class="p">(</span><span class="n">messages</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Rebuild <code>messages</code> without any inline file bytes, and say if it changed.</p>
+<p>A transport that inlines an attachment for the model serialises the file into
+the message list as base64 — a synthetic user message whose <code>content</code> is a
+list of parts, one of them a document or image whose <code>source</code> carries the
+data itself. Persisted, that turns a 2.6 MB PDF into roughly 3.5 MB of text
+in a single row, shipped to the browser on every load of the thread.</p>
+<p>The edit is <strong>structural</strong>: the message list is walked as plain JSON and only
+the offending parts are dropped. Nothing is round-tripped through a message
+type, because validating and re-dumping is exactly what would silently
+discard the fields this must not lose — every message's <code>id</code>, and the
+non-standard <code>attachments</code> array the composer rides on a user message,
+which is both what renders the chips and what the attachment relation is
+reconciled from.</p>
+<p>A message whose parts were all bytes keeps its place with an empty
+<code>content</code> list rather than being removed: dropping the message would take
+its id with it, and this command's job is to reclaim space, not to rewrite
+the transcript.</p>
+<p>Returns the rebuilt messages and whether anything was actually removed, so a
+caller can leave untouched rows untouched. A <code>messages</code> value that is not a
+list at all is handed straight back: the column is JSON, so a row written by
+something other than this store need only be left alone.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_pydantic_agent.contrib.store.types.attachment_deletion.AttachmentDeletion" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AttachmentDeletion</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.contrib.store.types.attachment_deletion.AttachmentDeletion" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>What one attachment deletion pass removed.</p>
+<p>Three counts rather than one, because after deduplication they genuinely
+differ: <code>rows</code> is how many attachment records were deleted, <code>blobs</code> how
+many stored files that actually freed. Deleting one of two rows that share a
+file removes a row and no blob at all, so a command reporting only rows would
+claim to have reclaimed space it did not.</p>
+<p><code>bytes_freed</code> is summed from the declared <code>size</code> of the rows whose blob
+was removed — the metadata, not a fresh stat of the storage backend, so it is
+an estimate of what a remote store gives back rather than a measurement.</p>
 
 
 

@@ -432,6 +432,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-read_attachment-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The read_attachment tool
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#threads-key-by-owner_id-thread_id" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -461,6 +472,56 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-same-file-uploaded-twice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The same file, uploaded twice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attachment-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attachment lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reclaiming-space-from-threads-that-inlined-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reclaiming space from threads that inlined files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -812,6 +873,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-read_attachment-tool" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The read_attachment tool
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#threads-key-by-owner_id-thread_id" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -841,6 +913,56 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-same-file-uploaded-twice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The same file, uploaded twice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attachment-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attachment lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reclaiming-space-from-threads-that-inlined-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reclaiming space from threads that inlined files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -904,16 +1026,83 @@ distinguishable from a missing one.</p>
 <p><code>AttachmentStore.save</code> deliberately validates nothing about size or type. That
 is the calling view's job, from its own config; the store just persists bytes
 and returns a durable <code>AttachmentRef</code>.</p>
+<h2 id="the-read_attachment-tool">The <code>read_attachment</code> tool<a class="headerlink" href="#the-read_attachment-tool" title="Permanent link">&para;</a></h2>
+<p>The bytes never travel on the wire. A transport that has an attachment store
+composes <code>build_attachment_toolset(store, request)</code> into the agent, and the
+model reaches a file server-side, by id, only when it asks — through the same
+owner-scoped <code>open</code> a download view would use.</p>
+<p>Reading one has three outcomes:</p>
+<table>
+<thead>
+<tr>
+<th>The attachment</th>
+<th>What the model gets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Textual (<code>text/*</code>, JSON, XML, JavaScript, YAML, SVG) and valid UTF-8</td>
+<td>Its text, inline.</td>
+</tr>
+<tr>
+<td>A type providers can read — PDF, PNG, JPEG, GIF, WebP — within the size cap</td>
+<td>The bytes, as attached file content it can look at directly.</td>
+</tr>
+<tr>
+<td>Anything else: an unreadable type, an oversized file, undecodable "text"</td>
+<td>A one-line note with the name, type and size.</td>
+</tr>
+</tbody>
+</table>
+<p>Tune the middle row with <code>AttachmentInlineConfig</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">AttachmentInlineConfig</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.agent.attachment_toolset</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_attachment_toolset</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">toolset</span> <span class="o">=</span> <span class="n">build_attachment_toolset</span><span class="p">(</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">store</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">request</span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">inline</span><span class="o">=</span><span class="n">AttachmentInlineConfig</span><span class="p">(</span><span class="n">max_bytes</span><span class="o">=</span><span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">),</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><strong>The type list is an allowlist rather than "everything that is not text", and
+that is on purpose.</strong> Bytes a provider cannot interpret are worse than useless:
+a <code>.zip</code> or a <code>.exe</code> handed over as file content makes the provider reject the
+whole request, so a broad rule would trade a model that cannot read your PDF
+for a run that does not start.</p>
+<p><strong>The size cap is much smaller than any upload cap you would set</strong>, and for a
+different reason: it bounds what one <em>request</em> carries. An inlined file rides in
+a synthetic <code>user</code> message that the tool return serialises into, and that
+message stays in the run's history, so every further model request in the same
+run ships the file again. Base64 adds about a third — a 4 MiB PDF is roughly
+5.5 MiB of provider payload each time, in tokens, in latency, and in the memory
+the run holds it in.</p>
+<p>It does not cost the conversation. The bytes never travel on the event stream,
+so the client never receives them and the history it posts on the next turn
+carries none; whether they outlive the run is the transport's decision, and the
+AG-UI transport strips them on the way to storage. A <em>follow-up</em> question about
+the same file is answered by reading the attachment again, server-side. That is
+why the default sits at 4 MiB rather than at whatever your upload endpoint
+accepts.</p>
+<p>To keep the old behaviour and never attach bytes:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">toolset</span> <span class="o">=</span> <span class="n">build_attachment_toolset</span><span class="p">(</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">store</span><span class="p">,</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">request</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">inline</span><span class="o">=</span><span class="n">AttachmentInlineConfig</span><span class="p">(</span><span class="n">media_types</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">()),</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><code>AttachmentRef.mime</code> is client-declared, so the decision is made on a hint. The
+failure mode of a mislabelled file is a provider rejecting the request, not a
+disclosure — the store is owner-scoped either way.</p>
 <h2 id="threads-key-by-owner_id-thread_id">Threads key by <code>(owner_id, thread_id)</code><a class="headerlink" href="#threads-key-by-owner_id-thread_id" title="Permanent link">&para;</a></h2>
 <p>Which has a consequence worth knowing before you mount two endpoints: <strong>two
 transports sharing one store share one user's thread list.</strong> A conversation
 started at <code>/internal/agent</code> shows up in <code>/public/agent</code>'s history and can be
 resumed there — under the <em>public</em> agent's model, tools and guard policy.</p>
 <p><code>ScopedConversationStore</code> partitions them without a migration:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScopedConversationStore</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">internal</span> <span class="o">=</span> <span class="n">ScopedConversationStore</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;internal&quot;</span><span class="p">)</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">public</span> <span class="o">=</span> <span class="n">ScopedConversationStore</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;public&quot;</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScopedConversationStore</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">internal</span> <span class="o">=</span> <span class="n">ScopedConversationStore</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;internal&quot;</span><span class="p">)</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">public</span> <span class="o">=</span> <span class="n">ScopedConversationStore</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;public&quot;</span><span class="p">)</span>
 </span></code></pre></div>
 <h2 id="what-ships">What ships<a class="headerlink" href="#what-ships" title="Permanent link">&para;</a></h2>
 <table>
@@ -949,10 +1138,10 @@ resumed there — under the <em>public</em> agent's model, tools and guard polic
 <h2 id="the-reference-models">The reference models<a class="headerlink" href="#the-reference-models" title="Permanent link">&para;</a></h2>
 <p>The base package ships <strong>no model of its own</strong>, so projects that don't opt in
 get no migration. To use the ready-made ones:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="o">...</span><span class="p">,</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="s2">&quot;django_pydantic_agent.contrib.store&quot;</span><span class="p">,</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="p">]</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="o">...</span><span class="p">,</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="s2">&quot;django_pydantic_agent.contrib.store&quot;</span><span class="p">,</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="p">]</span>
 </span></code></pre></div>
 <p>Then <code>migrate</code>, and pass the matching store to your transport
 (<code>conversation_store=</code> / <code>attachment_store=</code> / <code>step_store=</code>). The app provides
@@ -960,6 +1149,100 @@ get no migration. To use the ready-made ones:</p>
 <p><code>DefaultAttachmentStore</code> keeps bytes in Django <code>Storage</code> and metadata in a row,
 so S3 and friends come free through <code>STORAGES</code> — you don't configure anything
 here beyond your normal Django storage backend.</p>
+<p>Everything from here down is the <strong>reference implementation's</strong> behaviour, not
+the contract. <code>ConversationStore</code> and <code>AttachmentStore</code> stay id-based, the wire
+is unchanged, and a session-backed or S3-only store you plug in yourself owes
+none of this.</p>
+<h2 id="the-same-file-uploaded-twice">The same file, uploaded twice<a class="headerlink" href="#the-same-file-uploaded-twice" title="Permanent link">&para;</a></h2>
+<p><code>StoredAttachment</code> carries a <code>sha256</code> of the file's bytes, hashed in chunks at
+upload so a large file is never held in memory whole just to fingerprint it.
+When an upload matches one the same owner already has, the new row points at the
+blob already in storage instead of writing a second copy.</p>
+<p><strong>A row per upload, even on a hit.</strong> The row holds the <code>name</code> the composer shows
+on the chip, so the same bytes sent again as <code>contract-final.pdf</code> keep that name
+rather than inheriting the first upload's. What is shared is the file
+underneath; the bytes are removed only when the last row pointing at them goes.</p>
+<p><strong>Deduplication never crosses owners, and that is not an oversight.</strong> Sharing one
+copy of a document held by a hundred tenants would be the better trade on
+storage alone. It is not available: a cross-owner hit tells you another tenant
+holds a file whose bytes you already have, which is how you confirm that a named
+party is a customer, or where a leaked document came from. The lookup is scoped
+to one owner, and the index on the column leads with <code>owner_id</code> so the
+cross-tenant question is not even the cheap one to ask.</p>
+<p>Rows written before the column existed have no hash, so they cannot be matched
+until <code>agent_store_backfill_hashes</code> fills them in.</p>
+<h2 id="attachment-lifecycle">Attachment lifecycle<a class="headerlink" href="#attachment-lifecycle" title="Permanent link">&para;</a></h2>
+<p>An attachment is reachable as long as a conversation refers to it, and the
+reference is derived, not declared. Saving a conversation reconciles the
+<code>StoredConversation.attachments</code> relation from the attachment ids its own
+messages carry — the web component already puts them there, on the user message,
+as an <code>attachments</code> array of the refs it uploaded. No wire change and no client
+change: the ids are in the payload either way.</p>
+<p>The parse is total. A malformed entry degrades to "no reference" rather than
+raising inside a save, and an id is resolved only against its own owner's
+attachments, so a guessed or copied id links nothing.</p>
+<p>Two consequences:</p>
+<ul>
+<li><strong>Deleting a conversation deletes the attachments nothing else refers to</strong>, and
+  their bytes. One quoted by a second thread survives untouched.</li>
+<li><strong>An upload that was never sent belongs to no conversation</strong>, so no cascade
+  will ever reach it. <code>agent_store_prune_attachments</code> is what collects those.</li>
+</ul>
+<p><code>StoredAttachment.thread_id</code> is untouched by all of this and stays. It is a loose
+label a project may set; the relation, not the column, is what lifecycle runs on.</p>
+<p><strong>Nothing is ever deleted on a timer the library set up.</strong> Deletion happens on a
+cascade you can point at, or on a command you schedule. There is no TTL sweep.</p>
+<p>Deleting <code>StoredConversation</code> rows by another route — a queryset <code>delete()</code>, the
+admin — skips the cascade and leaves the attachments unreferenced. They are not
+stranded permanently; the prune command is exactly what collects them.</p>
+<h2 id="maintenance-commands">Maintenance commands<a class="headerlink" href="#maintenance-commands" title="Permanent link">&para;</a></h2>
+<p>The <code>contrib.store</code> app ships three, all of them opt-in and none of them
+scheduled for you:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agent_store_backfill_hashes</code></td>
+<td>Hash attachments stored before the <code>sha256</code> column existed, so they can take part in deduplication. A missing blob is a reported skip, not a failure.</td>
+</tr>
+<tr>
+<td><code>agent_store_prune_attachments</code></td>
+<td>Delete unreferenced attachments older than <code>--older-than</code> (default <code>24h</code>).</td>
+</tr>
+<tr>
+<td><code>agent_store_strip_inline_bytes</code></td>
+<td>Rewrite stored conversations to drop inlined base64 file content.</td>
+</tr>
+</tbody>
+</table>
+<p>All three take <code>--dry-run</code>.</p>
+<p><strong><code>--older-than</code> is why the prune command is safe to run.</strong> References alone
+cannot tell an upload abandoned last month from one sitting in a composer right
+now — both have zero. The threshold is the floor on how long an upload must
+survive before it counts as abandoned, so set it to comfortably more than the
+longest a message may sit unsent in your product:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_prune_attachments<span class="w"> </span>--older-than<span class="w"> </span>7d<span class="w"> </span>--dry-run
+</span></code></pre></div>
+<h3 id="reclaiming-space-from-threads-that-inlined-files">Reclaiming space from threads that inlined files<a class="headerlink" href="#reclaiming-space-from-threads-that-inlined-files" title="Permanent link">&para;</a></h3>
+<p>A transport that hands the model an attachment inline serialises the file into
+the message list as base64, and the message list is persisted: a 2.6 MB PDF costs
+roughly 3.5 MB in one row, loaded whole every time the thread is opened.
+Transports have stopped writing them and strip them on the way in, but a row
+already written keeps its payload until something rewrites it:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_strip_inline_bytes<span class="w"> </span>--dry-run
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_strip_inline_bytes
+</span></code></pre></div>
+<p>It edits the JSON structurally rather than round-tripping it through a message
+type, because that round trip is exactly what would drop each message's <code>id</code> and
+the non-standard <code>attachments</code> array — the array that renders the chips and that
+the attachment relation is reconciled from. The bytes themselves are not lost:
+the attachment is untouched in the attachment store, and the model reaches it the
+way it always does, by id.</p>
 <h2 id="step-persistence">Step persistence<a class="headerlink" href="#step-persistence" title="Permanent link">&para;</a></h2>
 <p><code>DefaultStepStore</code> is the durable, owner-scoped equivalent of
 <code>pydantic-ai-harness</code>'s own <code>SqliteStepStore</code> / <code>FileStepStore</code>. Note the

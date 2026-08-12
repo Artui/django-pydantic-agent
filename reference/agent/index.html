@@ -708,6 +708,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#attachmentinlineconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AttachmentInlineConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AttachmentInlineConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AttachmentInlineConfig
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AttachmentInlineConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AttachmentInlineConfig.media_types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        media_types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AttachmentInlineConfig.max_bytes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        max_bytes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#agentdeps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1115,6 +1165,56 @@
     <span class="md-ellipsis">
       
         tool_failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attachmentinlineconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AttachmentInlineConfig
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AttachmentInlineConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AttachmentInlineConfig
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AttachmentInlineConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AttachmentInlineConfig.media_types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        media_types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AttachmentInlineConfig.max_bytes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        max_bytes
       
     </span>
   </a>
@@ -1583,6 +1683,145 @@ the audit logger and the Python logger. A plain record rather than
 <code>… | None</code> because there is no third state: the policy is either composed
 or it isn't, and <code>None</code> would have to mean "on" to keep the default,
 which reads backwards next to <code>tool_guard</code> above.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="attachmentinlineconfig"><code>AttachmentInlineConfig</code><a class="headerlink" href="#attachmentinlineconfig" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_pydantic_agent.AttachmentInlineConfig" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">AttachmentInlineConfig</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AttachmentInlineConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Which attachment types <code>read_attachment</code> hands back as file content.</p>
+<p>Tunes :func:<code>~django_pydantic_agent.agent.attachment_toolset.build_attachment_toolset</code>.
+A textual attachment is decoded and returned as text regardless of this
+record; it only governs the binary ones, where the choice is between
+attaching the bytes for the model to look at and returning a one-line note
+about a file it will never see.</p>
+<p><strong>An allowlist, not "everything that is not text".</strong> Bytes the provider
+cannot interpret are not merely useless to the model — a <code>.zip</code> or a
+<code>.exe</code> handed over as file content makes the provider reject the whole
+request, so a broad rule would trade a model that cannot read your PDF for
+a run that does not start. The default set is what mainstream providers
+actually accept: PDF, PNG, JPEG, GIF and WebP.</p>
+<p><strong><code>max_bytes</code> is deliberately far below any sane upload cap</strong>, and what it
+guards is the cost of a <em>request</em>, not of a stored thread. The bytes are
+carried in a synthetic <code>user</code> message that the tool return serialises into,
+and that message stays in the run's history: every further model request in
+the same run ships the file again. Base64 costs about a third on top, so a
+4 MiB PDF is roughly 5.5 MiB of provider payload per request — paid in
+tokens, in latency, and in the memory the run holds it in.</p>
+<p>What it does <strong>not</strong> cost is the conversation. The bytes never travel on the
+event stream, so the client never receives them and the history it posts on
+the next turn carries none; whether they outlive the run at all is the
+transport's decision, and the AG-UI transport strips them on the way to
+storage. A <em>follow-up</em> question about the same file is therefore answered by
+reading the attachment again, server-side, rather than from bytes replayed
+out of the thread.</p>
+<p>So the cap sits where a single request stops being cheap, rather than where
+the upload endpoint stops accepting files.</p>
+<p>To switch inlining off entirely and keep today's notes,
+<code>AttachmentInlineConfig(media_types=frozenset())</code>.</p>
+<p><code>AttachmentRef.mime</code> is client-declared, so the decision to inline is made
+on a hint rather than on sniffed bytes. The failure mode of a mislabelled
+file is a provider rejecting the request, not a disclosure: the store is
+owner-scoped either way, so the model only ever reaches files the acting
+user uploaded.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AttachmentInlineConfig.media_types" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">media_types</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AttachmentInlineConfig.media_types" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">media_types</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="p">{</span><span class="s2">&quot;application/pdf&quot;</span><span class="p">,</span> <span class="s2">&quot;image/png&quot;</span><span class="p">,</span> <span class="s2">&quot;image/jpeg&quot;</span><span class="p">,</span> <span class="s2">&quot;image/gif&quot;</span><span class="p">,</span> <span class="s2">&quot;image/webp&quot;</span><span class="p">}</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Content types whose bytes are attached to the tool result. Anything
+outside this set falls back to the one-line note.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AttachmentInlineConfig.max_bytes" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">max_bytes</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AttachmentInlineConfig.max_bytes" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">max_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Largest file, in bytes, that is attached rather than described. Measured
+against the bytes the store returns, not the declared <code>AttachmentRef.size</code>.</p>
 
     </div>
 
