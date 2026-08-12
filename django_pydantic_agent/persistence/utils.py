@@ -60,8 +60,8 @@ def derive_title(messages: list[Any]) -> str:
     instead of calling this.
     """
     for message in messages:
-        if _field(message, "role") == "user":
-            text = _clean(_field(message, "content"))
+        if message_field(message, "role") == "user":
+            text = _clean(message_field(message, "content"))
             if text:
                 return _truncate(text, _TITLE_LIMIT)
     return _DEFAULT_TITLE
@@ -70,17 +70,19 @@ def derive_title(messages: list[Any]) -> str:
 def derive_preview(messages: list[Any]) -> str:
     """A one-line preview: the latest message with text, collapsed + truncated."""
     for message in reversed(messages):
-        text = _clean(_field(message, "content"))
+        text = _clean(message_field(message, "content"))
         if text:
             return _truncate(text, _PREVIEW_LIMIT)
     return ""
 
 
-def _field(message: Any, name: str) -> Any:
+def message_field(message: Any, name: str) -> Any:
     """Read one field off a message record — mapping key or attribute.
 
     The stored shape is JSON (mappings), but a transport may hand objects
-    straight through, so both are supported.
+    straight through, so both are supported. Missing either way, and for a
+    record that is neither, the answer is ``None``: callers reading transport-
+    owned message shapes want a total accessor, not an exception.
     """
     if isinstance(message, Mapping):
         return message.get(name)
@@ -103,6 +105,7 @@ def _truncate(text: str, limit: int) -> str:
 __all__ = [
     "derive_preview",
     "derive_title",
+    "message_field",
     "owner_id_for",
     "resolve_owner_id",
 ]

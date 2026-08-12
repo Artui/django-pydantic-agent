@@ -20,18 +20,24 @@ class AttachmentInlineConfig:
     a run that does not start. The default set is what mainstream providers
     actually accept: PDF, PNG, JPEG, GIF and WebP.
 
-    **``max_bytes`` is deliberately far below any sane upload cap**, because an
-    inlined file is not paid for once. The bytes are carried in a synthetic
-    ``user`` message that the tool return serialises into, and that message is
-    persisted into the stored conversation, shipped to the browser on every
-    thread load, and re-sent by the client on every following turn. Base64
-    costs about a third on top: a 2300-byte PDF returned this way was measured
-    at 3293 bytes in the stored thread, so a 4 MiB PDF costs roughly 5.5 MiB in
-    the conversation row. That round trip is not waste — it is what lets a
-    *follow-up* question about the same file be answered without a second
-    ``read_attachment`` call — but it is the reason the cap sits where the cost
-    stops being free rather than where the upload endpoint stops accepting
-    files.
+    **``max_bytes`` is deliberately far below any sane upload cap**, and what it
+    guards is the cost of a *request*, not of a stored thread. The bytes are
+    carried in a synthetic ``user`` message that the tool return serialises into,
+    and that message stays in the run's history: every further model request in
+    the same run ships the file again. Base64 costs about a third on top, so a
+    4 MiB PDF is roughly 5.5 MiB of provider payload per request — paid in
+    tokens, in latency, and in the memory the run holds it in.
+
+    What it does **not** cost is the conversation. The bytes never travel on the
+    event stream, so the client never receives them and the history it posts on
+    the next turn carries none; whether they outlive the run at all is the
+    transport's decision, and the AG-UI transport strips them on the way to
+    storage. A *follow-up* question about the same file is therefore answered by
+    reading the attachment again, server-side, rather than from bytes replayed
+    out of the thread.
+
+    So the cap sits where a single request stops being cheap, rather than where
+    the upload endpoint stops accepting files.
 
     To switch inlining off entirely and keep today's notes,
     ``AttachmentInlineConfig(media_types=frozenset())``.

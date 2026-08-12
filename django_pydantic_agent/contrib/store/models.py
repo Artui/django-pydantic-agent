@@ -13,6 +13,12 @@ class StoredConversation(models.Model):
     owner (the user's pk, or an ``anon:<session_key>`` bucket under
     ``ALLOW_ANONYMOUS``) — the store always filters by it, the security boundary.
 
+    ``attachments`` is the reconciled set of files this conversation refers to,
+    derived from ``messages`` on every save (see
+    :func:`~django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments`)
+    and authoritative for attachment lifecycle: deleting the conversation drops
+    the attachments nothing else still points at.
+
     Used by
     :class:`~django_pydantic_agent.contrib.store.default_conversation_store.DefaultConversationStore`.
     Run lineage (``run_id`` / step ledger) is intentionally out of scope here;
@@ -24,6 +30,12 @@ class StoredConversation(models.Model):
     title = models.CharField(max_length=255, blank=True, default="")
     preview = models.TextField(blank=True, default="")
     messages = models.JSONField(default=list)
+    attachments = models.ManyToManyField(
+        "StoredAttachment",
+        through="ConversationAttachment",
+        related_name="conversations",
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -49,9 +61,17 @@ class StoredAttachment(models.Model):
     are the denormalised metadata returned without reading the file back.
     ``owner_id`` is the resolved owner (the user's pk, or an ``anon:<session_key>``
     bucket under ``ALLOW_ANONYMOUS``) — the store always filters by it, the
-    security boundary. ``thread_id`` optionally ties an
-    attachment to one conversation; it is left blank when a file is uploaded
-    before a thread exists, so attachments never depend on a conversation row.
+    security boundary. ``thread_id`` is a loose label a subclass or a project may
+    set to tie an attachment to one conversation; the reference store leaves it
+    blank, and it is *not* what lifecycle runs on — the
+    :class:`ConversationAttachment` relation is. It is kept because projects read
+    it.
+
+    ``sha256`` is the hex digest of the file's bytes, computed chunked at upload.
+    It is what makes a re-upload of the same bytes reuse the blob already in
+    storage instead of writing a second copy. It is blank on rows written before
+    the column existed; the ``agent_store_backfill_hashes`` management command
+    fills those in.
 
     Used by
     :class:`~django_pydantic_agent.contrib.store.default_attachment_store.DefaultAttachmentStore`.
@@ -63,7 +83,10 @@ class StoredAttachment(models.Model):
     name = models.CharField(max_length=255, blank=True, default="")
     mime = models.CharField(max_length=255, blank=True, default="")
     size = models.PositiveBigIntegerField(default=0)
-    file = models.FileField(upload_to="django_pydantic_agent/attachments/")
+    sha256 = models.CharField(max_length=64, blank=True, default="")
+    # Indexed because deleting a row has to ask whether any other row still
+    # points at the same stored blob before removing the bytes.
+    file = models.FileField(upload_to="django_pydantic_agent/attachments/", db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -73,10 +96,51 @@ class StoredAttachment(models.Model):
                 name="django_pydantic_agent_attachment_owner_id_unique",
             )
         ]
-        indexes = [models.Index(fields=["owner_id", "-created_at"])]
+        indexes = [
+            models.Index(fields=["owner_id", "-created_at"]),
+            # Owner first, and only ever queried with an owner. A plain index on
+            # ``sha256`` alone would make exactly the query this store must never
+            # run — "who else holds these bytes?" across tenants — the cheap one.
+            models.Index(fields=["owner_id", "sha256"]),
+        ]
 
     def __str__(self) -> str:
         return self.name or self.attachment_id
+
+
+class ConversationAttachment(models.Model):
+    """One conversation's reference to one attachment.
+
+    The through model behind ``StoredConversation.attachments``. It is a
+    many-to-many rather than a foreign key on the attachment because both ends
+    are plural: deduplication means several rows may describe the same bytes,
+    and the same attachment id may be quoted by more than one thread once a user
+    forwards a file into a second conversation.
+
+    Rows are derived, never hand-written: a conversation's save reconciles them
+    from the attachment ids carried by its own messages. Both sides cascade, so
+    deleting either end drops the link; the attachment row itself outlives the
+    link and is collected separately, once nothing references it.
+    """
+
+    conversation = models.ForeignKey(
+        StoredConversation, on_delete=models.CASCADE, related_name="attachment_links"
+    )
+    attachment = models.ForeignKey(
+        StoredAttachment, on_delete=models.CASCADE, related_name="conversation_links"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation", "attachment"],
+                name="django_pydantic_agent_conversation_attachment_unique",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.conversation.thread_id}:{self.attachment.attachment_id}"
 
 
 # --- Durable run lineage -----------------------------------------------------

@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The reference attachment store deduplicates uploads by content hash, within
+  one owner.** `StoredAttachment` gains a `sha256` column, hashed in chunks at
+  upload so a 10 MiB file is fingerprinted without being held in memory whole.
+  An upload whose bytes the same owner already has points at the blob already in
+  storage instead of writing a second copy — the same file dropped into five
+  threads was five blobs before this.
+
+  A row is still created per upload, deliberately. The row carries the `name`
+  the composer renders on the chip, so the same bytes sent again under a
+  different filename must keep their own name; what is shared is the file
+  underneath.
+
+  **Deduplication is scoped to one owner and stays that way.** Sharing a copy
+  across tenants is the better trade on storage alone, and it is not on offer: a
+  cross-owner hit discloses that another tenant holds a file whose bytes you
+  already have. The new index leads with `owner_id` for the same reason.
+
+  Rows written before the column existed have no hash and cannot be matched
+  until the new `agent_store_backfill_hashes` command fills them in — a command
+  rather than a data migration, because hashing means reading every blob back
+  out of storage and a deploy should not be held open for a bucket.
+
+- **Attachments now have a lifecycle: a conversation delete takes the ones
+  nothing else refers to.** A new `ConversationAttachment` through model links
+  conversations to attachments, and saving a conversation reconciles it from the
+  attachment ids the messages already carry (the `attachments` array the web
+  component rides on a user message). No wire change and no client change. The
+  parse is total — a malformed entry degrades to "no reference" rather than
+  raising mid-save — and ids resolve only within their own owner, so a guessed
+  id links nothing.
+
+  Deleting a conversation through the store then deletes the attachments no
+  other conversation references, blobs included; one a second thread quotes
+  survives untouched. Deleting rows by another route (a queryset `delete()`, the
+  admin) skips the cascade and leaves them unreferenced for the prune command.
+
+- **`agent_store_prune_attachments`, for uploads that were never sent.** Those
+  belong to no conversation, so no cascade ever reaches them. It takes
+  `--older-than` (default `24h`), and the threshold is the point: references
+  alone cannot tell an upload abandoned last month from one sitting in a
+  composer right now, since both have zero, and a naive sweep would delete a file
+  out from under a user mid-compose. `--dry-run` reports what would go, counting
+  a shared blob only when every row pointing at it is in the set.
+
+  The library still deletes on nothing but a cascade you can point at and a
+  command you schedule. There is no TTL sweep and no timer.
+
+- **`agent_store_strip_inline_bytes`, to reclaim space from threads that inlined
+  files.** A transport that hands the model an attachment inline serialises it
+  into the message list as base64; a 2.6 MB PDF costs roughly 3.5 MB in one row,
+  shipped to the browser on every load. Transports have stopped writing them,
+  but rows already written keep their payload until something rewrites them.
+
+  It edits the JSON structurally and never round-trips it through a message
+  type, because that round trip is what drops each message's `id` and the
+  non-standard `attachments` array — the array that renders the chips and that
+  the new relation is reconciled from. `--dry-run` reports the bytes it would
+  reclaim. The attachment itself is untouched; the model still reaches it by id.
+
+### Changed
+
+- **Deleting an attachment no longer deletes its bytes unconditionally.** With
+  deduplication two rows can share one stored file, and the old unconditional
+  `file.delete()` would have left the survivor resolving to nothing. The bytes
+  now go when the last row pointing at them does.
+
+- `StoredAttachment.thread_id` is unchanged and stays. It is a loose label a
+  project may set; the new relation, not the column, is what lifecycle runs on.
+
+- **One migration comes with all of this** —
+  `0003_attachment_content_hash_and_conversation_links`. Projects that opted
+  into `django_pydantic_agent.contrib.store` need to run `migrate`; projects
+  that did not still get no model and no migration.
+
 ### Fixed
 
 - **A PDF or an image the user attached came back to the model as a note saying
@@ -17,27 +93,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `read_attachment` now returns the bytes as attached file content for the
   types providers can actually read: PDF, PNG, JPEG, GIF and WebP.
 
-  ⛔ **It is an allowlist, not "everything that is not text".** A `.zip` or an
+  **It is an allowlist, not "everything that is not text".** A `.zip` or an
   `.exe` handed over as file content is not merely useless to the model — the
   provider rejects the request — so a broad rule would have traded a model that
   cannot read your PDF for a run that does not start. Everything outside the
   list still returns the same note it returned before.
 
-  ⚠ **`read_attachment` no longer always returns `str`.** For a PDF or image
+  **`read_attachment` no longer always returns `str`.** For a PDF or image
   inside the size cap it returns a `pydantic_ai.messages.ToolReturn`. Nothing
   about the model-facing text changes for **textual** attachments — those are
   byte-identical to before — and every non-inlined case still returns the exact
   same string, but code that calls the tool function directly and assumes a
   string sees the difference.
 
-  ⚠ **Inlined bytes are persisted into the stored thread and replayed to the
-  client.** The bytes ride in a synthetic `user` message that the tool return
-  serialises into, so they land in the conversation row, ship to the browser on
-  every thread load, and are re-sent by the client on every following turn.
-  Base64 adds about a third: a 4 MiB PDF costs roughly 5.5 MiB in the row. That
-  round trip is also what lets a *follow-up* question about the same file be
-  answered without a second `read_attachment` call. To turn inlining off
-  entirely, pass `AttachmentInlineConfig(media_types=frozenset())`.
+  **Inlined bytes are paid for per request, inside the run that reads the
+  file.** They ride in a synthetic `user` message that the tool return
+  serialises into, and that message stays in the run's history, so every further
+  model request in the same run ships the file again. Base64 adds about a third:
+  a 4 MiB PDF is roughly 5.5 MiB of provider payload each time, in tokens,
+  latency and the memory the run holds it in.
+
+  They do **not** travel on the event stream. The client never receives them, so
+  the history it posts on the next turn carries none, and whether they outlive
+  the run at all is the transport's call — the AG-UI transport strips them on
+  the way to storage. A *follow-up* question about the same file is answered by
+  reading the attachment again, server-side, not from bytes replayed out of the
+  stored thread. To turn inlining off entirely, pass
+  `AttachmentInlineConfig(media_types=frozenset())`.
 
 ### Added
 
@@ -48,11 +130,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AttachmentRef.size`) is where a file is described instead. `inline=None`
   keeps the defaults, so an existing call site needs no edit.
 
-  The cap sits far below any upload limit you would set, for the persistence
-  reason above rather than a provider one. Raise it knowing what it costs per
-  turn.
+  The cap sits far below any upload limit you would set, for the per-request
+  reason above: the file goes to the provider on every model request left in the
+  run. Raise it knowing what it costs per request.
 
-  ⚠ **The escape hatch is constructor-only for now**, because this substrate
+  **The escape hatch is constructor-only for now**, because this substrate
   reads no Django settings by design. A future release of the transports will
   surface it through their own settings namespaces — that needs this package
   released first, so until then a project overriding it passes an

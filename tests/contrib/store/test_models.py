@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django_pydantic_agent.contrib.store.models import (
+    ConversationAttachment,
     StoredAttachment,
     StoredConversation,
     StoredRun,
@@ -24,6 +25,14 @@ def test_attachment_str_prefers_name() -> None:
 
 def test_attachment_str_falls_back_to_id() -> None:
     assert str(StoredAttachment(attachment_id="a1", name="")) == "a1"
+
+
+def test_conversation_attachment_str_names_both_ends() -> None:
+    link = ConversationAttachment(
+        conversation=StoredConversation(thread_id="t1"),
+        attachment=StoredAttachment(attachment_id="a1"),
+    )
+    assert str(link) == "t1:a1"
 
 
 def test_run_str_is_run_id() -> None:
