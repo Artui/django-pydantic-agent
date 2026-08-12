@@ -28,18 +28,17 @@ class ScopedConversationStore:
             conversation_store=ScopedConversationStore(store, scope="public"),
         )
 
-    Prefixing the thread id is deliberate. A ``scope`` column would mean a
-    migration *and* a breaking change to the
+    The partition is a thread-id prefix, so this composes with any
+    implementation, third-party ones included, where a ``scope`` column would
+    mean a migration and a breaking change to the
     :class:`~django_pydantic_agent.persistence.types.conversation_store.ConversationStore`
-    protocol — which every custom store implements — for a partition the id space
-    already expresses. This composes with any implementation, third-party ones
-    included.
+    protocol every custom store implements.
 
-    **Opt in explicitly.** :class:`AGUIServer` deliberately does not wrap by
-    itself: doing so from its ``namespace`` would silently orphan the whole
-    thread history of an existing single-endpoint project the moment it set one.
+    **Opt in explicitly.** A transport does not wrap by itself: doing so from its
+    namespace would silently orphan the whole thread history of an existing
+    single-endpoint project the moment it set one.
 
-    The scope is invisible on the wire — thread ids are echoed back to the client
+    The scope is invisible on the wire. Thread ids are echoed back to the client
     unchanged; only the storage key carries the prefix.
     """
 
@@ -74,9 +73,8 @@ class ScopedConversationStore:
         """This scope's threads only, with storage keys translated back.
 
         ``limit`` is applied by the inner store *before* this filter, so a busy
-        sibling scope can crowd out rows. Acceptable for a drawer that is capped
-        anyway; a store that needs exact per-scope paging should partition at the
-        query, not by wrapping.
+        sibling scope can crowd out rows. A store needing exact per-scope paging
+        should partition at the query rather than by wrapping.
         """
         prefix = f"{self._scope}:"
         return [

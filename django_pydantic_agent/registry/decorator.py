@@ -23,12 +23,10 @@ def tool(
 ) -> Callable[[F], F]:
     """Register the decorated callable on ``registry`` as a tool.
 
-    The tool's name defaults to the function name; its description
-    defaults to the first paragraph of the function's docstring. Both
-    can be overridden via the keyword arguments. ``confirm`` supplies a
-    human-readable confirmation prompt for a destructive tool (surfaced as
-    ``x-confirm``); ``summary`` a short display label (surfaced as
-    ``x-summary``).
+    ``name`` defaults to the function's name and ``description`` to the first
+    paragraph of its docstring. ``confirm`` is the confirmation prompt for a
+    destructive tool and ``summary`` a short display label; both reach the client
+    as the matching ``x-*`` schema key.
     """
 
     def _decorator(fn: F) -> F:

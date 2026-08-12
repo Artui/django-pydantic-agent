@@ -14,15 +14,15 @@ from django_pydantic_agent.persistence.utils import resolve_owner_id
 class ModelAttachmentStore(ABC):
     """Abstract base for a model-backed (or any sync) ``AttachmentStore``.
 
-    Provides the async wrapping and per-request owner scoping — the same shape as
-    :class:`~django_pydantic_agent.ModelConversationStore` — so a subclass implements
-    three *synchronous* operations against its own storage (a Django ``Storage``
-    for the bytes, a model row for the metadata). Kept model-agnostic on purpose:
-    the package ships no concrete model so it forces no migration; the opt-in
-    ``django_pydantic_agent.contrib.store`` app supplies one.
+    The attachment twin of :class:`~django_pydantic_agent.ModelConversationStore`
+    — same async wrapping, same per-request owner scoping, same
+    ``allow_anonymous`` policy — over a subclass's own storage: a Django
+    ``Storage`` for the bytes, a model row for the metadata. The opt-in
+    ``django_pydantic_agent.contrib.store`` app supplies a concrete pair.
 
     Each ``_save`` / ``_open`` / ``_remove`` receives the resolved ``owner_id``
-    (``None`` for anonymous) and must filter by it so files never cross users.
+    (``None`` for anonymous) and **must** filter by it, so files never cross
+    users.
 
     Example::
 
@@ -35,26 +35,13 @@ class ModelAttachmentStore(ABC):
             def _remove(self, attachment_id, owner_id): ...
     """
 
-    # Class-level default (an immutable bool, so no shared-mutable hazard) so a
-    # subclass that overrides __init__ and forgets super() fails **closed** —
-    # refusing anonymous requests — rather than raising AttributeError at
-    # request time or, worse, defaulting open.
+    # A class-level immutable default, so a subclass that overrides __init__ and
+    # forgets super() fails closed — refusing anonymous requests — rather than
+    # raising AttributeError at request time or defaulting open.
     _allow_anonymous: bool = False
 
     def __init__(self, *, allow_anonymous: bool = False) -> None:
-        """``allow_anonymous`` governs whether anonymous requests are served.
-
-        ``False`` (the default) refuses them rather than collapsing every
-        anonymous visitor into one shared owner bucket, where they could read and
-        delete each other's data. It is a *store* policy, so two endpoints
-        sharing a store necessarily agree on it.
-
-        This substrate reads no Django settings: pass the value explicitly (a
-        transport that exposes an ``ALLOW_ANONYMOUS``-style setting resolves it
-        and hands it down).
-
-        A subclass that overrides ``__init__`` must call ``super().__init__()``.
-        """
+        """A subclass overriding this must call ``super().__init__()``."""
         self._allow_anonymous: bool = allow_anonymous
 
     async def save(self, upload: UploadedFile, *, request: HttpRequest) -> AttachmentRef:
@@ -66,9 +53,9 @@ class ModelAttachmentStore(ABC):
     async def delete(self, attachment_id: str, *, request: HttpRequest) -> None:
         await sync_to_async(self._remove_scoped)(attachment_id, request)
 
-    # Owner resolution + the sync op run in one thread (``resolve_owner_id`` may
-    # create a session row for the anonymous bucket, so it can't run on the event
-    # loop). ``AnonymousOperationError`` propagates up to the view (→ 403).
+    # Owner resolution and the sync op share one thread: ``resolve_owner_id`` may
+    # create a session row for the anonymous bucket, so it cannot run on the
+    # event loop. ``AnonymousOperationError`` propagates to the view as a 403.
     def _save_scoped(self, upload: UploadedFile, request: HttpRequest) -> AttachmentRef:
         return self._save(upload, resolve_owner_id(request, allow_anonymous=self._allow_anonymous))
 

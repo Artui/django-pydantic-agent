@@ -7,38 +7,27 @@ from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import infer_model
 from pydantic_ai.providers import infer_provider_class
 
-# 0.2.0 accepted a non-standard ``gemini:`` prefix; Pydantic-AI's provider name
-# is ``google``. Keep the alias working (back-compat) by normalising it before
-# delegating. Everything else is Pydantic-AI's own provider vocabulary.
+# 0.2.0 accepted a non-standard ``gemini:`` prefix where Pydantic-AI's provider
+# name is ``google``. Normalising here keeps that spelling working; every other
+# prefix is Pydantic-AI's own vocabulary.
 _PREFIX_ALIASES = {"gemini": "google"}
 
 
 def build_model(model: str, *, api_key: str | None = None, provider: Any = None) -> Any:
-    """Build a Pydantic-AI model from a ``"provider:name"`` string + explicit key.
+    """Build a Pydantic-AI model from a ``"provider:name"`` string and explicit key.
 
-    Delegates the ``provider:`` prefix → Model-class resolution to Pydantic-AI's
-    own :func:`infer_model`, supplying a ``provider_factory`` that injects the
-    credentials instead of letting Pydantic-AI read them from the environment:
-
-    - ``provider`` (a ``Provider`` instance) takes precedence — used as-is, so
-      it can carry a custom ``base_url`` / client.
-    - otherwise ``api_key`` is passed to the prefix's default ``Provider`` class
-      (resolved via :func:`infer_provider_class`).
-
-    Because the prefix map lives in Pydantic-AI, every provider it knows works
-    automatically (``anthropic``, ``openai``, ``openai-responses``, ``google``,
-    ``groq``, ``bedrock``, …) — there is no hand-maintained table to drift out
-    of date.
-
-    A bare model name Pydantic-AI can map to a provider (e.g. ``claude-…`` →
-    anthropic) is accepted too; only when the provider can't be resolved at all
-    is an error raised.
+    Prefix resolution is delegated to Pydantic-AI's :func:`infer_model`, with a
+    ``provider_factory`` that injects credentials rather than letting it read the
+    environment. A ``provider`` instance takes precedence and is used as-is, so
+    it may carry a custom ``base_url`` or client; otherwise ``api_key`` goes to
+    the prefix's default ``Provider`` class. Every provider Pydantic-AI knows
+    therefore works with no table to maintain here, and a bare model name it can
+    map to a provider is accepted too.
 
     Raises:
-        ImproperlyConfigured: when the model's provider can't be resolved — an
-            unknown / uninferable prefix, or the matching provider extra not
-            installed. Pass ``provider=`` a ``Provider`` instance for anything
-            Pydantic-AI can't infer.
+        ImproperlyConfigured: The provider could not be resolved — an unknown or
+            uninferable prefix, or its extra is not installed. Pass a
+            ``Provider`` instance for anything Pydantic-AI cannot infer.
     """
     prefix, sep, name = model.partition(":")
     if sep and prefix in _PREFIX_ALIASES:
@@ -46,9 +35,9 @@ def build_model(model: str, *, api_key: str | None = None, provider: Any = None)
     try:
         if provider is not None:
             return infer_model(model, provider_factory=lambda _name: provider)
-        # Cast: ``infer_provider_class`` returns ``type[Provider]`` whose base
-        # ``__init__`` is argument-less in stubs; provider subclasses accept
-        # ``api_key`` — this is the Pydantic-AI boundary where ``Any`` is allowed.
+        # Cast because ``infer_provider_class`` returns ``type[Provider]``, whose
+        # base ``__init__`` is argument-less in the stubs while every subclass
+        # accepts ``api_key``.
         return infer_model(
             model,
             provider_factory=lambda name: cast("Any", infer_provider_class(name))(api_key=api_key),

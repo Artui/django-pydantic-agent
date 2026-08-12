@@ -16,13 +16,11 @@ _CHUNK_SIZE = 64 * 1024
 def hash_file(handle: File) -> str:
     """The SHA-256 of ``handle``'s bytes, as hex, read a chunk at a time.
 
-    Chunked deliberately: fingerprinting a 10 MiB upload must not put 10 MiB in
-    memory, and the same helper hashes files already in storage (where the bytes
-    may be coming back over the network from S3).
-
-    ``File.chunks()`` rewinds to the start when the underlying stream supports
-    it, so a handle hashed here can still be handed to ``Storage.save``
-    afterwards and will be written whole.
+    Chunked so fingerprinting a 10 MiB upload does not put 10 MiB in memory, and
+    because the same helper hashes files already in storage, where the bytes may
+    be arriving over the network. ``File.chunks()`` rewinds when the underlying
+    stream supports it, so a handle hashed here can still go to ``Storage.save``
+    and be written whole.
     """
     digest = hashlib.sha256()
     for chunk in handle.chunks(chunk_size=_CHUNK_SIZE):
@@ -34,10 +32,9 @@ def unreferenced_attachments(attachments: QuerySet[StoredAttachment]) -> QuerySe
     """Narrow ``attachments`` to those no conversation refers to.
 
     The single definition of "unreferenced", so the conversation cascade and the
-    garbage-collection command cannot drift apart on what an orphan is. Note
-    what it does *not* consider: an upload that was never sent is unreferenced
-    from the moment it lands, which is why the command pairs this with an age
-    threshold.
+    prune command cannot drift on what an orphan is. It does not consider age: an
+    upload that was never sent is unreferenced from the moment it lands, which is
+    why the command pairs this with a threshold.
     """
     return attachments.filter(conversations__isnull=True)
 
@@ -45,14 +42,12 @@ def unreferenced_attachments(attachments: QuerySet[StoredAttachment]) -> QuerySe
 def delete_attachments(attachments: Iterable[StoredAttachment]) -> AttachmentDeletion:
     """Delete each row, and its blob once no surviving row shares that blob.
 
-    Deduplication means the row count and the blob count come apart: several
-    rows may point at one stored file, each with its own user-visible name. The
-    bytes therefore go only when the last row referring to them does, and the
-    check is on the stored file name rather than on ``sha256`` — the name is what
-    identifies a blob, while the hash is merely what caused two rows to share
-    one. Rows hashed by a backfill can carry the same digest while pointing at
-    two distinct files written before deduplication existed; deleting on the
-    digest would leak one of them.
+    Deduplication pulls the row count and the blob count apart, so the bytes go
+    only when the last row referring to them does. The check is on the stored
+    file name, never on ``sha256``: the name identifies a blob, while the hash is
+    merely what made two rows share one, and rows hashed by a backfill can carry
+    one digest while pointing at two distinct files written before deduplication
+    existed. Deleting on the digest would leak one of them.
     """
     rows = 0
     blobs = 0
@@ -73,14 +68,11 @@ def delete_attachments(attachments: Iterable[StoredAttachment]) -> AttachmentDel
 def preview_attachment_deletion(attachments: list[StoredAttachment]) -> AttachmentDeletion:
     """What :func:`delete_attachments` would remove, removing nothing.
 
-    Kept next to the function it predicts because the two have to agree: a
-    dry run that reports the row count and calls it "space reclaimed" overstates
-    the result the moment two rows share a blob, and a dry run you cannot trust
-    is worse than none on a command whose whole job is deleting things.
-
-    A blob counts as freed when every row pointing at it is in ``attachments`` —
-    so rows that merely share a file with each other still free it once, and one
-    left behind outside the set keeps it.
+    Kept beside the function it predicts because the two have to agree; a dry run
+    reporting the row count as space reclaimed overstates the result the moment
+    two rows share a blob. A blob counts as freed when every row pointing at it
+    is in ``attachments``, so rows sharing a file with each other free it once,
+    and one left outside the set keeps it.
     """
     sizes: dict[str, int] = {}
     for attachment in attachments:

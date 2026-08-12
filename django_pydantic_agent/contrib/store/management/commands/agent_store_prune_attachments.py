@@ -24,22 +24,15 @@ _DEFAULT_AGE = "24h"
 class Command(BaseCommand):
     """Delete uploads no conversation refers to and that are old enough to be safe.
 
-    Deleting a conversation already takes its attachments with it. What that
-    cascade can never see is the upload that was never sent: the user picked a
-    file, the composer uploaded it, and then the message was never posted. It
-    belongs to no conversation, so nothing will ever come looking for it.
+    The conversation cascade collects attachments a thread quoted; what it can
+    never see is the upload that was never sent, which belongs to no conversation
+    at all.
 
-    Which is also why age is not optional. An upload that landed thirty seconds
-    ago and is still sitting in the composer is indistinguishable, by references
-    alone, from one abandoned last month — a sweep of everything unreferenced
-    would delete files out from under a user mid-compose. ``--older-than``
-    defaults to 24 hours, and is a floor on how long an upload has to survive
-    before it can be considered abandoned; set it to comfortably more than the
-    longest a message may sit unsent in your product.
-
-    Nothing schedules this. The library deletes on a cascade the operator can
-    reason about and on a command the operator runs; it never runs a timer
-    nobody asked for.
+    Age is therefore not optional. By references alone, an upload sitting in a
+    composer right now is indistinguishable from one abandoned last month, so
+    ``--older-than`` is the floor on how long an upload must survive before it
+    counts as abandoned. Set it comfortably above the longest a message may sit
+    unsent in your product. Nothing schedules this command for you.
     """
 
     help = "Delete unreferenced attachments older than a threshold (default 24h)."
@@ -83,9 +76,9 @@ class Command(BaseCommand):
 def _parse_age(value: str) -> timedelta:
     """A ``30m`` / ``24h`` / ``7d`` threshold, or hours when the unit is left off.
 
-    Rejected rather than clamped when it makes no sense: a negative threshold
-    would put the cutoff in the future and sweep away uploads that have not
-    happened yet, which is the one outcome this command exists to prevent.
+    A negative value is rejected rather than clamped: it would put the cutoff in
+    the future and sweep away uploads that have not happened yet, the one outcome
+    this command exists to prevent.
     """
     text = value.strip().lower()
     unit = _UNITS.get(text[-1:])

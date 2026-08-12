@@ -25,24 +25,18 @@ def build_input_schema(
 ) -> dict[str, Any]:
     """Derive a JSON Schema object from ``fn``'s parameters.
 
-    Supports the primitive types used by the built-in tool surface:
-    ``str``, ``int``, ``float``, ``bool``, ``list[T]``, ``dict[str, Any]``,
-    and ``X | None`` unions. Anything richer falls back to an empty
-    schema fragment (no type constraint), which is still wire-valid JSON
-    Schema.
+    Covers ``str``, ``int``, ``float``, ``bool``, ``list[T]``, ``dict[str,
+    Any]`` and ``X | None`` unions. Anything richer falls back to an empty
+    fragment, imposing no type constraint but staying wire-valid.
 
-    The ``destructive`` flag is stamped at the schema root as
-    ``x-destructive``; ``category`` as ``x-category``; ``confirm`` (when
-    given) as ``x-confirm``. AG-UI passes these extensions through
-    verbatim, and frontends read ``x-destructive`` / ``x-confirm`` to gate
-    execution behind a confirmation step.
+    ``destructive`` / ``category`` / ``confirm`` / ``summary`` are stamped at the
+    schema root as the matching ``x-*`` extension keys, which AG-UI passes
+    through verbatim to the client.
     """
-    # `eval_str=True` resolves string annotations (PEP 563 / forward refs)
-    # while preserving them verbatim. Unlike `typing.get_type_hints`, it does
-    # NOT apply the implicit-`Optional` wrapping that Python <= 3.10 adds to a
-    # parameter whose default is `None`, so the derived schema is identical
-    # across Python versions (e.g. `anything: Any = None` stays `Any`, not
-    # `Any | None`).
+    # `eval_str=True` resolves string annotations while preserving them verbatim.
+    # Unlike `typing.get_type_hints` it does NOT apply the implicit-`Optional`
+    # wrapping Python 3.10 adds to a parameter defaulting to `None`, so the
+    # derived schema is identical across Python versions.
     sig = inspect.signature(fn, eval_str=True)
     properties: dict[str, Any] = {}
     required: list[str] = []
@@ -75,8 +69,8 @@ def build_input_schema(
 
 
 def _hint_to_schema(hint: Any) -> dict[str, Any]:
-    # PEP 484: a bare ``None`` annotation means ``type(None)``. `eval_str`
-    # leaves it as the ``None`` object (unlike `get_type_hints`), so normalise.
+    # A bare ``None`` annotation means ``type(None)``, but `eval_str` leaves it
+    # as the ``None`` object where `get_type_hints` would not.
     if hint is None:
         hint = type(None)
     if hint is Any:

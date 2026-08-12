@@ -20,14 +20,11 @@ def _ok(user: Any) -> dict[str, Any]:
 def test_an_unguarded_spec_is_refused_rather_than_exposed() -> None:
     """The strict default reaches a consumer straight through this builder.
 
-    ``permission_classes=None`` means *inherit* over HTTP — the viewset's own
-    classes, then ``DEFAULT_PERMISSION_CLASSES``. A capability dispatches off
-    HTTP and has neither, so the same spec that is correctly guarded behind a
-    viewset would become callable by whatever the model decided to call.
-
-    Asserted here and not only upstream because this function is how both this
-    package and django-ag-ui build the capability: if the refusal ever stopped
-    propagating, every consumer of the wrapper would silently lose it.
+    ``permission_classes=None`` means inherit over HTTP, but a capability
+    dispatches off HTTP with nothing to inherit from, so a spec correctly guarded
+    behind a viewset would become callable by whatever the model decided to call.
+    Asserted here rather than only upstream because this function is how every
+    consumer builds the capability.
     """
     with pytest.raises(ImproperlyConfigured, match="no permission_classes"):
         build_spec_capability({"ping": ServiceSpec(service=_ok, atomic=False)})

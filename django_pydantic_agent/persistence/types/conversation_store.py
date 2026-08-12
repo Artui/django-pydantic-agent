@@ -12,23 +12,22 @@ from django_pydantic_agent.persistence.types.conversation_meta import Conversati
 class ConversationStore(Protocol):
     """Pluggable server-side persistence for AG-UI conversations.
 
-    Passed to ``AGUIServer(conversation_store=...)``. The package ships a no-op
-    default (``NullConversationStore`` — the server stays stateless) and a
-    session-backed implementation; projects supply their own (a DB model, Redis,
-    …). All methods are async so an implementation can use the async ORM or a
-    network backend.
+    Handed to a transport. The package ships ``NullConversationStore`` (the
+    server stays stateless) and a session-backed implementation; projects supply
+    their own. All methods are async so an implementation can use the async ORM
+    or a network backend.
 
     Threads key by ``(owner_id, thread_id)``, so two endpoints sharing a store
     share one user's thread list. Wrap with
     :class:`~django_pydantic_agent.persistence.scoped_conversation_store.ScopedConversationStore`
     to partition them.
 
-    ``list`` returns owner-scoped *metadata only* (no message bodies) for the
-    thread drawer, capped at ``limit`` rows (``None`` = the store's own default);
-    a store that can't enumerate (the stateless default) returns an empty list.
-    ``exists`` is a cheap owner-scoped presence check — no message body loaded —
-    so a rename / probe doesn't deserialize a whole thread just to 404. ``rename``
-    sets a thread's display title (a store that can't persist one is a no-op).
+    ``list`` returns owner-scoped metadata only, no message bodies, capped at
+    ``limit`` rows (``None`` for the store's own default); a store that cannot
+    enumerate returns an empty list. ``exists`` is a presence check that loads no
+    message body, so a rename or probe does not deserialize a whole thread just
+    to 404. ``rename`` sets a display title, and is a no-op in a store that
+    cannot persist one.
     """
 
     async def load(self, thread_id: str, *, request: HttpRequest) -> Conversation | None: ...

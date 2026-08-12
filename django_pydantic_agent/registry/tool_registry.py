@@ -12,11 +12,9 @@ from django_pydantic_agent.registry.types.tool_spec import ToolSpec
 class ToolRegistry:
     """An ordered, named collection of server-side tools.
 
-    State lives on the instance: a ``DjangoAGUIView`` holds one registry;
-    tests build a fresh registry per scenario. The registry derives a
-    JSON Schema for each tool at registration (including the
-    ``x-destructive`` / ``x-category`` extensions) and can dispatch sync
-    or async callables.
+    State lives on the instance — a transport holds one, tests build a fresh one
+    per scenario. Each tool's JSON Schema is derived once at registration, and
+    either sync or async callables can be dispatched.
     """
 
     def __init__(self) -> None:

@@ -16,64 +16,47 @@ from django_pydantic_agent.registry.tool_registry import ToolRegistry
 def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps, Any]:
     """Build a Pydantic-AI ``Agent`` from a registry and an :class:`AgentConfig`.
 
-    Each registry tool is registered as a plain Pydantic-AI tool. When
-    ``config.audit_logger`` is set, an :class:`AuditCapability` on the
-    ``wrap_tool_execute`` lifecycle hook times and records **every** tool the
-    agent runs — registry tools and composed toolsets (drf-mcp / spec /
-    attachment / skill tools) alike. Frontend tools declared in the AG-UI
-    ``RunAgentInput`` are merged automatically by the adapter and are not
-    registered here.
+    Each registry tool is registered as a plain Pydantic-AI tool, and ``config``
+    supplies the model, the toolsets and capabilities composed alongside them,
+    and the policies below. Frontend tools declared in the AG-UI
+    ``RunAgentInput`` are merged by the adapter, not registered here.
 
-    ``model_settings`` / ``retries`` tune the model; ``toolsets`` and
-    ``capabilities`` compose external Pydantic-AI toolsets/capabilities (e.g. an
-    MCP-client toolset) alongside the registry tools, so the agent can reach
-    beyond the registered set. ``tool_guard``, when enabled, adds a
-    :class:`ToolGuard` that flips destructive tools to require approval, and
-    ``tool_failure`` (on unless turned off) adds a :class:`ToolFailurePolicy`
-    so a raising tool fails its own call instead of the whole run.
+    Three capabilities are added from ``config`` on request: an
+    :class:`AuditCapability` that times and records **every** tool the agent runs
+    — registry tools and composed toolsets alike — a :class:`ToolGuard` that
+    flips destructive tools to require approval, and a
+    :class:`ToolFailurePolicy`, on unless turned off, so a raising tool fails its
+    own call rather than the whole run. Each declares its position through
+    ``get_ordering`` and pydantic-ai sorts them, so the list needs no
+    pre-ordering.
 
-    The agent is typed ``Agent[AgentDeps, ...]``, so a run must be given
-    :class:`AgentDeps` (the transport builds one per run and passes ``deps=``).
-
-    Capabilities are composed **order-independently**: each declares its
-    position via ``get_ordering`` (audit is outermost, the guard is orthogonal),
-    and pydantic-ai's ``CombinedCapability`` topologically sorts them — so the
-    list built here needn't be pre-ordered.
+    The agent is typed ``Agent[AgentDeps, ...]``, so every run must be given
+    :class:`AgentDeps` through ``deps=``.
     """
     capabilities = list(config.capabilities) if config.capabilities is not None else []
     if config.audit_logger is not None and not isinstance(config.audit_logger, NullAuditLogger):
-        # Order-independent: AuditCapability.get_ordering() pins it outermost, so
-        # it wraps every tool execution regardless of list position.
         capabilities.append(
             AuditCapability(config.audit_logger, ip_address=config.audit_ip_address),
         )
     if config.tool_guard is not None and config.tool_guard.enabled:
         capabilities.append(ToolGuard(registry, config=config.tool_guard))
     if config.tool_failure.enabled:
-        # Needs no ordering constraint against the audit capability above: the
-        # two ride different hooks (``on_tool_execute_error`` here,
-        # ``wrap_tool_execute`` there), so the failure is recorded and then
-        # converted, whichever way the list is sorted.
+        # No ordering constraint against the audit capability: the two ride
+        # different hooks (``on_tool_execute_error`` here, ``wrap_tool_execute``
+        # there), so the failure is recorded and then converted either way.
         capabilities.append(ToolFailurePolicy(config.tool_failure))
     return Agent(
         model=config.model,
-        # Typed deps are what let every tool, toolset and capability read
-        # request-scoped values off ``ctx.deps`` instead of closing over a
-        # request — which in turn is what lets ``SpecToolset`` bind the user
-        # through its own default, and what makes the agent reusable across runs.
         deps_type=AgentDeps,
         tools=[binding.spec.fn for binding in registry],
-        # ``[str, DeferredToolRequests]`` turns on the tool-approval interrupt
-        # loop for **server-side** tools. The AG-UI adapter only augments
-        # ``output_type`` with ``DeferredToolRequests`` when the run carries
-        # *frontend* tools (``_adapter.py`` ``if toolset:``), so a run whose only
-        # gated tool is server-side would never defer. Setting it here makes the
-        # approval path independent of frontend tools; when the adapter also
-        # augments, pydantic-ai flattens and dedups the union.
-        # Cast for the same reason as ``model_settings`` below: ty cannot bind
+        # ``DeferredToolRequests`` turns on the approval interrupt loop for
+        # *server-side* tools. The AG-UI adapter augments ``output_type`` only
+        # when the run carries frontend tools, so a run whose only gated tool is
+        # server-side would never defer; setting it here makes approval
+        # independent of them, and pydantic-ai dedups when the adapter augments
+        # too. Cast for the same reason as ``model_settings``: ty cannot bind
         # ``OutputDataT`` from a heterogeneous list literal, so the call matches
-        # no ``Agent.__init__`` overload and the inferred return degrades to
-        # unsolved typevars. ``Any`` binds it to the declared return type.
+        # no overload and the return degrades to unsolved typevars.
         output_type=cast("Any", [str, DeferredToolRequests]),
         instructions=config.instructions,
         # ``model_settings`` is a plain dict at the settings boundary; Agent

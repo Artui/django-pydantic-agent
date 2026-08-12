@@ -10,16 +10,14 @@ from django_pydantic_agent.persistence.types.attachment_ref import AttachmentRef
 class OpenedAttachment:
     """An attachment's metadata paired with a readable byte stream.
 
-    Returned by :meth:`AttachmentStore.open
-    <django_pydantic_agent.persistence.types.attachment_store.AttachmentStore>` so the
-    download view and the ``read_attachment`` tool both get the content *and* the
-    :class:`AttachmentRef` (name / mime / size) in a single owner-scoped call.
+    Returned by ``AttachmentStore.open``, so a download view and the
+    ``read_attachment`` tool both get the content *and* the
+    :class:`AttachmentRef` in one owner-scoped call.
 
-    ``content`` is an **open, readable binary stream** (a file handle), not the
-    whole bytes — so a large attachment streams out via ``FileResponse`` rather
-    than being buffered in memory. The consumer owns it: the download view
-    hands it to ``FileResponse`` (which closes it) and the tool reads it under a
-    ``with`` block. Read it exactly once.
+    ``content`` is an open binary stream rather than the bytes, so a large
+    attachment streams out instead of being buffered. **The consumer owns it and
+    must read it exactly once** — hand it to ``FileResponse``, which closes it,
+    or read it under a ``with`` block.
     """
 
     ref: AttachmentRef

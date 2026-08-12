@@ -13,27 +13,13 @@ from django_pydantic_agent.contrib.store.strip_inline_binary_parts import strip_
 class Command(BaseCommand):
     """Remove inlined file bytes from conversations already stored.
 
-    A transport that hands the model an attachment inline serialises the file
-    into the message list as base64, and the message list is persisted. A 2.6 MB
-    PDF becomes roughly 3.5 MB of text in one row, loaded whole every time the
-    thread is opened and sent to the browser with it. Transports have stopped
-    writing them, but a row already written keeps its payload until something
-    rewrites it. This is that something, and it is the only thing that is: a
-    transport deliberately does not strip what a client posts back, because a
-    client may legitimately post inline content of its own, and editing it in
-    passing would silently discard it. Stored data is a data migration's job.
+    A row written before transports stopped inlining keeps its base64 payload
+    until something rewrites it, and this is the only thing that does: a
+    transport does not strip what a client posts back, because a client may
+    legitimately post inline content of its own.
 
-    What survives is as important as what goes. Every message keeps its ``id``
-    and every field the transport put on it, including the non-standard
-    ``attachments`` array the composer rides on a user message — that array is
-    what renders the file chips and what the attachment relation is reconciled
-    from, so losing it would cost the very files this is tidying up after. The
-    rewrite is structural JSON surgery for that reason: nothing is validated or
-    re-dumped through a message type, because that is exactly the step that
-    drops fields it does not know.
-
-    The bytes are not lost. The attachment itself is untouched in the attachment
-    store, and the model reaches it the same way it always does, by id.
+    The bytes are not lost — the attachment is untouched in the attachment store,
+    and the model reaches it by id as always.
     """
 
     help = "Strip inlined base64 file content from stored conversation messages."
@@ -64,8 +50,8 @@ class Command(BaseCommand):
 def _encoded_size(messages: Any) -> int:
     """The size of ``messages`` as compact JSON.
 
-    Measured on the encoded form because that is what the column stores and what
-    crosses the wire to the browser; the in-memory object graph is neither.
+    The encoded form is what the column stores and what crosses the wire to the
+    browser; the in-memory object graph is neither.
     """
     return len(json.dumps(messages, separators=(",", ":"), default=str))
 
