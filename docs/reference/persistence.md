@@ -73,3 +73,15 @@ that don't opt in get no migration.
 ::: django_pydantic_agent.contrib.store.default_attachment_store.DefaultAttachmentStore
 
 ::: django_pydantic_agent.contrib.store.default_step_store.DefaultStepStore
+
+### Attachment lifecycle
+
+Contrib-level, not part of either protocol. See
+[Storage](../storage.md#attachment-lifecycle) for the semantics and the
+management commands.
+
+::: django_pydantic_agent.contrib.store.reconcile_conversation_attachments.reconcile_conversation_attachments
+
+::: django_pydantic_agent.contrib.store.strip_inline_binary_parts.strip_inline_binary_parts
+
+::: django_pydantic_agent.contrib.store.types.attachment_deletion.AttachmentDeletion

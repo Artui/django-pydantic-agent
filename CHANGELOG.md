@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The reference attachment store deduplicates uploads by content hash, within
+  one owner.** `StoredAttachment` gains a `sha256` column, hashed in chunks at
+  upload so a 10 MiB file is fingerprinted without being held in memory whole.
+  An upload whose bytes the same owner already has points at the blob already in
+  storage instead of writing a second copy — the same file dropped into five
+  threads was five blobs before this.
+
+  A row is still created per upload, deliberately. The row carries the `name`
+  the composer renders on the chip, so the same bytes sent again under a
+  different filename must keep their own name; what is shared is the file
+  underneath.
+
+  **Deduplication is scoped to one owner and stays that way.** Sharing a copy
+  across tenants is the better trade on storage alone, and it is not on offer: a
+  cross-owner hit discloses that another tenant holds a file whose bytes you
+  already have. The new index leads with `owner_id` for the same reason.
+
+  Rows written before the column existed have no hash and cannot be matched
+  until the new `agent_store_backfill_hashes` command fills them in — a command
+  rather than a data migration, because hashing means reading every blob back
+  out of storage and a deploy should not be held open for a bucket.
+
+- **Attachments now have a lifecycle: a conversation delete takes the ones
+  nothing else refers to.** A new `ConversationAttachment` through model links
+  conversations to attachments, and saving a conversation reconciles it from the
+  attachment ids the messages already carry (the `attachments` array the web
+  component rides on a user message). No wire change and no client change. The
+  parse is total — a malformed entry degrades to "no reference" rather than
+  raising mid-save — and ids resolve only within their own owner, so a guessed
+  id links nothing.
+
+  Deleting a conversation through the store then deletes the attachments no
+  other conversation references, blobs included; one a second thread quotes
+  survives untouched. Deleting rows by another route (a queryset `delete()`, the
+  admin) skips the cascade and leaves them unreferenced for the prune command.
+
+- **`agent_store_prune_attachments`, for uploads that were never sent.** Those
+  belong to no conversation, so no cascade ever reaches them. It takes
+  `--older-than` (default `24h`), and the threshold is the point: references
+  alone cannot tell an upload abandoned last month from one sitting in a
+  composer right now, since both have zero, and a naive sweep would delete a file
+  out from under a user mid-compose. `--dry-run` reports what would go, counting
+  a shared blob only when every row pointing at it is in the set.
+
+  The library still deletes on nothing but a cascade you can point at and a
+  command you schedule. There is no TTL sweep and no timer.
+
+- **`agent_store_strip_inline_bytes`, to reclaim space from threads that inlined
+  files.** A transport that hands the model an attachment inline serialises it
+  into the message list as base64; a 2.6 MB PDF costs roughly 3.5 MB in one row,
+  shipped to the browser on every load. Transports have stopped writing them,
+  but rows already written keep their payload until something rewrites them.
+
+  It edits the JSON structurally and never round-trips it through a message
+  type, because that round trip is what drops each message's `id` and the
+  non-standard `attachments` array — the array that renders the chips and that
+  the new relation is reconciled from. `--dry-run` reports the bytes it would
+  reclaim. The attachment itself is untouched; the model still reaches it by id.
+
+### Changed
+
+- **Deleting an attachment no longer deletes its bytes unconditionally.** With
+  deduplication two rows can share one stored file, and the old unconditional
+  `file.delete()` would have left the survivor resolving to nothing. The bytes
+  now go when the last row pointing at them does.
+
+- `StoredAttachment.thread_id` is unchanged and stays. It is a loose label a
+  project may set; the new relation, not the column, is what lifecycle runs on.
+
+- **One migration comes with all of this** —
+  `0003_attachment_content_hash_and_conversation_links`. Projects that opted
+  into `django_pydantic_agent.contrib.store` need to run `migrate`; projects
+  that did not still get no model and no migration.
+
 ### Fixed
 
 - **A PDF or an image the user attached came back to the model as a note saying

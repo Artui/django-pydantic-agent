@@ -134,6 +134,107 @@ Then `migrate`, and pass the matching store to your transport
 so S3 and friends come free through `STORAGES` — you don't configure anything
 here beyond your normal Django storage backend.
 
+Everything from here down is the **reference implementation's** behaviour, not
+the contract. `ConversationStore` and `AttachmentStore` stay id-based, the wire
+is unchanged, and a session-backed or S3-only store you plug in yourself owes
+none of this.
+
+## The same file, uploaded twice
+
+`StoredAttachment` carries a `sha256` of the file's bytes, hashed in chunks at
+upload so a large file is never held in memory whole just to fingerprint it.
+When an upload matches one the same owner already has, the new row points at the
+blob already in storage instead of writing a second copy.
+
+**A row per upload, even on a hit.** The row holds the `name` the composer shows
+on the chip, so the same bytes sent again as `contract-final.pdf` keep that name
+rather than inheriting the first upload's. What is shared is the file
+underneath; the bytes are removed only when the last row pointing at them goes.
+
+**Deduplication never crosses owners, and that is not an oversight.** Sharing one
+copy of a document held by a hundred tenants would be the better trade on
+storage alone. It is not available: a cross-owner hit tells you another tenant
+holds a file whose bytes you already have, which is how you confirm that a named
+party is a customer, or where a leaked document came from. The lookup is scoped
+to one owner, and the index on the column leads with `owner_id` so the
+cross-tenant question is not even the cheap one to ask.
+
+Rows written before the column existed have no hash, so they cannot be matched
+until `agent_store_backfill_hashes` fills them in.
+
+## Attachment lifecycle
+
+An attachment is reachable as long as a conversation refers to it, and the
+reference is derived, not declared. Saving a conversation reconciles the
+`StoredConversation.attachments` relation from the attachment ids its own
+messages carry — the web component already puts them there, on the user message,
+as an `attachments` array of the refs it uploaded. No wire change and no client
+change: the ids are in the payload either way.
+
+The parse is total. A malformed entry degrades to "no reference" rather than
+raising inside a save, and an id is resolved only against its own owner's
+attachments, so a guessed or copied id links nothing.
+
+Two consequences:
+
+- **Deleting a conversation deletes the attachments nothing else refers to**, and
+  their bytes. One quoted by a second thread survives untouched.
+- **An upload that was never sent belongs to no conversation**, so no cascade
+  will ever reach it. `agent_store_prune_attachments` is what collects those.
+
+`StoredAttachment.thread_id` is untouched by all of this and stays. It is a loose
+label a project may set; the relation, not the column, is what lifecycle runs on.
+
+**Nothing is ever deleted on a timer the library set up.** Deletion happens on a
+cascade you can point at, or on a command you schedule. There is no TTL sweep.
+
+Deleting `StoredConversation` rows by another route — a queryset `delete()`, the
+admin — skips the cascade and leaves the attachments unreferenced. They are not
+stranded permanently; the prune command is exactly what collects them.
+
+## Maintenance commands
+
+The `contrib.store` app ships three, all of them opt-in and none of them
+scheduled for you:
+
+| Command | What it does |
+| --- | --- |
+| `agent_store_backfill_hashes` | Hash attachments stored before the `sha256` column existed, so they can take part in deduplication. A missing blob is a reported skip, not a failure. |
+| `agent_store_prune_attachments` | Delete unreferenced attachments older than `--older-than` (default `24h`). |
+| `agent_store_strip_inline_bytes` | Rewrite stored conversations to drop inlined base64 file content. |
+
+All three take `--dry-run`.
+
+**`--older-than` is why the prune command is safe to run.** References alone
+cannot tell an upload abandoned last month from one sitting in a composer right
+now — both have zero. The threshold is the floor on how long an upload must
+survive before it counts as abandoned, so set it to comfortably more than the
+longest a message may sit unsent in your product:
+
+```bash
+python manage.py agent_store_prune_attachments --older-than 7d --dry-run
+```
+
+### Reclaiming space from threads that inlined files
+
+A transport that hands the model an attachment inline serialises the file into
+the message list as base64, and the message list is persisted: a 2.6 MB PDF costs
+roughly 3.5 MB in one row, loaded whole every time the thread is opened.
+Transports have stopped writing them and strip them on the way in, but a row
+already written keeps its payload until something rewrites it:
+
+```bash
+python manage.py agent_store_strip_inline_bytes --dry-run
+python manage.py agent_store_strip_inline_bytes
+```
+
+It edits the JSON structurally rather than round-tripping it through a message
+type, because that round trip is exactly what would drop each message's `id` and
+the non-standard `attachments` array — the array that renders the chips and that
+the attachment relation is reconciled from. The bytes themselves are not lost:
+the attachment is untouched in the attachment store, and the model reaches it the
+way it always does, by id.
+
 ## Step persistence
 
 `DefaultStepStore` is the durable, owner-scoped equivalent of
