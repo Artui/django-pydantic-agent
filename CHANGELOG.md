@@ -106,14 +106,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same string, but code that calls the tool function directly and assumes a
   string sees the difference.
 
-  ⚠ **Inlined bytes are persisted into the stored thread and replayed to the
-  client.** The bytes ride in a synthetic `user` message that the tool return
-  serialises into, so they land in the conversation row, ship to the browser on
-  every thread load, and are re-sent by the client on every following turn.
-  Base64 adds about a third: a 4 MiB PDF costs roughly 5.5 MiB in the row. That
-  round trip is also what lets a *follow-up* question about the same file be
-  answered without a second `read_attachment` call. To turn inlining off
-  entirely, pass `AttachmentInlineConfig(media_types=frozenset())`.
+  **Inlined bytes are paid for per request, inside the run that reads the
+  file.** They ride in a synthetic `user` message that the tool return
+  serialises into, and that message stays in the run's history, so every further
+  model request in the same run ships the file again. Base64 adds about a third:
+  a 4 MiB PDF is roughly 5.5 MiB of provider payload each time, in tokens,
+  latency and the memory the run holds it in.
+
+  They do **not** travel on the event stream. The client never receives them, so
+  the history it posts on the next turn carries none, and whether they outlive
+  the run at all is the transport's call — the AG-UI transport strips them on
+  the way to storage. A *follow-up* question about the same file is answered by
+  reading the attachment again, server-side, not from bytes replayed out of the
+  stored thread. To turn inlining off entirely, pass
+  `AttachmentInlineConfig(media_types=frozenset())`.
 
 ### Added
 
@@ -124,9 +130,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AttachmentRef.size`) is where a file is described instead. `inline=None`
   keeps the defaults, so an existing call site needs no edit.
 
-  The cap sits far below any upload limit you would set, for the persistence
-  reason above rather than a provider one. Raise it knowing what it costs per
-  turn.
+  The cap sits far below any upload limit you would set, for the per-request
+  reason above: the file goes to the provider on every model request left in the
+  run. Raise it knowing what it costs per request.
 
   ⚠ **The escape hatch is constructor-only for now**, because this substrate
   reads no Django settings by design. A future release of the transports will

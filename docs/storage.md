@@ -65,14 +65,20 @@ whole request, so a broad rule would trade a model that cannot read your PDF
 for a run that does not start.
 
 **The size cap is much smaller than any upload cap you would set**, and for a
-different reason. An inlined file is carried in a synthetic `user` message that
-the tool return serialises into — so it is persisted into the stored
-conversation, shipped to the browser on every thread load, and re-sent by the
-client on every following turn. Base64 adds about a third: a 4 MiB PDF costs
-roughly 5.5 MiB in the conversation row. That round trip is what lets a
-*follow-up* question about the same file be answered without a second
-`read_attachment` call, so it buys something real — but it is why the default
-sits at 4 MiB rather than at whatever your upload endpoint accepts.
+different reason: it bounds what one *request* carries. An inlined file rides in
+a synthetic `user` message that the tool return serialises into, and that
+message stays in the run's history, so every further model request in the same
+run ships the file again. Base64 adds about a third — a 4 MiB PDF is roughly
+5.5 MiB of provider payload each time, in tokens, in latency, and in the memory
+the run holds it in.
+
+It does not cost the conversation. The bytes never travel on the event stream,
+so the client never receives them and the history it posts on the next turn
+carries none; whether they outlive the run is the transport's decision, and the
+AG-UI transport strips them on the way to storage. A *follow-up* question about
+the same file is answered by reading the attachment again, server-side. That is
+why the default sits at 4 MiB rather than at whatever your upload endpoint
+accepts.
 
 To keep the old behaviour and never attach bytes:
 

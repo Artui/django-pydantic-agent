@@ -41,8 +41,8 @@ def build_attachment_toolset(
     can actually look at, and how large a file may be before it is described
     rather than attached; ``None`` takes the
     :class:`~django_pydantic_agent.agent.types.attachment_inline_config.AttachmentInlineConfig`
-    defaults. Read its docstring before widening either — inlined bytes are
-    persisted into the conversation and replayed on every following turn.
+    defaults. Read its docstring before widening either — inlined bytes go to
+    the provider on every model request left in the run.
     """
     resolved = AttachmentInlineConfig() if inline is None else inline
 
