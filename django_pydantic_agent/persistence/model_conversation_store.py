@@ -24,7 +24,7 @@ class ModelConversationStore(ABC):
     *store* policy, so two endpoints sharing a store necessarily agree on it.
     Pass it explicitly: this substrate reads no Django settings.
 
-    Example::
+    Example:
 
         class MyStore(ModelConversationStore):
             def _fetch(self, thread_id, owner_id):

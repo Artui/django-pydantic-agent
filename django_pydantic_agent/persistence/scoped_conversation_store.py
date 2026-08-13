@@ -19,7 +19,7 @@ class ScopedConversationStore:
     ``/internal/agent`` appears in ``/public/agent``'s history drawer and can be
     resumed there — under the *public* agent's model, tools and guard policy.
 
-    Wrapping fixes that without a migration::
+    Wrapping fixes that without a migration:
 
         internal = AGUIServer(
             registry,

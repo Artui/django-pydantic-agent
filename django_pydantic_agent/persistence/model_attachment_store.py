@@ -25,7 +25,7 @@ class ModelAttachmentStore(ABC):
     (``None`` for anonymous) and **must** filter by it, so files never cross
     users.
 
-    Example::
+    Example:
 
         class MyStore(ModelAttachmentStore):
             def _save(self, upload, owner_id):
