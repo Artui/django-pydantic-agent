@@ -13,7 +13,7 @@ class AuditEvent:
     One run-level record rides this shape: a client disconnecting mid-run is
     recorded as ``tool_name="agent.run"``, ``success=False`` and an ``error``
     starting ``"cancelled:"``, so a sink can tell cancelled runs apart without
-    widening the :class:`AuditLogger` protocol.
+    widening the [`AuditLogger`][django_pydantic_agent.AuditLogger] protocol.
     """
 
     tool_name: str
@@ -25,7 +25,8 @@ class AuditEvent:
 
     organization_id: str | None = None
     """Multi-tenant scope of the acting user. ``None`` at this layer; a custom
-    :class:`AuditLogger` fills it from its own tenancy model."""
+    [`AuditLogger`][django_pydantic_agent.AuditLogger] fills it from its own
+    tenancy model."""
 
     target_type: str | None = None
     """Kind of domain object the call acted on. ``None`` at this layer, where

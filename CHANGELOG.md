@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Docstring cross-references now render as links instead of raw markup.** The
+  docstrings carried Sphinx roles — ``:class:`~django_pydantic_agent.AttachmentStore` ``
+  — but the docs build is mkdocstrings, which renders docstring bodies as
+  Markdown and has no such syntax. Every one of them reached the published page
+  verbatim, `:class:` prefix and Sphinx's abbreviating `~` included. They are now
+  mkdocstrings autorefs links (`` [`AttachmentStore`][django_pydantic_agent.AttachmentStore] ``),
+  so the reference cross-links instead of printing its own markup.
+
+  References to symbols the reference does not render — contrib models, private
+  methods, internal helpers — and to third-party symbols became plain code spans
+  rather than dead links; no inventory for external packages is configured, so a
+  link to one could not resolve.
+
 ## [0.15.0] — 2026-08-12
 
 ### Added

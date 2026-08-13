@@ -19,7 +19,7 @@ class ConversationStore(Protocol):
 
     Threads key by ``(owner_id, thread_id)``, so two endpoints sharing a store
     share one user's thread list. Wrap with
-    :class:`~django_pydantic_agent.persistence.scoped_conversation_store.ScopedConversationStore`
+    [`ScopedConversationStore`][django_pydantic_agent.ScopedConversationStore]
     to partition them.
 
     ``list`` returns owner-scoped metadata only, no message bodies, capped at

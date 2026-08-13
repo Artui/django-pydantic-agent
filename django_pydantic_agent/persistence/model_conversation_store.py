@@ -110,7 +110,7 @@ class ModelConversationStore(ABC):
         return []
 
     def _exists(self, thread_id: str, owner_id: str | None) -> bool:
-        """Owner-scoped presence check, probing via :meth:`_fetch` by default.
+        """Owner-scoped presence check, probing via ``_fetch`` by default.
 
         That default loads the row, message body included, so a subclass with a
         metadata table should override it with an ``.exists()`` query.
@@ -119,7 +119,7 @@ class ModelConversationStore(ABC):
 
     def _rename(self, thread_id: str, title: str, owner_id: str | None) -> None:
         """Persist a renamed display title. A no-op unless overridden, paired
-        with a ``title`` column the :meth:`_list` override reads back."""
+        with a ``title`` column the ``_list`` override reads back."""
         return None
 
 

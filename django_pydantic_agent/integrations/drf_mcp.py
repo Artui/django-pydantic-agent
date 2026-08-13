@@ -40,7 +40,7 @@ class DRFMCPToolset(AbstractToolset[Any]):
     Failures split three ways, along MCP's protocol-vs-tool boundary:
 
     - JSON-RPC ``-32602`` and tool-level ``validation_error`` results raise
-      :class:`pydantic_ai.ModelRetry`, so the model retries with the field
+      ``pydantic_ai.ModelRetry``, so the model retries with the field
       errors instead of the run dying;
     - other tool-level failures (``service_error`` / ``not_found``) are returned
       as the tool's content, for the model to read;

@@ -61,7 +61,8 @@ class ToolRegistry:
         """Dispatch a sync call to the registered tool.
 
         Refuses coroutine functions to avoid silently returning an
-        un-awaited coroutine. Use :meth:`acall` for async tools.
+        un-awaited coroutine. Use
+        [`acall`][django_pydantic_agent.ToolRegistry.acall] for async tools.
         """
         fn = self.get(name).spec.fn
         if inspect.iscoroutinefunction(fn):

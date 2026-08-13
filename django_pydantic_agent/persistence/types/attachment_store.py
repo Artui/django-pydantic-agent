@@ -14,9 +14,10 @@ class AttachmentStore(Protocol):
     """Pluggable server-side storage for files a user attaches to a conversation.
 
     Handed to a transport. The package ships
-    :class:`~django_pydantic_agent.NullAttachmentStore` (uploads off) and the
-    abstract :class:`~django_pydantic_agent.ModelAttachmentStore`; the opt-in
-    ``django_pydantic_agent.contrib.store`` app adds a ready
+    [`NullAttachmentStore`][django_pydantic_agent.NullAttachmentStore] (uploads
+    off) and the abstract
+    [`ModelAttachmentStore`][django_pydantic_agent.ModelAttachmentStore]; the
+    opt-in ``django_pydantic_agent.contrib.store`` app adds a ready
     ``DefaultAttachmentStore`` keeping bytes in Django ``Storage`` and metadata
     in a row.
 
@@ -24,9 +25,9 @@ class AttachmentStore(Protocol):
     user so one user can never read or delete another's files, the security
     boundary for the whole feature. ``save`` validates nothing about size or type
     — the view does that from its own config — and just persists the bytes,
-    returning a durable :class:`AttachmentRef`. ``open`` returns ``None`` for a
-    missing *or cross-owner* id rather than raising, so a caller maps both to a
-    404 and the two stay indistinguishable.
+    returning a durable [`AttachmentRef`][django_pydantic_agent.AttachmentRef].
+    ``open`` returns ``None`` for a missing *or cross-owner* id rather than
+    raising, so a caller maps both to a 404 and the two stay indistinguishable.
 
     Attachments need no scoped wrapper of the kind conversations have: they are
     id-referenced with no enumeration and already owner-scoped, so two endpoints

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class AttachmentInlineConfig:
     """Which attachment types ``read_attachment`` hands back as file content.
 
-    Tunes :func:`~django_pydantic_agent.agent.attachment_toolset.build_attachment_toolset`.
+    Tunes ``build_attachment_toolset``.
     A textual attachment is decoded and returned as text regardless; this record
     governs the binary ones, where the choice is between attaching the bytes for
     the model to look at and returning a one-line note about a file it will never

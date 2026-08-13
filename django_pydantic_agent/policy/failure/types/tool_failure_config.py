@@ -8,7 +8,7 @@ class ToolFailureConfig:
     """Resolved policy for what an unhandled tool exception does to a run.
 
     Tunes the
-    :class:`~django_pydantic_agent.policy.failure.tool_failure_policy.ToolFailurePolicy`
+    [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy]
     capability. On by default, because without it one raising tool ends the whole
     run, discarding the answer the model had assembled and every other tool
     result in the turn.

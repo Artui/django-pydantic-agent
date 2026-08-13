@@ -32,7 +32,7 @@ class AgentDeps:
 
     ip_address: str | None = None
     """The client IP this run was driven from, stamped onto every audit event
-    :class:`~django_pydantic_agent.policy.audit.audit_capability.AuditCapability`
+    [`AuditCapability`][django_pydantic_agent.AuditCapability]
     records. Per-run, so it belongs here rather than on the capability's
     constructor — a transport that closes over an IP has an agent good for one
     request. The constructor argument remains the right home for a value that is

@@ -14,7 +14,8 @@ from django_pydantic_agent.persistence.utils import resolve_owner_id
 class ModelAttachmentStore(ABC):
     """Abstract base for a model-backed (or any sync) ``AttachmentStore``.
 
-    The attachment twin of :class:`~django_pydantic_agent.ModelConversationStore`
+    The attachment twin of
+    [`ModelConversationStore`][django_pydantic_agent.ModelConversationStore]
     — same async wrapping, same per-request owner scoping, same
     ``allow_anonymous`` policy — over a subclass's own storage: a Django
     ``Storage`` for the bytes, a model row for the metadata. The opt-in

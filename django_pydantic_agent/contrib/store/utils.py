@@ -66,7 +66,7 @@ def delete_attachments(attachments: Iterable[StoredAttachment]) -> AttachmentDel
 
 
 def preview_attachment_deletion(attachments: list[StoredAttachment]) -> AttachmentDeletion:
-    """What :func:`delete_attachments` would remove, removing nothing.
+    """What ``delete_attachments`` would remove, removing nothing.
 
     Kept beside the function it predicts because the two have to agree; a dry run
     reporting the row count as space reclaimed overstates the result the moment

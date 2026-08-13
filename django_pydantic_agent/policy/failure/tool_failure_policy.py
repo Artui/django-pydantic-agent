@@ -32,8 +32,8 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     where a hand-rolled ``except Exception`` around the handler would swallow
     them and quietly disable the gate.
 
-    The re-raise is :class:`~pydantic_ai.exceptions.ToolFailed`, so the model sees
-    a result marked failed rather than one reading as success. That spends no
+    The re-raise is ``pydantic_ai.exceptions.ToolFailed``, so the model sees a
+    result marked failed rather than one reading as success. That spends no
     retry budget, so bound a persistently broken tool with run-level
     ``UsageLimits`` rather than expecting this to stop the model calling it.
 

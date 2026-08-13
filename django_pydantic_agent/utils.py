@@ -37,7 +37,7 @@ async def acall_get_user(hook: GetUser, request: HttpRequest) -> Any:
 
 
 def call_get_user(hook: GetUser, request: HttpRequest) -> Any:
-    """Sync twin of :func:`acall_get_user` for the sync catalog views.
+    """Sync twin of ``acall_get_user`` for the sync catalog views.
 
     A sync view already runs in a worker thread under ASGI, so a sync ORM hook
     needs no hop here; only an async hook is bridged.
@@ -103,7 +103,7 @@ def authorize(
     require_authenticated: bool,
     authorize: AuthorizePredicate | None = None,
 ) -> int | None:
-    """Sync flavour of :func:`aauthorize`, for the catalog views.
+    """Sync flavour of ``aauthorize``, for the catalog views.
 
     Same policy and same deny-status return; no thread hops are needed.
     """
@@ -120,7 +120,7 @@ def authorize(
 
 
 def auth_error_response(status: int) -> JsonResponse:
-    """The JSON deny response for an :func:`authorize` / :func:`aauthorize` status.
+    """The JSON deny response for an ``authorize`` / ``aauthorize`` status.
 
     Always JSON, never an HTML login redirect.
     """

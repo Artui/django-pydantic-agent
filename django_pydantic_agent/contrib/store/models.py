@@ -54,7 +54,7 @@ class StoredAttachment(models.Model):
     column until ``agent_store_backfill_hashes`` fills them in.
 
     ``thread_id`` is a loose label a project may set; the reference store leaves
-    it blank. Lifecycle runs on the :class:`ConversationAttachment` relation, not
+    it blank. Lifecycle runs on the ``ConversationAttachment`` relation, not
     on this column, which is kept only because projects read it.
 
     Used by ``DefaultAttachmentStore``.
