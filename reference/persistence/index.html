@@ -1790,21 +1790,20 @@ models.</p>
 
 
         <p>Pluggable server-side persistence for AG-UI conversations.</p>
-<p>Passed to <code>AGUIServer(conversation_store=...)</code>. The package ships a no-op
-default (<code>NullConversationStore</code> — the server stays stateless) and a
-session-backed implementation; projects supply their own (a DB model, Redis,
-…). All methods are async so an implementation can use the async ORM or a
-network backend.</p>
+<p>Handed to a transport. The package ships <code>NullConversationStore</code> (the
+server stays stateless) and a session-backed implementation; projects supply
+their own. All methods are async so an implementation can use the async ORM
+or a network backend.</p>
 <p>Threads key by <code>(owner_id, thread_id)</code>, so two endpoints sharing a store
 share one user's thread list. Wrap with
-:class:<code>~django_pydantic_agent.persistence.scoped_conversation_store.ScopedConversationStore</code>
+<a class="autorefs autorefs-internal" title="ScopedConversationStore" href="#django_pydantic_agent.ScopedConversationStore"><code>ScopedConversationStore</code></a>
 to partition them.</p>
-<p><code>list</code> returns owner-scoped <em>metadata only</em> (no message bodies) for the
-thread drawer, capped at <code>limit</code> rows (<code>None</code> = the store's own default);
-a store that can't enumerate (the stateless default) returns an empty list.
-<code>exists</code> is a cheap owner-scoped presence check — no message body loaded —
-so a rename / probe doesn't deserialize a whole thread just to 404. <code>rename</code>
-sets a thread's display title (a store that can't persist one is a no-op).</p>
+<p><code>list</code> returns owner-scoped metadata only, no message bodies, capped at
+<code>limit</code> rows (<code>None</code> for the store's own default); a store that cannot
+enumerate returns an empty list. <code>exists</code> is a presence check that loads no
+message body, so a rename or probe does not deserialize a whole thread just
+to 404. <code>rename</code> sets a display title, and is a no-op in a store that
+cannot persist one.</p>
 
 
 
@@ -1856,13 +1855,11 @@ sets a thread's display title (a store that can't persist one is a no-op).</p>
 
 
         <p>A persisted conversation, keyed by <code>thread_id</code>.</p>
-<p><code>messages</code> are <strong>JSON-serialisable message records whose shape the calling
-transport owns</strong> — this substrate persists and returns them verbatim and
-never interprets them. The AG-UI transport stores its own wire <code>Message</code>
-shape (so client message ids survive a round trip untouched); another
-transport stores its own. That is what keeps the storage contract neutral:
-the core supplies owner scoping, async plumbing and the models, while the
-message vocabulary stays with whoever speaks it.</p>
+<p><code>messages</code> are <strong>JSON-serialisable records whose shape the calling
+transport owns</strong>: this substrate persists and returns them verbatim and never
+interprets them, which is what keeps the storage contract neutral. The AG-UI
+transport stores its own wire <code>Message</code> shape, so client message ids
+survive a round trip untouched; another transport stores its own.</p>
 <p><code>owner_id</code> scopes the conversation to a user for authorization.</p>
 
 
@@ -1914,14 +1911,13 @@ message vocabulary stays with whoever speaks it.</p>
 
 
 
-        <p>Lightweight metadata for one conversation — the thread-drawer row shape.</p>
-<p>Returned by :meth:<code>ConversationStore.list &lt;django_pydantic_agent.ConversationStore&gt;</code>
-so a thread list stays cheap: it carries <strong>no message bodies</strong>. <code>title</code>
-defaults to a truncation of the first user message (unless a store records an
-explicit rename); <code>preview</code> is a one-line excerpt of the latest message;
-<code>updated_at</code> is when the conversation last changed, or <code>None</code> when the
-store doesn't track it. <code>owner_id</code> scopes the conversation to a user and is
-not surfaced on the wire.</p>
+        <p>Lightweight metadata for one conversation: the thread-drawer row shape.</p>
+<p>Returned by <code>ConversationStore.list</code>, and carrying <strong>no message bodies</strong>,
+which is what keeps a thread list cheap. <code>title</code> defaults to a truncation
+of the first user message unless a store records a rename, <code>preview</code> is a
+one-line excerpt of the latest message, and <code>updated_at</code> is <code>None</code> in a
+store that does not track it. <code>owner_id</code> scopes the conversation to a user
+and is not surfaced on the wire.</p>
 
 
 
@@ -1969,9 +1965,9 @@ not surfaced on the wire.</p>
 
 
         <p>The default store: no-op, keeping the server stateless.</p>
-<p><code>load</code> always returns <code>None</code> and <code>save</code> / <code>delete</code> do nothing, so
-the conversation lives entirely in the client's posted history (today's
-behaviour). The view treats this store as "persistence off".</p>
+<p><code>load</code> returns <code>None</code> and <code>save</code> / <code>delete</code> do nothing, so the
+conversation lives entirely in the client's posted history. A transport
+treats this store as "persistence off".</p>
 
 
 
@@ -2018,11 +2014,10 @@ behaviour). The view treats this store as "persistence off".</p>
 
 
 
-        <p>Conversation persistence in the Django session (no migration).</p>
-<p>Conversations are namespaced by <code>thread_id</code> within the logged-in user's
-session, so scoping to the user is implicit and durability spans that
-user's browser session. The batteries-included server-side store; for
-cross-device or audited persistence, supply a model-backed store instead.</p>
+        <p>Conversation persistence in the Django session, needing no migration.</p>
+<p>Conversations are namespaced by <code>thread_id</code> inside the user's own session,
+so owner scoping is implicit and durability lasts as long as that browser
+session. For cross-device or audited persistence, use a model-backed store.</p>
 
 
 
@@ -2074,10 +2069,14 @@ cross-device or audited persistence, supply a model-backed store instead.</p>
         <p>Abstract base for a model-backed (or any sync) <code>ConversationStore</code>.</p>
 <p>Provides the async wrapping and per-request owner scoping; a subclass
 implements the three <em>synchronous</em> row operations against its own Django
-model (cross-device, auditable persistence). Kept model-agnostic on purpose
-— the package ships no concrete model so it forces no migration; consumers
-define the model, its fields, and the owner relationship.</p>
-<p>Example::</p>
+model. Model-agnostic on purpose — the package ships no concrete model, so it
+forces no migration and consumers define the fields and the owner relation.</p>
+<p><code>allow_anonymous</code> governs whether anonymous requests are served. <code>False</code>
+refuses them rather than collapsing every anonymous visitor into one shared
+owner bucket where they could read and delete each other's data. It is a
+<em>store</em> policy, so two endpoints sharing a store necessarily agree on it.
+Pass it explicitly: this substrate reads no Django settings.</p>
+<p>Example:</p>
 <div class="language-text highlight"><pre><span></span><code>class MyStore(ModelConversationStore):
     def _fetch(self, thread_id, owner_id):
         row = MyConversation.objects.filter(
@@ -2133,12 +2132,14 @@ define the model, its fields, and the owner relationship.</p>
 
 
 
-        <p>Partition another :class:<code>ConversationStore</code> by a scope name.</p>
+        <p>Partition another
+<a class="autorefs autorefs-internal" title="ConversationStore" href="#django_pydantic_agent.ConversationStore"><code>ConversationStore</code></a> by a scope
+name.</p>
 <p>Stores key threads by <code>(owner_id, thread_id)</code>. Two AG-UI endpoints sharing
 one store therefore share one user's thread list: a conversation started at
 <code>/internal/agent</code> appears in <code>/public/agent</code>'s history drawer and can be
 resumed there — under the <em>public</em> agent's model, tools and guard policy.</p>
-<p>Wrapping fixes that without a migration::</p>
+<p>Wrapping fixes that without a migration:</p>
 <div class="language-text highlight"><pre><span></span><code>internal = AGUIServer(
     registry,
     conversation_store=ScopedConversationStore(store, scope=&quot;internal&quot;),
@@ -2148,16 +2149,15 @@ public = AGUIServer(
     conversation_store=ScopedConversationStore(store, scope=&quot;public&quot;),
 )
 </code></pre></div>
-<p>Prefixing the thread id is deliberate. A <code>scope</code> column would mean a
-migration <em>and</em> a breaking change to the
-:class:<code>~django_pydantic_agent.persistence.types.conversation_store.ConversationStore</code>
-protocol — which every custom store implements — for a partition the id space
-already expresses. This composes with any implementation, third-party ones
-included.</p>
-<p><strong>Opt in explicitly.</strong> :class:<code>AGUIServer</code> deliberately does not wrap by
-itself: doing so from its <code>namespace</code> would silently orphan the whole
-thread history of an existing single-endpoint project the moment it set one.</p>
-<p>The scope is invisible on the wire — thread ids are echoed back to the client
+<p>The partition is a thread-id prefix, so this composes with any
+implementation, third-party ones included, where a <code>scope</code> column would
+mean a migration and a breaking change to the
+<a class="autorefs autorefs-internal" title="ConversationStore" href="#django_pydantic_agent.ConversationStore"><code>ConversationStore</code></a>
+protocol every custom store implements.</p>
+<p><strong>Opt in explicitly.</strong> A transport does not wrap by itself: doing so from its
+namespace would silently orphan the whole thread history of an existing
+single-endpoint project the moment it set one.</p>
+<p>The scope is invisible on the wire. Thread ids are echoed back to the client
 unchanged; only the storage key carries the prefix.</p>
 
 
@@ -2200,9 +2200,8 @@ unchanged; only the storage key carries the prefix.</p>
 
         <p>This scope's threads only, with storage keys translated back.</p>
 <p><code>limit</code> is applied by the inner store <em>before</em> this filter, so a busy
-sibling scope can crowd out rows. Acceptable for a drawer that is capped
-anyway; a store that needs exact per-scope paging should partition at the
-query, not by wrapping.</p>
+sibling scope can crowd out rows. A store needing exact per-scope paging
+should partition at the query rather than by wrapping.</p>
 
 
     </div>
@@ -2237,24 +2236,29 @@ query, not by wrapping.</p>
 
 
         <p>Pluggable server-side storage for files a user attaches to a conversation.</p>
-<p>Passed to <code>AGUIServer(attachment_store=...)</code>. The package ships a
-no-op default (:class:<code>~django_pydantic_agent.NullAttachmentStore</code> — uploads off) and
-an abstract model-backed base
-(:class:<code>~django_pydantic_agent.ModelAttachmentStore</code>); the opt-in
-<code>django_pydantic_agent.contrib.store</code> app provides a ready
-:class:<code>~django_pydantic_agent.contrib.store.default_attachment_store.DefaultAttachmentStore</code>
-that keeps bytes in Django <code>Storage</code> (so S3 etc. come free via
-<code>STORAGES</code>/<code>DEFAULT_FILE_STORAGE</code>) and metadata in a row.</p>
+<p>Handed to a transport. The package ships
+<a class="autorefs autorefs-internal" title="NullAttachmentStore" href="#django_pydantic_agent.NullAttachmentStore"><code>NullAttachmentStore</code></a> (uploads
+off) and the abstract
+<a class="autorefs autorefs-internal" title="ModelAttachmentStore" href="#django_pydantic_agent.ModelAttachmentStore"><code>ModelAttachmentStore</code></a>; the
+opt-in <code>django_pydantic_agent.contrib.store</code> app adds a ready
+<code>DefaultAttachmentStore</code> keeping bytes in Django <code>Storage</code> and metadata
+in a row.</p>
 <p>Every method is async and <strong>owner-scoped</strong>: a store filters by the acting
-user so one user can never read or delete another's files — the security
-boundary for the whole feature. <code>save</code> validates nothing about size/type
-itself (the view does, from its config); it just persists the bytes and
-returns a durable :class:<code>AttachmentRef</code>. <code>open</code> returns <code>None</code> for a
-missing or cross-owner id rather than raising, so callers map it to a 404.</p>
-<p>Unlike conversations there is <strong>no scoped wrapper</strong> for attachments, and none
-is needed: they are id-referenced with no enumeration, and already
-owner-scoped, so two endpoints sharing a store expose nothing across the
-user boundary. Thread <em>lists</em> are the case that leaks.</p>
+user so one user can never read or delete another's files, the security
+boundary for the whole feature. <code>save</code> validates nothing about size or type
+— the view does that from its own config — and just persists the bytes,
+returning a durable <a class="autorefs autorefs-internal" title="AttachmentRef
+
+
+  
+      dataclass
+  " href="#django_pydantic_agent.AttachmentRef"><code>AttachmentRef</code></a>.
+<code>open</code> returns <code>None</code> for a missing <em>or cross-owner</em> id rather than
+raising, so a caller maps both to a 404 and the two stay indistinguishable.</p>
+<p>Attachments need no scoped wrapper of the kind conversations have: they are
+id-referenced with no enumeration and already owner-scoped, so two endpoints
+sharing a store expose nothing across the user boundary. Thread lists are the
+case that leaks.</p>
 
 
 
@@ -2306,18 +2310,13 @@ user boundary. Thread <em>lists</em> are the case that leaks.</p>
 
 
         <p>A durable, lightweight reference to one uploaded file.</p>
-<p>What an upload returns and what travels on the wire — never the bytes.
-A user drops a file into the composer, it is uploaded out-of-band to the
-:class:<code>~django_pydantic_agent.persistence.attachments_view.AttachmentsView</code>, and the
-server hands back this ref; the client holds it on the message and the agent
-reads the actual bytes server-side via the <code>read_attachment</code> tool. Keeping
-the AG-UI message stream free of base64 mirrors how the tool catalog keeps
-schemas off the wire.</p>
-<p><code>id</code> is the opaque, owner-scoped handle the store resolves back to bytes;
-<code>mime</code> is the declared content type (client-supplied, so treat it as a
-hint); <code>size</code> is the byte count; <code>url</code> is an optional direct fetch URL
-(e.g. the owner-checked download endpoint) and stays <code>None</code> unless a store
-fills it in.</p>
+<p>What an upload returns and what travels on the wire — never the bytes. The
+file is uploaded out of band, the client holds this ref on the message, and
+the agent reads the bytes server-side through the <code>read_attachment</code> tool.</p>
+<p><code>id</code> is the opaque, owner-scoped handle the store resolves back to bytes.
+<code>mime</code> is client-declared, so treat it as a hint. <code>url</code> is an optional
+direct fetch URL, such as an owner-checked download endpoint, and stays
+<code>None</code> unless a store fills it in.</p>
 
 
 
@@ -2369,15 +2368,18 @@ fills it in.</p>
 
 
         <p>An attachment's metadata paired with a readable byte stream.</p>
-<p>Returned by :meth:<code>AttachmentStore.open
-&lt;django_pydantic_agent.persistence.types.attachment_store.AttachmentStore&gt;</code> so the
-download view and the <code>read_attachment</code> tool both get the content <em>and</em> the
-:class:<code>AttachmentRef</code> (name / mime / size) in a single owner-scoped call.</p>
-<p><code>content</code> is an <strong>open, readable binary stream</strong> (a file handle), not the
-whole bytes — so a large attachment streams out via <code>FileResponse</code> rather
-than being buffered in memory. The consumer owns it: the download view
-hands it to <code>FileResponse</code> (which closes it) and the tool reads it under a
-<code>with</code> block. Read it exactly once.</p>
+<p>Returned by <code>AttachmentStore.open</code>, so a download view and the
+<code>read_attachment</code> tool both get the content <em>and</em> the
+<a class="autorefs autorefs-internal" title="AttachmentRef
+
+
+  
+      dataclass
+  " href="#django_pydantic_agent.AttachmentRef"><code>AttachmentRef</code></a> in one owner-scoped call.</p>
+<p><code>content</code> is an open binary stream rather than the bytes, so a large
+attachment streams out instead of being buffered. <strong>The consumer owns it and
+must read it exactly once</strong> — hand it to <code>FileResponse</code>, which closes it,
+or read it under a <code>with</code> block.</p>
 
 
 
@@ -2425,13 +2427,12 @@ hands it to <code>FileResponse</code> (which closes it) and the tool reads it un
 
 
         <p>The default attachment store: uploads disabled, server stays stateless.</p>
-<p><code>save</code> is never reached — the
-A transport's attachments view detects this store and returns <code>410 Gone</code> so a
-misconfigured client gets a clear "uploads are off" signal instead of a
-silent success. <code>open</code> returns <code>None</code> (every fetch is a 404) and
-<code>delete</code> is a no-op, so the endpoint is inert until a real store is
-configured. <code>save</code> still raises if called directly, to fail loudly rather
-than fabricate a ref.</p>
+<p>A transport's attachments view detects this store and answers <code>410 Gone</code>,
+so a misconfigured client gets a clear "uploads are off" signal rather than a
+silent success, and <code>save</code> is never reached. Called directly it raises,
+rather than fabricating a ref. <code>open</code> returns <code>None</code> so every fetch is a
+404, and <code>delete</code> is a no-op: the endpoint is inert until a real store is
+configured.</p>
 
 
 
@@ -2481,15 +2482,16 @@ than fabricate a ref.</p>
 
 
         <p>Abstract base for a model-backed (or any sync) <code>AttachmentStore</code>.</p>
-<p>Provides the async wrapping and per-request owner scoping — the same shape as
-:class:<code>~django_pydantic_agent.ModelConversationStore</code> — so a subclass implements
-three <em>synchronous</em> operations against its own storage (a Django <code>Storage</code>
-for the bytes, a model row for the metadata). Kept model-agnostic on purpose:
-the package ships no concrete model so it forces no migration; the opt-in
-<code>django_pydantic_agent.contrib.store</code> app supplies one.</p>
+<p>The attachment twin of
+<a class="autorefs autorefs-internal" title="ModelConversationStore" href="#django_pydantic_agent.ModelConversationStore"><code>ModelConversationStore</code></a>
+— same async wrapping, same per-request owner scoping, same
+<code>allow_anonymous</code> policy — over a subclass's own storage: a Django
+<code>Storage</code> for the bytes, a model row for the metadata. The opt-in
+<code>django_pydantic_agent.contrib.store</code> app supplies a concrete pair.</p>
 <p>Each <code>_save</code> / <code>_open</code> / <code>_remove</code> receives the resolved <code>owner_id</code>
-(<code>None</code> for anonymous) and must filter by it so files never cross users.</p>
-<p>Example::</p>
+(<code>None</code> for anonymous) and <strong>must</strong> filter by it, so files never cross
+users.</p>
+<p>Example:</p>
 <div class="language-text highlight"><pre><span></span><code>class MyStore(ModelAttachmentStore):
     def _save(self, upload, owner_id):
         row = MyAttachment.objects.create(owner_id=owner_id or &quot;&quot;, ...)
@@ -2548,11 +2550,10 @@ the package ships no concrete model so it forces no migration; the opt-in
 
 
         <p>Raised when a model-backed store is asked to act for an anonymous request.</p>
-<p>The reference stores refuse anonymous thread / attachment operations unless
-they are constructed with <code>allow_anonymous=True</code> — otherwise every
-anonymous visitor would share one empty-string owner bucket and could read
-or delete each other's data. A transport's persistence views catch this and
-return <code>403</code>.</p>
+<p>The reference stores refuse anonymous operations unless constructed with
+<code>allow_anonymous=True</code>, since otherwise every anonymous visitor would share
+one owner bucket and could read or delete the others' data. A transport's
+persistence views catch this and return 403.</p>
 
 
 
@@ -2587,25 +2588,20 @@ that don't opt in get no migration.</p>
 
 
 
-        <p>A ready-to-use model-backed store over :class:<code>StoredConversation</code>.</p>
-<p>The batteries-included durable store: cross-device, per-user history with a
-cheap thread list. Enable it by adding <code>"django_pydantic_agent.contrib.store"</code> to
-<code>INSTALLED_APPS</code>, running <code>migrate</code>, and passing an instance to your
-transport's <code>conversation_store=</code> argument. For a bespoke schema, subclass
-:class:<code>ModelConversationStore</code> instead.</p>
-<p>Owner scoping: every query filters by the <code>owner_id</code> the
-<code>ModelConversationStore</code> base resolves — the authenticated user's pk, or a
-per-browser <code>anon:&lt;session_key&gt;</code> bucket when
-the store is built with <code>allow_anonymous=True</code> (otherwise anonymous requests are
-refused rather than sharing one <code>""</code> bucket). The unique
-<code>(owner_id, thread_id)</code> constraint holds regardless. Titles are derived
-from the first user message at first save and then left alone except by
-:meth:<code>_rename</code>; <code>preview</code> re-derives on every save.</p>
+        <p>A ready-to-use model-backed store over <code>StoredConversation</code>.</p>
+<p>Cross-device, per-user history with a cheap thread list. Add
+<code>"django_pydantic_agent.contrib.store"</code> to <code>INSTALLED_APPS</code>, run
+<code>migrate</code>, and pass an instance to your transport's
+<code>conversation_store=</code>. For a bespoke schema, subclass
+<a class="autorefs autorefs-internal" title="ModelConversationStore" href="#django_pydantic_agent.ModelConversationStore"><code>ModelConversationStore</code></a> instead.</p>
+<p>Every query filters by the <code>owner_id</code> the base resolves. A title is derived
+from the first user message at first save and then left alone except by a
+rename; the preview re-derives on every save.</p>
 <p>Saving also reconciles which attachments the thread refers to, and deleting
-it drops the ones nothing else refers to. Attachments therefore have a
-lifetime tied to the conversations that quote them rather than living
-forever; uploads that were never sent belong to no conversation at all and
-are collected by the <code>agent_store_prune_attachments</code> command instead.</p>
+it drops the ones nothing else refers to, so an attachment's lifetime is tied
+to the conversations quoting it. An upload that was never sent belongs to no
+conversation, and the <code>agent_store_prune_attachments</code> command collects
+those instead.</p>
 
 
 
@@ -2653,25 +2649,21 @@ are collected by the <code>agent_store_prune_attachments</code> command instead.
 
 
 
-        <p>A ready-to-use model-backed store over :class:<code>StoredAttachment</code>.</p>
-<p>The batteries-included durable file store: bytes live in Django <code>Storage</code>
-(filesystem by default, S3/GCS via <code>STORAGES</code>), metadata in a row. Enable
-it by adding <code>"django_pydantic_agent.contrib.store"</code> to <code>INSTALLED_APPS</code>, running
-<code>migrate</code>, and passing an instance to your transport's
-<code>attachment_store=</code> argument. For a bespoke schema, subclass
-:class:<code>ModelAttachmentStore</code>.</p>
-<p>Owner scoping: every query filters by the <code>owner_id</code> the
-<code>ModelAttachmentStore</code> base resolves — the authenticated user's pk, or a
-per-browser <code>anon:&lt;session_key&gt;</code> bucket when
-the store is built with <code>allow_anonymous=True</code> (otherwise anonymous requests are
-refused rather than sharing one <code>""</code> bucket) — so one user's id never
-resolves another's file. The unique <code>(owner_id, attachment_id)</code> constraint
-holds regardless. The public <code>attachment_id</code> is an opaque UUID, kept
-separate from the storage filename.</p>
-<p>Uploads are <strong>deduplicated by content hash, within one owner</strong>. The same file
-sent into five threads is written to storage once and pointed at five times;
-see :meth:<code>_save</code> for why the row is still new every time, and why the scope
-is one owner rather than the whole table.</p>
+        <p>A ready-to-use model-backed store over <code>StoredAttachment</code>.</p>
+<p>Bytes live in Django <code>Storage</code> (filesystem by default, S3 or GCS through
+<code>STORAGES</code>), metadata in a row. Add
+<code>"django_pydantic_agent.contrib.store"</code> to <code>INSTALLED_APPS</code>, run
+<code>migrate</code>, and pass an instance to your transport's <code>attachment_store=</code>.
+For a bespoke schema, subclass
+<a class="autorefs autorefs-internal" title="ModelAttachmentStore" href="#django_pydantic_agent.ModelAttachmentStore"><code>ModelAttachmentStore</code></a>
+instead.</p>
+<p>Every query filters by the <code>owner_id</code> the base resolves, so one user's id
+never reaches another's file, and the public <code>attachment_id</code> is an opaque
+UUID kept separate from the storage filename.</p>
+<p>Uploads are <strong>deduplicated by content hash, within one owner</strong>: the same file
+sent into five threads is written to storage once and pointed at five times,
+while still getting a row of its own each time so it keeps the name the
+composer showed. The blob goes when the last row pointing at it does.</p>
 
 
 
@@ -2719,29 +2711,24 @@ is one owner rather than the whole table.</p>
 
         <p>A durable, owner-scoped <code>StepStore</code> over the reference models.</p>
 <p>The database equivalent of the harness's own <code>SqliteStepStore</code> /
-<code>FileStepStore</code>: it structurally satisfies <code>pydantic-ai-harness</code>'s
-<code>StepStore</code> protocol (the ten async methods a <code>StepPersistence</code>
-capability calls) while partitioning every row by the resolved owner — so
-one user can never read or resume another's runs, even by guessing a
-<code>run_id</code> (the harness types carry no owner; this store adds it).</p>
-<p><strong>Per-request.</strong> Unlike a <code>ConversationStore</code> (a singleton whose methods
-take <code>request</code>), the protocol's methods carry no request, so this store
-binds one at construction and is built <strong>per request</strong> — pass it through the
-<code>AGUIServer(step_store=...)</code> factory, which the view calls with the live
-request. Owner resolution runs inside each <code>sync_to_async</code> hop (it may
-create a session row for the anonymous bucket, so it must stay off the event
-loop), exactly as :class:<code>~django_pydantic_agent.persistence.model_conversation_store.ModelConversationStore</code>
-does.</p>
-<p><strong>Anonymous requests degrade, they don't crash.</strong> When the request has no
-owner and <code>ALLOW_ANONYMOUS</code> is off, <code>resolve_owner_id</code> refuses — the
-capability's lifecycle hooks fire mid-run, so a raise would abort the run.
-Instead every write no-ops and every read returns empty: the run still
-streams, it just isn't recorded (an anonymous visitor has no durable
-identity to resume under anyway). Pair the store with
-<code>require_authenticated=True</code> (or <code>ALLOW_ANONYMOUS</code>) for it to persist.</p>
-<p>Enable the backing tables by adding <code>"django_pydantic_agent.contrib.store"</code> to
-<code>INSTALLED_APPS</code> and running <code>migrate</code> (the same app the reference
-conversation store uses). Requires the <code>django-pydantic-agent[harness]</code> extra.</p>
+<code>FileStepStore</code>. It structurally satisfies <code>pydantic-ai-harness</code>'s
+<code>StepStore</code> protocol — that protocol is upstream's, not this package's —
+while partitioning every row by the resolved owner, so one user can never
+read or resume another's runs even by guessing a <code>run_id</code>. The owner is
+entirely ours; no harness record carries one.</p>
+<p><strong>Built per request</strong>, unlike a <code>ConversationStore</code> singleton whose methods
+each take a request: the protocol's methods carry none, so the request is
+bound at construction. Owner resolution runs inside each <code>sync_to_async</code>
+hop, because it may create a session row for the anonymous bucket and must
+stay off the event loop.</p>
+<p><strong>An anonymous request degrades rather than crashing.</strong> With no owner and
+<code>allow_anonymous</code> off, every write no-ops and every read returns empty: the
+capability's hooks fire mid-run, so refusing by raising would abort the run,
+and an anonymous visitor has no durable identity to resume under anyway. Pair
+the store with an authenticated mount for it to persist.</p>
+<p>Add <code>"django_pydantic_agent.contrib.store"</code> to <code>INSTALLED_APPS</code> and run
+<code>migrate</code> for the backing tables. Requires the
+<code>django-pydantic-agent[harness]</code> extra.</p>
 
 
 
@@ -2792,28 +2779,22 @@ management commands.</p>
     <div class="doc doc-contents first">
 
         <p>Point <code>conversation</code> at exactly the attachments its messages quote.</p>
-<p>The auto-resolver behind attachment lifecycle. Nothing on the wire changes
-and no client changes: the ids are already in the payload, because the web
-component augments the user message it posts with an <code>attachments</code> array of
-the refs the composer uploaded (<code>id</code> / <code>name</code> / <code>mime</code> / <code>size</code>). The
-protocol does not declare that field, but it survives into the stored message
-list, and reading it here is what turns "an id in some JSON" into a relation
-the database can enforce a lifecycle on.</p>
-<p>Reconciled rather than appended: a message removed from the thread on a
-re-save drops its reference too, so the relation always describes the
-conversation as it stands now.</p>
-<p><strong>Owner-scoped</strong>, and that is the load-bearing part. An id is resolved only
-against the attachments of the conversation's own owner, so a client that
-posts a guessed or copied id links nothing — the same rule that makes
-<code>AttachmentStore.open</code> return <code>None</code> across owners.</p>
-<p>The parse is deliberately total: a message that is not a mapping, an
-<code>attachments</code> field of the wrong type, an entry with no usable <code>id</code> — all
-are skipped in silence. This runs inside a conversation save, so a shape
-change upstream must degrade to "no reference", never to an exception that
-loses the user's message.</p>
-<p>An id that resolves to nothing simply produces no link. That is not an error
-either: an attachment may have been deleted through the store while the
-thread that mentions it lives on.</p>
+<p>The resolver behind attachment lifecycle, needing no wire or client change:
+the web component already augments each user message with an <code>attachments</code>
+array of the refs the composer uploaded, and that undeclared field survives
+into the stored message list. Reading it here turns an id in some JSON into a
+relation the database can enforce a lifecycle on.</p>
+<p>Reconciled rather than appended, so a message dropped on a re-save drops its
+reference too and the relation always describes the conversation as it
+stands.</p>
+<p><strong>Owner-scoped</strong>, which is the load-bearing part: an id resolves only against
+the attachments of the conversation's own owner, so a guessed or copied id
+links nothing — the rule that makes <code>AttachmentStore.open</code> return <code>None</code>
+across owners.</p>
+<p>The parse is total. A message that is not a mapping, an <code>attachments</code> field
+of the wrong type, an entry with no usable <code>id</code>, an id resolving to an
+attachment since deleted: all degrade to "no reference" in silence. This runs
+inside a conversation save, where an exception would lose the user's message.</p>
 
 
     </div>
@@ -2835,25 +2816,69 @@ thread that mentions it lives on.</p>
 
         <p>Rebuild <code>messages</code> without any inline file bytes, and say if it changed.</p>
 <p>A transport that inlines an attachment for the model serialises the file into
-the message list as base64 — a synthetic user message whose <code>content</code> is a
-list of parts, one of them a document or image whose <code>source</code> carries the
-data itself. Persisted, that turns a 2.6 MB PDF into roughly 3.5 MB of text
-in a single row, shipped to the browser on every load of the thread.</p>
-<p>The edit is <strong>structural</strong>: the message list is walked as plain JSON and only
-the offending parts are dropped. Nothing is round-tripped through a message
-type, because validating and re-dumping is exactly what would silently
-discard the fields this must not lose — every message's <code>id</code>, and the
-non-standard <code>attachments</code> array the composer rides on a user message,
-which is both what renders the chips and what the attachment relation is
-reconciled from.</p>
+the message list as base64, which persisted turns a 2.6 MB PDF into roughly
+3.5 MB of text in one row, shipped to the browser on every load.</p>
+<p>The edit is <strong>structural</strong>: the list is walked as plain JSON and only the
+offending parts are dropped. Nothing is round-tripped through a message type,
+because validating and re-dumping is what would silently discard the fields
+this must not lose — every message's <code>id</code>, and the non-standard
+<code>attachments</code> array that both renders the chips and drives attachment
+reconciliation.</p>
 <p>A message whose parts were all bytes keeps its place with an empty
-<code>content</code> list rather than being removed: dropping the message would take
-its id with it, and this command's job is to reclaim space, not to rewrite
-the transcript.</p>
-<p>Returns the rebuilt messages and whether anything was actually removed, so a
-caller can leave untouched rows untouched. A <code>messages</code> value that is not a
-list at all is handed straight back: the column is JSON, so a row written by
-something other than this store need only be left alone.</p>
+<code>content</code> list, since dropping it would take its id too.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The rebuilt messages and whether anything was removed, so a caller can</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>leave untouched rows untouched. A non-list <code>messages</code> is handed back</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>unchanged</code></td>            <td>
+                  <code><span title="tuple">tuple</span>[<span title="typing.Any">Any</span>, <span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>the column is JSON, and a row written by something other than</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="tuple">tuple</span>[<span title="typing.Any">Any</span>, <span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>this store is left alone.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -2880,14 +2905,12 @@ something other than this store need only be left alone.</p>
 
 
         <p>What one attachment deletion pass removed.</p>
-<p>Three counts rather than one, because after deduplication they genuinely
-differ: <code>rows</code> is how many attachment records were deleted, <code>blobs</code> how
-many stored files that actually freed. Deleting one of two rows that share a
-file removes a row and no blob at all, so a command reporting only rows would
-claim to have reclaimed space it did not.</p>
+<p>Three counts rather than one, because deduplication pulls them apart:
+deleting one of two rows sharing a file removes a row and no blob, so a
+command reporting only <code>rows</code> would claim space it did not reclaim.</p>
 <p><code>bytes_freed</code> is summed from the declared <code>size</code> of the rows whose blob
-was removed — the metadata, not a fresh stat of the storage backend, so it is
-an estimate of what a remote store gives back rather than a measurement.</p>
+went, not from a fresh stat of the backend, so it estimates what a remote
+store gives back rather than measuring it.</p>
 
 
 

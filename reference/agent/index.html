@@ -1404,7 +1404,7 @@
 
 
         <p>Resolved construction parameters for a Pydantic-AI <code>Agent</code>.</p>
-<p>Bundles everything :func:<code>~django_pydantic_agent.agent.agent_factory.build_agent</code>
+<p>Bundles everything <a class="autorefs autorefs-internal" title="build_agent" href="#django_pydantic_agent.build_agent"><code>build_agent</code></a>
 needs so the call site passes one record instead of a long keyword list.
 A transport resolves these from its own configuration and hands the record
 down; <code>toolsets</code> and <code>capabilities</code> arrive already resolved to instances
@@ -1496,8 +1496,8 @@ down; <code>toolsets</code> and <code>capabilities</code> arrive already resolve
 
     <div class="doc doc-contents ">
 
-        <p>Wraps every server-side tool call for timing + success/failure
-records. <code>None</code> means no auditing (a no-op logger).</p>
+        <p>Wraps every server-side tool call for timing and success/failure
+records. <code>None</code> means no auditing.</p>
 
     </div>
 
@@ -1648,11 +1648,11 @@ fills it from the driving request). <code>None</code> leaves the field unset.</p
 
     <div class="doc doc-contents ">
 
-        <p>Server-side destructive-tool approval policy. When set and
-<code>enabled</code>, :func:<code>~django_pydantic_agent.agent.agent_factory.build_agent</code> composes
-a :class:<code>~django_pydantic_agent.policy.guard.tool_guard.ToolGuard</code> capability built
-from the registry's destructive tools. <code>None</code> (or disabled) leaves the
-agent ungated.</p>
+        <p>Server-side destructive-tool approval policy. When set and <code>enabled</code>,
+<code>build_agent</code> composes a
+<a class="autorefs autorefs-internal" title="ToolGuard" href="../policy/#django_pydantic_agent.ToolGuard"><code>ToolGuard</code></a> built from
+the registry's destructive tools; <code>None</code> or disabled leaves the agent
+ungated.</p>
 
     </div>
 
@@ -1677,12 +1677,11 @@ agent ungated.</p>
 
     <div class="doc doc-contents ">
 
-        <p>What an unhandled tool exception costs. Defaults to on, so a raising
-tool fails its own call and the run carries on; the exception still reaches
+        <p>What an unhandled tool exception costs. On by default, so a raising tool
+fails its own call and the run carries on, with the exception still reaching
 the audit logger and the Python logger. A plain record rather than
-<code>… | None</code> because there is no third state: the policy is either composed
-or it isn't, and <code>None</code> would have to mean "on" to keep the default,
-which reads backwards next to <code>tool_guard</code> above.</p>
+<code>... | None</code> because there is no third state, and <code>None</code> would have to
+mean "on" to keep that default — backwards next to <code>tool_guard</code>.</p>
 
     </div>
 
@@ -1720,40 +1719,25 @@ which reads backwards next to <code>tool_guard</code> above.</p>
 
 
         <p>Which attachment types <code>read_attachment</code> hands back as file content.</p>
-<p>Tunes :func:<code>~django_pydantic_agent.agent.attachment_toolset.build_attachment_toolset</code>.
-A textual attachment is decoded and returned as text regardless of this
-record; it only governs the binary ones, where the choice is between
-attaching the bytes for the model to look at and returning a one-line note
-about a file it will never see.</p>
-<p><strong>An allowlist, not "everything that is not text".</strong> Bytes the provider
-cannot interpret are not merely useless to the model — a <code>.zip</code> or a
-<code>.exe</code> handed over as file content makes the provider reject the whole
-request, so a broad rule would trade a model that cannot read your PDF for
-a run that does not start. The default set is what mainstream providers
-actually accept: PDF, PNG, JPEG, GIF and WebP.</p>
-<p><strong><code>max_bytes</code> is deliberately far below any sane upload cap</strong>, and what it
-guards is the cost of a <em>request</em>, not of a stored thread. The bytes are
-carried in a synthetic <code>user</code> message that the tool return serialises into,
-and that message stays in the run's history: every further model request in
-the same run ships the file again. Base64 costs about a third on top, so a
-4 MiB PDF is roughly 5.5 MiB of provider payload per request — paid in
-tokens, in latency, and in the memory the run holds it in.</p>
-<p>What it does <strong>not</strong> cost is the conversation. The bytes never travel on the
-event stream, so the client never receives them and the history it posts on
-the next turn carries none; whether they outlive the run at all is the
-transport's decision, and the AG-UI transport strips them on the way to
-storage. A <em>follow-up</em> question about the same file is therefore answered by
-reading the attachment again, server-side, rather than from bytes replayed
-out of the thread.</p>
-<p>So the cap sits where a single request stops being cheap, rather than where
-the upload endpoint stops accepting files.</p>
-<p>To switch inlining off entirely and keep today's notes,
-<code>AttachmentInlineConfig(media_types=frozenset())</code>.</p>
-<p><code>AttachmentRef.mime</code> is client-declared, so the decision to inline is made
-on a hint rather than on sniffed bytes. The failure mode of a mislabelled
-file is a provider rejecting the request, not a disclosure: the store is
-owner-scoped either way, so the model only ever reaches files the acting
-user uploaded.</p>
+<p>Tunes <code>build_attachment_toolset</code>.
+A textual attachment is decoded and returned as text regardless; this record
+governs the binary ones, where the choice is between attaching the bytes for
+the model to look at and returning a one-line note about a file it will never
+see. <code>AttachmentInlineConfig(media_types=frozenset())</code> switches inlining
+off entirely.</p>
+<p><code>media_types</code> is an allowlist rather than "everything that is not text"
+because bytes a provider cannot interpret make it reject the whole request:
+a broad rule would trade a model that cannot read your PDF for a run that
+does not start. <code>max_bytes</code> sits far below any sane upload cap because what
+it bounds is one <em>request</em>, not a stored thread — the bytes ride in a
+synthetic <code>user</code> message that stays in the run's history, so every further
+model request ships the file again, base64 and all.</p>
+<p>None of it reaches the client: the bytes never travel on the event stream,
+and a follow-up question about the same file is answered by reading the
+attachment again, server-side. The decision is made on
+<code>AttachmentRef.mime</code>, which is client-declared, so a mislabelled file costs
+a rejected request rather than a disclosure — the store is owner-scoped
+either way, and the model only reaches files the acting user uploaded.</p>
 
 
 
@@ -1794,8 +1778,8 @@ user uploaded.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Content types whose bytes are attached to the tool result. Anything
-outside this set falls back to the one-line note.</p>
+        <p>Content types whose bytes are attached to the tool result; anything
+outside the set falls back to the one-line note.</p>
 
     </div>
 
@@ -1820,8 +1804,8 @@ outside this set falls back to the one-line note.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Largest file, in bytes, that is attached rather than described. Measured
-against the bytes the store returns, not the declared <code>AttachmentRef.size</code>.</p>
+        <p>Largest file, in bytes, attached rather than described. Measured against
+the bytes the store returns, not the declared <code>AttachmentRef.size</code>.</p>
 
     </div>
 
@@ -1859,17 +1843,14 @@ against the bytes the store returns, not the declared <code>AttachmentRef.size</
 
 
         <p>Per-run dependencies handed to the agent as <code>ctx.deps</code>.</p>
-<p>Pydantic-AI's own seam for threading request-scoped values into a run:
-every tool, toolset and capability reads them off <code>RunContext.deps</code>
-instead of closing over a request. That closure is what this type replaces —
-it is why the agent had to be rebuilt per request, and why the acting user
-could not be read through the upstream default.</p>
-<p><code>djangorestframework-pydantic-ai</code>'s <code>SpecToolset</code> already reads
+<p>Pydantic-AI's seam for threading request-scoped values into a run: tools,
+toolsets and capabilities read them off <code>RunContext.deps</code> instead of
+closing over a request, which is what lets one agent serve many requests.
+<code>djangorestframework-pydantic-ai</code>'s <code>SpecToolset</code> already reads
 <code>ctx.deps.user</code> as its default user extractor, so a run given these deps
-binds the user natively with nothing passed at the call site.</p>
-<p>Projects wanting more per-run context subclass this and set
-<code>AgentConfig.deps_factory</code>; the fields below are the two the framework
-itself reads.</p>
+binds the acting user with nothing passed at the call site.</p>
+<p>For more per-run context, subclass this and set <code>AgentConfig.deps_factory</code>;
+the fields below are the ones the framework itself reads.</p>
 
 
 
@@ -1909,8 +1890,8 @@ itself reads.</p>
     <div class="doc doc-contents ">
 
         <p>The acting Django user (<code>request.user</code>), or <code>None</code> for an
-unauthenticated run. <code>Any</code> because it is a Django boundary — it may be a
-<code>User</code>, an <code>AnonymousUser</code>, or a project's own model.</p>
+unauthenticated run. <code>Any</code> because it is a Django boundary: a <code>User</code>, an
+<code>AnonymousUser</code>, or a project's own model.</p>
 
     </div>
 
@@ -1936,16 +1917,11 @@ unauthenticated run. <code>Any</code> because it is a Django boundary — it may
     <div class="doc doc-contents ">
 
         <p>The client IP this run was driven from, stamped onto every audit event
-:class:<code>~django_pydantic_agent.policy.audit.audit_capability.AuditCapability</code>
-records.</p>
-<p>⭐ <strong>Here rather than on the capability's constructor because it is per-run
-data, and per-run data is what stops an agent having to be rebuilt.</strong> The
-constructor argument still works and is still the right home for a value
-that is genuinely fixed for the endpoint (an organization scope); an IP is
-not. A transport that closes over one has an agent it can only use for a
-single request — which is the closure this type exists to replace.</p>
-<p>A run that leaves it unset falls back to whatever the capability was
-constructed with, so nothing that already worked changes.</p>
+<a class="autorefs autorefs-internal" title="AuditCapability" href="../policy/#django_pydantic_agent.AuditCapability"><code>AuditCapability</code></a>
+records. Per-run, so it belongs here rather than on the capability's
+constructor — a transport that closes over an IP has an agent good for one
+request. The constructor argument remains the right home for a value that is
+genuinely fixed for the endpoint, and an unset run falls back to it.</p>
 
     </div>
 
@@ -1970,19 +1946,15 @@ constructed with, so nothing that already worked changes.</p>
 
     <div class="doc doc-contents ">
 
-        <p>AG-UI shared state for this run.</p>
-<p>Present so the deps satisfy <code>StateHandler</code>: the UI adapter checks
-<code>isinstance(deps, StateHandler)</code> and, when it matches, validates the
-client's <code>RunAgentInput.state</code> into this field — otherwise it drops the
-state and emits a <code>UserWarning</code> naming the deps type. So a run now
-<em>receives</em> client state instead of discarding it.</p>
-<p><strong>Inbound only, for now.</strong> Nothing emits <code>STATE_SNAPSHOT</code> / <code>STATE_DELTA</code>
-back; a tool has to return those itself as <code>ToolReturn</code> metadata, and
-wiring that end-to-end is its own piece of work.</p>
-<p>Left <code>None</code> (rather than typed) so the default is transport-agnostic: with
-a non-<code>BaseModel</code> value the adapter passes the raw mapping through
-unvalidated. To get validation, seed it with an instance of a Pydantic model
-— the adapter validates the incoming state against <code>type(deps.state)</code>.</p>
+        <p>AG-UI shared state for this run, <strong>inbound only</strong>.</p>
+<p>Present so the deps satisfy <code>StateHandler</code>: the UI adapter validates the
+client's <code>RunAgentInput.state</code> into this field, and drops the state with a
+<code>UserWarning</code> when the deps type does not match. Nothing emits
+<code>STATE_SNAPSHOT</code> / <code>STATE_DELTA</code> back — a tool has to return those itself
+as <code>ToolReturn</code> metadata.</p>
+<p><code>None</code> keeps the default transport-agnostic: the adapter passes a raw
+mapping through unvalidated. Seed it with a Pydantic model instance to get
+validation, which the adapter runs against <code>type(deps.state)</code>.</p>
 
     </div>
 
@@ -2013,27 +1985,34 @@ unvalidated. To get validation, seed it with an instance of a Pydantic model
 
     <div class="doc doc-contents first">
 
-        <p>Build a Pydantic-AI <code>Agent</code> from a registry and an :class:<code>AgentConfig</code>.</p>
-<p>Each registry tool is registered as a plain Pydantic-AI tool. When
-<code>config.audit_logger</code> is set, an :class:<code>AuditCapability</code> on the
-<code>wrap_tool_execute</code> lifecycle hook times and records <strong>every</strong> tool the
-agent runs — registry tools and composed toolsets (drf-mcp / spec /
-attachment / skill tools) alike. Frontend tools declared in the AG-UI
-<code>RunAgentInput</code> are merged automatically by the adapter and are not
-registered here.</p>
-<p><code>model_settings</code> / <code>retries</code> tune the model; <code>toolsets</code> and
-<code>capabilities</code> compose external Pydantic-AI toolsets/capabilities (e.g. an
-MCP-client toolset) alongside the registry tools, so the agent can reach
-beyond the registered set. <code>tool_guard</code>, when enabled, adds a
-:class:<code>ToolGuard</code> that flips destructive tools to require approval, and
-<code>tool_failure</code> (on unless turned off) adds a :class:<code>ToolFailurePolicy</code>
-so a raising tool fails its own call instead of the whole run.</p>
-<p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so a run must be given
-:class:<code>AgentDeps</code> (the transport builds one per run and passes <code>deps=</code>).</p>
-<p>Capabilities are composed <strong>order-independently</strong>: each declares its
-position via <code>get_ordering</code> (audit is outermost, the guard is orthogonal),
-and pydantic-ai's <code>CombinedCapability</code> topologically sorts them — so the
-list built here needn't be pre-ordered.</p>
+        <p>Build a Pydantic-AI <code>Agent</code> from a registry and an
+<a class="autorefs autorefs-internal" title="AgentConfig
+
+
+  
+      dataclass
+  " href="#django_pydantic_agent.AgentConfig"><code>AgentConfig</code></a>.</p>
+<p>Each registry tool is registered as a plain Pydantic-AI tool, and <code>config</code>
+supplies the model, the toolsets and capabilities composed alongside them,
+and the policies below. Frontend tools declared in the AG-UI
+<code>RunAgentInput</code> are merged by the adapter, not registered here.</p>
+<p>Three capabilities are added from <code>config</code> on request: an
+<a class="autorefs autorefs-internal" title="AuditCapability" href="../policy/#django_pydantic_agent.AuditCapability"><code>AuditCapability</code></a> that times and
+records <strong>every</strong> tool the agent runs — registry tools and composed toolsets
+alike — a <a class="autorefs autorefs-internal" title="ToolGuard" href="../policy/#django_pydantic_agent.ToolGuard"><code>ToolGuard</code></a> that flips
+destructive tools to require approval, and a
+<a class="autorefs autorefs-internal" title="ToolFailurePolicy" href="../policy/#django_pydantic_agent.ToolFailurePolicy"><code>ToolFailurePolicy</code></a>, on unless
+turned off, so a raising tool fails its own call rather than the whole run.
+Each declares its position through
+<code>get_ordering</code> and pydantic-ai sorts them, so the list needs no
+pre-ordering.</p>
+<p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so every run must be given
+<a class="autorefs autorefs-internal" title="AgentDeps
+
+
+  
+      dataclass
+  " href="#django_pydantic_agent.AgentDeps"><code>AgentDeps</code></a> through <code>deps=</code>.</p>
 
 
     </div>
@@ -2060,40 +2039,107 @@ list built here needn't be pre-ordered.</p>
     <div class="doc doc-contents first">
 
         <p>The agent's server-tool catalog for the frontend to label tool-call cards.</p>
-<p>Server-side tools (the <code>@tool</code> registry, and drf-mcp tools when a
-<code>drf_mcp_server</code> is passed) execute server-side, so their
-JSON Schema never reaches the browser — the web component can't read an
-<code>x-summary</code> off it. This catalog is the channel for those labels: the
-component fetches it via <code>data-tools-url</code> and maps tool name → label.</p>
+<p>Server-side tools execute server-side, so their JSON Schema never reaches the
+browser and a web component cannot read an <code>x-summary</code> off it. This catalog
+is that channel: the component fetches it and maps tool name to label.</p>
 <p>Each entry is <code>{"name", "summary", "description"?}</code>. <code>summary</code> is always
-present, resolved from the single source of truth with a fallback chain:</p>
-<ul>
-<li>registry tools → <code>@tool(summary=…)</code> → a prettified name;</li>
-<li>drf-mcp tools → <code>display_name</code> → <code>title</code> → a prettified name.</li>
-</ul>
-<p><code>description</code> (a longer blurb for tooltips) is included when available
-(<code>ToolSpec.description</code> / drf-mcp <code>display_description</code> → <code>description</code>).
-Registry tools win on name collisions.</p>
-<p>⚠ <strong>The catalog covers the sources named here, and no others.</strong> Tools
-reaching the agent through a transport's <code>capabilities=</code> / <code>toolsets=</code>
-— an arbitrary <code>AbstractToolset</code> a project attaches directly — are <strong>not</strong>
-listed, and their cards fall back to a prettified name in the frontend.</p>
-<p>⛔ <strong>That boundary is deliberate, and enumerating them is not a missing
-feature.</strong> Pydantic-AI's enumeration is <code>AbstractToolset.get_tools</code>, which
-is <code>async</code> and takes a <code>RunContext</code>; this function runs at configuration
-time, from a view, with no run in sight. No common surface exposes tool
-names before a run, so any attempt here would work for the toolsets we
-happen to recognise and silently skip the rest — a catalog that <em>looks</em>
-complete and is not, which is the exact failure mode this stack keeps
-fixing everywhere else.</p>
-<p>⭐ <strong>Prefer routing spec tools through the source that is covered.</strong> A
-<code>SpecToolset</code> / <code>SpecCapability</code> handed to django-ag-ui's
-<code>service_specs=</code> (0.30+) is attached as itself <em>and</em> enumerated here, so
-the powerful form keeps its labels; only a toolset with no such route stays
-unlabelled.</p>
-<p>⚠ Unlabelled is a <strong>degraded label, not a broken call</strong> — the frontend
-prettifies the tool name and the tool works normally. That is why the
-boundary is documented rather than closed with a partial guess.</p>
+present, resolved from <code>@tool(summary=...)</code> for registry tools and from
+<code>display_name</code> then <code>title</code> for drf-mcp ones, falling back to a
+prettified name. <code>description</code> is carried through when the source has one.</p>
+<p><strong>The catalog covers these sources and no others.</strong> A tool attached through
+a transport's <code>capabilities=</code> / <code>toolsets=</code> is not listed and its card
+falls back to a prettified name — a degraded label, not a broken call.
+Enumerating those is not possible here: pydantic-ai exposes tool names only
+through <code>AbstractToolset.get_tools</code>, which is async and needs a
+<code>RunContext</code>, while this runs at configuration time with no run in sight.
+Route spec tools through a transport's <code>service_specs=</code> to keep labels.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>registry</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ToolRegistry (django_pydantic_agent.registry.tool_registry.ToolRegistry)" href="../registry/#django_pydantic_agent.ToolRegistry">ToolRegistry</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The <code>@tool</code> registry, listed first; it wins name collisions.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>drf_mcp_server</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A drf-mcp server whose registered tools are appended.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>service_specs</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A <code>name -&gt; spec</code> mapping whose tools are appended, each
+described by its service or selector callable's docstring.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="list">list</span>[<span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>One entry per tool, in that source order.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -2119,22 +2165,23 @@ boundary is documented rather than closed with a partial guess.</p>
 
 
         <p>The escape-hatch signature for a transport's <code>agent_factory=</code> argument.</p>
-<p>A callable matching this shape fully replaces the built-in
-:func:<code>~django_pydantic_agent.agent.agent_factory.build_agent</code>, giving a project
-complete control over Pydantic-AI <code>Agent</code> construction (custom model
-providers, output types, toolsets, instrumentation, …). It receives the
-server-side tool registry and <strong>that transport's resolved config object</strong>.</p>
-<p><code>config</code> is deliberately untyped here: this substrate reads no settings and
-owns no settings namespace, so the second argument is whatever configuration
-record the calling transport resolved — <code>AGUIConfig</code> for the AG-UI
-transport, its own equivalent for another. Each transport documents the
-concrete type its users receive.</p>
-<p><strong>The returned agent must be typed</strong> <code>Agent[AgentDeps, ...]</code> — build it
-with <code>deps_type=AgentDeps</code>. Transports hand every run an
-:class:<code>~django_pydantic_agent.agent.types.agent_deps.AgentDeps</code>, and that
-is how the acting user reaches spec tools (<code>ctx.deps.user</code>) and how AG-UI
-state reaches <code>deps.state</code>. A factory that omits <code>deps_type</code> produces an
-agent whose tools see no user.</p>
+<p>A callable of this shape fully replaces
+<a class="autorefs autorefs-internal" title="build_agent" href="#django_pydantic_agent.build_agent"><code>build_agent</code></a>, giving a
+project complete control over <code>Agent</code> construction. It receives the
+server-side tool registry and the calling transport's own resolved config
+record, which is untyped here because this substrate owns no settings
+namespace; each transport documents the concrete type its users receive.</p>
+<p><strong>The returned agent must be built with</strong> <code>deps_type=AgentDeps</code>. Transports
+hand every run an
+<a class="autorefs autorefs-internal" title="AgentDeps
+
+
+  
+      dataclass
+  " href="#django_pydantic_agent.AgentDeps"><code>AgentDeps</code></a>, and that is
+how the acting user reaches spec tools and how AG-UI state reaches
+<code>deps.state</code>. A factory that omits it produces an agent whose tools see no
+user.</p>
 
 
 

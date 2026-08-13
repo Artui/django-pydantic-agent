@@ -1466,11 +1466,9 @@ narrative.</p>
 
 
         <p>An ordered, named collection of server-side tools.</p>
-<p>State lives on the instance: a <code>DjangoAGUIView</code> holds one registry;
-tests build a fresh registry per scenario. The registry derives a
-JSON Schema for each tool at registration (including the
-<code>x-destructive</code> / <code>x-category</code> extensions) and can dispatch sync
-or async callables.</p>
+<p>State lives on the instance — a transport holds one, tests build a fresh one
+per scenario. Each tool's JSON Schema is derived once at registration, and
+either sync or async callables can be dispatched.</p>
 
 
 
@@ -1571,7 +1569,13 @@ or async callables.</p>
 
         <p>Dispatch a sync call to the registered tool.</p>
 <p>Refuses coroutine functions to avoid silently returning an
-un-awaited coroutine. Use :meth:<code>acall</code> for async tools.</p>
+un-awaited coroutine. Use
+<a class="autorefs autorefs-internal" title="acall
+
+
+  
+      async
+  " href="#django_pydantic_agent.ToolRegistry.acall"><code>acall</code></a> for async tools.</p>
 
 
     </div>
@@ -1634,12 +1638,10 @@ un-awaited coroutine. Use :meth:<code>acall</code> for async tools.</p>
     <div class="doc doc-contents first">
 
         <p>Register the decorated callable on <code>registry</code> as a tool.</p>
-<p>The tool's name defaults to the function name; its description
-defaults to the first paragraph of the function's docstring. Both
-can be overridden via the keyword arguments. <code>confirm</code> supplies a
-human-readable confirmation prompt for a destructive tool (surfaced as
-<code>x-confirm</code>); <code>summary</code> a short display label (surfaced as
-<code>x-summary</code>).</p>
+<p><code>name</code> defaults to the function's name and <code>description</code> to the first
+paragraph of its docstring. <code>confirm</code> is the confirmation prompt for a
+destructive tool and <code>summary</code> a short display label; both reach the client
+as the matching <code>x-*</code> schema key.</p>
 
 
     </div>
@@ -1667,10 +1669,8 @@ human-readable confirmation prompt for a destructive tool (surfaced as
 
 
         <p>Canonical declaration of a server-side tool.</p>
-<p>A <code>ToolSpec</code> bundles the callable with the metadata the registry
-needs to expose it to a Pydantic-AI agent and to a frontend: a
-stable name, a human-facing description, a <code>destructive</code> risk
-flag, and a coarse <code>category</code>.</p>
+<p>Bundles the callable with the metadata the registry needs to expose it to a
+Pydantic-AI agent and to a frontend.</p>
 
 
 
@@ -1708,8 +1708,8 @@ flag, and a coarse <code>category</code>.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Stable identifier exposed to the agent. Must be unique within a
-:class:<code>~django_pydantic_agent.registry.tool_registry.ToolRegistry</code>.</p>
+        <p>Stable identifier exposed to the agent, unique within a
+<a class="autorefs autorefs-internal" title="ToolRegistry" href="#django_pydantic_agent.ToolRegistry"><code>ToolRegistry</code></a>.</p>
 
     </div>
 
@@ -1733,8 +1733,8 @@ flag, and a coarse <code>category</code>.</p>
 
     <div class="doc doc-contents ">
 
-        <p>The Python callable that implements the tool. Must have typed
-parameters; the registry derives a JSON Schema from the signature.</p>
+        <p>The callable implementing the tool. Its parameters must be typed; the
+registry derives a JSON Schema from the signature.</p>
 
     </div>
 
@@ -1758,8 +1758,7 @@ parameters; the registry derives a JSON Schema from the signature.</p>
 
     <div class="doc doc-contents ">
 
-        <p>User-facing summary shown to the agent. The first line is what
-most clients display.</p>
+        <p>Summary shown to the agent. Most clients display the first line.</p>
 
     </div>
 
@@ -1784,9 +1783,8 @@ most clients display.</p>
 
     <div class="doc doc-contents ">
 
-        <p>If <code>True</code>, calling this tool may mutate state. The registry
-stamps <code>x-destructive: true</code> into the tool's JSON Schema so
-frontends can gate it behind a confirmation step.</p>
+        <p>Whether calling this tool may mutate state. Stamped as
+<code>x-destructive</code> so a frontend can gate it behind a confirmation step.</p>
 
     </div>
 
@@ -1811,8 +1809,7 @@ frontends can gate it behind a confirmation step.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Coarse capability grouping. Surfaced as <code>x-category</code> in the
-JSON Schema.</p>
+        <p>Coarse capability grouping, stamped as <code>x-category</code>.</p>
 
     </div>
 
@@ -1837,9 +1834,8 @@ JSON Schema.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Optional human-readable confirmation prompt for a destructive tool
-(e.g. "Activate this project?"). Stamped as <code>x-confirm</code> so the frontend
-can show it instead of a generic "Run <tool>?".</p>
+        <p>A confirmation prompt for a destructive tool, stamped as <code>x-confirm</code>,
+shown instead of a generic "Run <tool>?".</p>
 
     </div>
 
@@ -1864,9 +1860,8 @@ can show it instead of a generic "Run <tool>?".</p>
 
     <div class="doc doc-contents ">
 
-        <p>Optional short label for the tool (e.g. "Query orders"). Stamped as
-<code>x-summary</code> so the frontend shows it on the tool-call card instead of the
-raw tool name.</p>
+        <p>A short label, stamped as <code>x-summary</code>, shown on the tool-call card
+instead of the raw tool name.</p>
 
     </div>
 
@@ -1904,9 +1899,8 @@ raw tool name.</p>
 
 
         <p>A registered tool plus the JSON Schema derived from its signature.</p>
-<p>The schema is computed once at registration (including the
-<code>x-destructive</code> / <code>x-category</code> extensions) and carried alongside
-the spec so tool listings don't re-introspect on every request.</p>
+<p>The schema is computed once at registration and carried alongside the spec,
+so a tool listing does not re-introspect on every request.</p>
 
 
 
@@ -1959,16 +1953,12 @@ the spec so tool listings don't re-introspect on every request.</p>
     <div class="doc doc-contents first">
 
         <p>Derive a JSON Schema object from <code>fn</code>'s parameters.</p>
-<p>Supports the primitive types used by the built-in tool surface:
-<code>str</code>, <code>int</code>, <code>float</code>, <code>bool</code>, <code>list[T]</code>, <code>dict[str, Any]</code>,
-and <code>X | None</code> unions. Anything richer falls back to an empty
-schema fragment (no type constraint), which is still wire-valid JSON
-Schema.</p>
-<p>The <code>destructive</code> flag is stamped at the schema root as
-<code>x-destructive</code>; <code>category</code> as <code>x-category</code>; <code>confirm</code> (when
-given) as <code>x-confirm</code>. AG-UI passes these extensions through
-verbatim, and frontends read <code>x-destructive</code> / <code>x-confirm</code> to gate
-execution behind a confirmation step.</p>
+<p>Covers <code>str</code>, <code>int</code>, <code>float</code>, <code>bool</code>, <code>list[T]</code>, <code>dict[str,
+Any]</code> and <code>X | None</code> unions. Anything richer falls back to an empty
+fragment, imposing no type constraint but staying wire-valid.</p>
+<p><code>destructive</code> / <code>category</code> / <code>confirm</code> / <code>summary</code> are stamped at the
+schema root as the matching <code>x-*</code> extension keys, which AG-UI passes
+through verbatim to the client.</p>
 
 
     </div>
@@ -1994,10 +1984,9 @@ execution behind a confirmation step.</p>
 
 
         <p>Coarse grouping for a tool, surfaced to the agent and the UI.</p>
-<p>Categories are advisory metadata: they let a frontend group tools,
-let a system prompt reason about capability classes, and let a
-project apply category-wide policy. They do <strong>not</strong> by themselves
-gate execution — that is the <code>destructive</code> flag's job.</p>
+<p>Advisory metadata: it lets a frontend group tools, a system prompt reason
+about capability classes, and a project apply category-wide policy. It does
+<strong>not</strong> gate execution; that is the <code>destructive</code> flag's job.</p>
 
 
 

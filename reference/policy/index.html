@@ -1564,11 +1564,9 @@ See <a href="../../policy/">Policy</a> for the narrative.</p>
 
 
         <p>Sink for tool-invocation records.</p>
-<p>Implementations are free to drop, sample, or forward events. The
-package ships a no-op default (<code>NullAuditLogger</code>) and a
-<code>logging</code>-backed implementation (<code>LoggingAuditLogger</code>); projects
-supply their own by passing it to their transport's <code>audit_logger=</code>
-argument.</p>
+<p>An implementation may drop, sample or forward events. The package ships
+<code>NullAuditLogger</code> and <code>LoggingAuditLogger</code>; a project passes its own to
+its transport's <code>audit_logger=</code>.</p>
 
 
 
@@ -1620,14 +1618,12 @@ argument.</p>
 
 
         <p>A single tool invocation as seen by the audit logger.</p>
-<p>Arguments are stored as a string (typically JSON-encoded) to keep
-audit records cheap to serialize and to discourage retention of
-sensitive raw values.</p>
-<p>One run-level record rides this shape: when a client disconnects
-mid-run (cancel/stop), the view records <code>tool_name="agent.run"</code> with
-<code>success=False</code> and an <code>error</code> starting with <code>"cancelled:"</code>, so
-cancelled runs are distinguishable in audit sinks without widening the
-<code>AuditLogger</code> protocol.</p>
+<p>Arguments are stored as a string, typically JSON, to keep records cheap to
+serialize and to discourage retaining sensitive raw values.</p>
+<p>One run-level record rides this shape: a client disconnecting mid-run is
+recorded as <code>tool_name="agent.run"</code>, <code>success=False</code> and an <code>error</code>
+starting <code>"cancelled:"</code>, so a sink can tell cancelled runs apart without
+widening the <a class="autorefs autorefs-internal" title="AuditLogger" href="#django_pydantic_agent.AuditLogger"><code>AuditLogger</code></a> protocol.</p>
 
 
 
@@ -1666,9 +1662,9 @@ cancelled runs are distinguishable in audit sinks without widening the
 
     <div class="doc doc-contents ">
 
-        <p>Multi-tenant scope of the acting user, when the sink can derive one.
-<code>None</code> at this layer — a custom :class:<code>AuditLogger</code> fills it from its
-own tenancy model.</p>
+        <p>Multi-tenant scope of the acting user. <code>None</code> at this layer; a custom
+<a class="autorefs autorefs-internal" title="AuditLogger" href="#django_pydantic_agent.AuditLogger"><code>AuditLogger</code></a> fills it from its own
+tenancy model.</p>
 
     </div>
 
@@ -1693,9 +1689,9 @@ own tenancy model.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Kind of domain object the call acted on (<code>"order"</code>, <code>"user"</code>, …).
-<code>None</code> at this layer — tool args are domain-opaque here; a custom sink
-that knows its tools can classify them.</p>
+        <p>Kind of domain object the call acted on. <code>None</code> at this layer, where
+tool arguments are domain-opaque; a sink that knows its tools can
+classify them.</p>
 
     </div>
 
@@ -1780,26 +1776,88 @@ that knows its tools can classify them.</p>
 
 
 
-        <p>Records every tool execution to an :class:<code>AuditLogger</code> sink.</p>
+        <p>Records every tool execution to an
+<a class="autorefs autorefs-internal" title="AuditLogger" href="#django_pydantic_agent.AuditLogger"><code>AuditLogger</code></a> sink.</p>
 <p>A Pydantic-AI capability on the <code>wrap_tool_execute</code> lifecycle hook, so it
-times and records <strong>every</strong> tool the agent runs — registry tools, drf-mcp /
-spec-toolset bridges, attachment and skill tools alike — where the old
-per-tool wrapper saw only the registry.</p>
-<p>Recording is <strong>non-raising</strong>: a sink that throws is caught and logged to the
-<code>django_pydantic_agent.audit</code> Python logger, so a broken audit backend degrades to
-lost audit records, never a broken agent run.</p>
-<p><code>ip_address</code> / <code>organization_id</code> pre-fill the matching
-:class:<code>AuditEvent</code> fields for every event this capability records — a
-multi-tenant host can pass its org scope.</p>
-<p>⭐ <strong>The IP is read from the run's <code>deps</code> first, and only then from the
-constructor.</strong> <code>AgentDeps.ip_address</code> is per-run; a constructor argument
-is per-agent. Taking the IP only from the constructor is what forced a
-transport to build a fresh agent for every request — the exact closure
-<code>AgentDeps</code> exists to replace — and the failure it produces if you build
-once anyway is silent: every audit record carries the IP of whoever
-happened to arrive first. Deps that carry no <code>ip_address</code> (a project's own
-deps type, or a run that leaves it unset) fall back to the constructor
-value, so nothing that already worked changes.</p>
+times and records <strong>every</strong> tool the agent runs: registry tools, the drf-mcp
+and spec bridges, attachment and skill tools alike.</p>
+<p>Recording is <strong>non-raising</strong>. A sink that throws is caught and logged to the
+<code>django_pydantic_agent.audit</code> Python logger, so a broken audit backend
+costs audit records rather than the run.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>logger</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="AuditLogger (django_pydantic_agent.policy.audit.types.audit_logger.AuditLogger)" href="#django_pydantic_agent.AuditLogger">AuditLogger</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The sink each <a class="autorefs autorefs-internal" title="AuditEvent
+
+
+  
+      dataclass
+  " href="#django_pydantic_agent.AuditEvent"><code>AuditEvent</code></a>
+is recorded to.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>ip_address</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Fallback client IP, used only when the run's deps carry no
+<code>ip_address</code>. Per-run deps come first because a constructor
+argument is per-agent: taking the IP from it alone forces a fresh
+agent per request, and building once anyway fails silently, with
+every record carrying the IP of whoever arrived first.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>organization_id</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Org scope stamped onto every event, for a multi-tenant
+host.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
 
@@ -1836,14 +1894,11 @@ value, so nothing that already worked changes.</p>
     <div class="doc doc-contents ">
 
         <p>Pin audit as the <strong>outermost</strong> capability in the chain.</p>
-<p>Audit is the observability layer: its <code>wrap_tool_execute</code> should
-surround every other capability's execution hooks so it records the tool
-regardless of what else composes the run. Declaring the position here
-(rather than relying on list order at the <code>build_agent</code> call site)
-makes composition deterministic once a second capability — e.g.
-:class:<code>~django_pydantic_agent.policy.guard.tool_guard.ToolGuard</code> — joins the
-chain: pydantic-ai's <code>CombinedCapability</code> topologically sorts by these
-constraints, so audit stays outermost no matter the insertion order.</p>
+<p>Its <code>wrap_tool_execute</code> has to surround every other capability's
+execution hooks so the tool is recorded whatever else composes the run.
+Declaring it here rather than relying on list order at the
+<code>build_agent</code> call site keeps that true however the capabilities are
+inserted, since pydantic-ai sorts by these constraints.</p>
 
 
     </div>
@@ -1976,16 +2031,13 @@ with the error message included.</p>
 
 
         <p>Resolved policy for the server-side tool-approval gate.</p>
-<p>Turns the :class:<code>~django_pydantic_agent.policy.guard.tool_guard.ToolGuard</code>
-capability on and tunes <em>which</em> tools it flips to require human approval.
-<strong>Off by default</strong> (<code>enabled=False</code>): the gate never surprises a project
-that hasn't opted in — matching the package's "no server-side gate unless
-asked" posture.</p>
-<p>When <code>enabled</code>, a tool is gated for approval unless its name is in
-<code>exempt</code>, and it is gated when either it is destructive (a registry
-<code>@tool(destructive=True)</code> or a drf-mcp tool whose <code>readOnlyHint</code> is
-<code>False</code>) or its name is in <code>require_approval</code>. <code>exempt</code> wins over
-<code>require_approval</code>.</p>
+<p>Turns the <a class="autorefs autorefs-internal" title="ToolGuard" href="#django_pydantic_agent.ToolGuard"><code>ToolGuard</code></a>
+capability on and tunes which tools it flips to require human approval. Off
+by default, so the gate never surprises a project that has not opted in.</p>
+<p>When enabled, a tool is gated if it is destructive — a registry
+<code>@tool(destructive=True)</code>, or a drf-mcp tool whose <code>readOnlyHint</code> is
+<code>False</code> — or its name is in <code>require_approval</code>. <code>exempt</code> overrides
+both.</p>
 
 
 
@@ -2049,8 +2101,8 @@ asked" posture.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Tool names that are <strong>never</strong> gated, even if flagged destructive — the
-escape hatch for a mutation a project has decided is safe to auto-run.</p>
+        <p>Tool names <strong>never</strong> gated, even if flagged destructive: the escape hatch
+for a mutation a project has decided is safe to auto-run.</p>
 
     </div>
 
@@ -2075,9 +2127,8 @@ escape hatch for a mutation a project has decided is safe to auto-run.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Tool names that are <strong>always</strong> gated, even if not flagged destructive —
-force-approval for a read tool a project treats as sensitive. <code>exempt</code>
-takes precedence if a name appears in both.</p>
+        <p>Tool names <strong>always</strong> gated, even if not flagged destructive, for a read
+tool a project treats as sensitive. <code>exempt</code> wins on a name in both.</p>
 
     </div>
 
@@ -2113,33 +2164,34 @@ takes precedence if a name appears in both.</p>
 
 
         <p>Gates destructive server-side tools behind the AG-UI approval loop.</p>
-<p>pydantic-ai supplies the <em>mechanism</em> — a tool whose definition is
-<code>kind="unapproved"</code> defers to a <code>RUN_FINISHED</code> interrupt the client
-approves or denies (see the HITL wave). <code>ToolGuard</code> supplies the
-<em>policy</em>: at <code>prepare_tools</code> time it flips a plain <code>function</code> tool to
-<code>unapproved</code> when the tool is destructive, so <strong>server-side</strong> tools get
-the same confirmation gate the web component already applies to
-client-registered destructive tools.</p>
-<p>Destructiveness is read from three sources, unified here so one hook covers
-every tool the agent sees regardless of where it came from:</p>
+<p>pydantic-ai supplies the mechanism — a tool whose definition is
+<code>kind="unapproved"</code> defers to an interrupt the client approves or denies —
+and this supplies the policy, flipping a plain <code>function</code> tool to
+<code>unapproved</code> at <code>prepare_tools</code> time when it is destructive. Server-side
+tools thereby get the confirmation gate the web component already applies to
+client-registered ones.</p>
+<p>Destructiveness is read from three sources, so one hook covers every tool the
+agent sees wherever it came from:</p>
 <ul>
-<li><strong>Registry</strong> <code>@tool(destructive=True)</code> — its name is collected from the
-  registry at construction (the <code>destructive</code> flag lives on the spec and
-  never reaches pydantic-ai as a bare callable, so the capability reads it
-  directly).</li>
-<li><strong>drf-mcp bridged tools</strong> — the bridge stamps
-  :data:<code>~django_pydantic_agent.constants.DESTRUCTIVE_METADATA_KEY</code> into
-  <code>ToolDefinition.metadata</code> for any tool whose MCP <code>readOnlyHint</code> is
-  <code>False</code>; the guard reads that metadata.</li>
-<li><strong>Project overrides</strong> — <code>require_approval</code> force-gates a name;
-  <code>exempt</code> un-gates one (<code>exempt</code> wins).</li>
+<li><strong>Registry</strong> <code>@tool(destructive=True)</code>, collected at construction: the
+  flag lives on the spec and never reaches pydantic-ai, which sees a bare
+  callable, so the capability reads it directly.</li>
+<li><strong>drf-mcp bridged tools</strong>, through the
+  <a class="autorefs autorefs-internal" title="DESTRUCTIVE_METADATA_KEY
+
+
+  
+      module-attribute
+  " href="../registry/#django_pydantic_agent.constants.DESTRUCTIVE_METADATA_KEY"><code>DESTRUCTIVE_METADATA_KEY</code></a> the
+  bridge stamps into <code>ToolDefinition.metadata</code>.</li>
+<li><strong>Project overrides</strong>: <code>require_approval</code> force-gates a name, <code>exempt</code>
+  un-gates one, and <code>exempt</code> wins.</li>
 </ul>
-<p>Only <code>kind="function"</code> tools are flipped: an <code>external</code> (frontend) tool
-is already gated client-side, and an <code>output</code> tool isn't executed.</p>
-<p>Ordering: the guard touches only the <code>prepare_tools</code> hook, so it is
-orthogonal to :class:<code>~django_pydantic_agent.policy.audit.audit_capability.AuditCapability</code>
-(which wraps execution) — audit's <code>get_ordering</code> pins it outermost, so
-audit still records the tool when an approved call finally runs.</p>
+<p>Only <code>kind="function"</code> tools are flipped — an <code>external</code> tool is already
+gated client-side, and an <code>output</code> tool is not executed.</p>
+<p>The guard touches only <code>prepare_tools</code>, so it is orthogonal to
+<a class="autorefs autorefs-internal" title="AuditCapability" href="#django_pydantic_agent.AuditCapability"><code>AuditCapability</code></a>
+and audit still records the tool when an approved call finally runs.</p>
 
 
 
@@ -2193,18 +2245,16 @@ audit still records the tool when an approved call finally runs.</p>
 
         <p>Resolved policy for what an unhandled tool exception does to a run.</p>
 <p>Tunes the
-:class:<code>~django_pydantic_agent.policy.failure.tool_failure_policy.ToolFailurePolicy</code>
-capability. <strong>On by default</strong>, because the behaviour it replaces is the
-worse one: without it a single raising tool ends the whole run, discarding
-the answer the model had already assembled and every other tool result in
-the turn.</p>
-<p><code>include_detail</code> is separately off by default, and the split is the point.
-Whether the run survives is a reliability question; whether the exception's
-text reaches the model is a disclosure one. A traceback message can carry a
-query, a path or a credential, and anything handed to the model is also
-handed to whatever renders the transcript. The operator's copy is never
-redacted: the full exception goes to the audit logger and the
-<code>django_pydantic_agent.failure</code> Python logger regardless.</p>
+<a class="autorefs autorefs-internal" title="ToolFailurePolicy" href="#django_pydantic_agent.ToolFailurePolicy"><code>ToolFailurePolicy</code></a>
+capability. On by default, because without it one raising tool ends the whole
+run, discarding the answer the model had assembled and every other tool
+result in the turn.</p>
+<p>The two flags default opposite ways because they answer different questions.
+Whether the run survives is reliability; whether the exception's text reaches
+the model is disclosure, since a message can carry a query, a path or a
+credential, and whatever the model sees also reaches whatever renders the
+transcript. The operator's copy is never redacted either way: the full
+exception goes to the audit logger and the Python logger regardless.</p>
 
 
 
@@ -2270,8 +2320,8 @@ Set <code>False</code> to restore the fail-the-run behaviour.</p>
     <div class="doc doc-contents ">
 
         <p>Whether the model-facing failure message carries the exception type and
-text. Off by default: an exception message is written for an operator, not
-for a model or the browser that will render its answer.</p>
+text. An exception message is written for an operator, not for a model or
+the browser that renders its answer.</p>
 
     </div>
 
@@ -2308,29 +2358,24 @@ for a model or the browser that will render its answer.</p>
 
         <p>Turns an unhandled tool exception into a failed result the model can read.</p>
 <p>Without it, a tool that raises takes the run down: the transport emits
-<code>RUN_ERROR</code>, the turn ends, and everything the model had already produced
-is discarded along with the results of every other tool in the round. One
-broken integration therefore costs the whole answer.</p>
-<p>The capability hangs off <code>on_tool_execute_error</code> rather than wrapping
-<code>wrap_tool_execute</code>, which matters for correctness rather than style:
-Pydantic-AI does <strong>not</strong> call that hook for control-flow exceptions
-(<code>SkipToolExecution</code> / <code>CallDeferred</code> / <code>ApprovalRequired</code>), retry
-signals (<code>ToolRetryError</code> from <code>ModelRetry</code>) or failure signals
-(<code>ToolFailedError</code> from <code>ToolFailed</code>). So the approval interrupt the
-tool guard depends on, and the model's own retry budget, pass through
-untouched — where a hand-rolled <code>except Exception</code> around the handler
-would have swallowed them and quietly disabled the gate.</p>
-<p>It re-raises as :class:<code>~pydantic_ai.exceptions.ToolFailed</code>, the upstream
-primitive for a terminal tool failure, so the model sees a result marked
-failed rather than one that reads as success. <code>ToolFailed</code> also spends no
+<code>RUN_ERROR</code>, the turn ends, and everything the model produced is discarded
+along with every other tool result in the round. One broken integration costs
+the whole answer.</p>
+<p>It hangs off <code>on_tool_execute_error</code>, which is a correctness point rather
+than a stylistic one: pydantic-ai does <strong>not</strong> call that hook for control-flow
+exceptions (<code>SkipToolExecution</code> / <code>CallDeferred</code> / <code>ApprovalRequired</code>),
+retry signals or failure signals. The approval interrupt the tool guard
+depends on and the model's retry budget therefore pass through untouched,
+where a hand-rolled <code>except Exception</code> around the handler would swallow
+them and quietly disable the gate.</p>
+<p>The re-raise is <code>pydantic_ai.exceptions.ToolFailed</code>, so the model sees a
+result marked failed rather than one reading as success. That spends no
 retry budget, so bound a persistently broken tool with run-level
-<code>UsageLimits</code> rather than expecting this to stop the model calling it
-again.</p>
+<code>UsageLimits</code> rather than expecting this to stop the model calling it.</p>
 <p><strong>Nothing is swallowed.</strong> The exception is logged with its traceback to the
 <code>django_pydantic_agent.failure</code> logger, and an <code>AuditCapability</code> in the
-same chain still records the failure against the tool that caused it -- the
-two hooks are independent, so no ordering constraint is needed between
-them. What changes is only who the failure stops.</p>
+same chain still records the failure against the tool that caused it. What
+changes is only who the failure stops.</p>
 
 
 

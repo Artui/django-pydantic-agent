@@ -1109,38 +1109,81 @@ dependency. See <a href="../../integrations/">Integrations</a> for which to choo
     <div class="doc doc-contents first">
 
         <p>A <code>SpecCapability</code> over <code>specs</code>, acting as the run's <code>deps.user</code>.</p>
-<p><code>specs</code> is a <code>name -&gt; ServiceSpec/SelectorSpec</code> mapping supplied by the
-caller, or a spec registry to read that mapping from. Names in
-<code>exclude_names</code> — the names a
-higher-precedence source (the <code>@tool</code> registry, the drf-mcp bridge) already
-claimed — are dropped so that source wins a collision (the same rule
-<code>build_tool_catalog</code> applies); otherwise pydantic-ai raises <code>UserError</code>
-for the duplicate name at run time.</p>
-<p><strong>No <code>get_user</code> override, and no <code>request</code>.</strong> <code>SpecToolset</code>'s default
-extractor already reads <code>ctx.deps.user</code>, so a run given
-:class:<code>~django_pydantic_agent.agent.types.agent_deps.AgentDeps</code> binds the
-acting user natively. The capability is therefore request-independent, which
-is what makes an agent built once reusable across runs.</p>
-<p>⚠ <strong>Every spec here needs its own <code>permission_classes</code>.</strong> Since PAI 0.13
-a spec with <code>permission_classes=None</code> makes <code>SpecCapability</code> raise
-<code>ImproperlyConfigured</code> rather than exposing an ungated tool: over HTTP
-<code>None</code> means <em>inherit</em> — the view's classes, then
-<code>DEFAULT_PERMISSION_CLASSES</code> — and off HTTP there is nothing to inherit
-from, so the same spec that is properly guarded behind a viewset becomes
-callable by whatever the model decides to call.</p>
-<p>This builder does not expose PAI's <code>require_permissions=False</code> migration
-flag, because a knob threaded through here would reach only callers that
-construct the capability themselves — a general "pass any <code>SpecToolset</code>
-option" seam is the right shape and is not built yet. Until it is, a project
-migrating a large registry can bypass this function and attach the
-capability directly::</p>
-<div class="language-text highlight"><pre><span></span><code>from rest_framework_pydantic_ai import SpecCapability
+<p>Each spec is called in process through drf-services' transport-neutral
+surface, which enforces its <code>permission_classes</code>. Nothing here closes over
+a request: <code>SpecToolset</code>'s default extractor already reads
+<code>ctx.deps.user</code>, so a run given
+<a class="autorefs autorefs-internal" title="AgentDeps
 
-AgentConfig(capabilities=[SpecCapability(specs, require_permissions=False)])
-</code></pre></div>
-<p>⛔ That path skips the tool-catalog registration this function participates
-in, so tool-call cards render unlabelled. It is a migration step, not a
-destination.</p>
+
+  
+      dataclass
+  " href="../agent/#django_pydantic_agent.AgentDeps"><code>AgentDeps</code></a> binds the
+acting user natively and the capability stays request-independent, which is
+what makes an agent built once reusable across runs.</p>
+<p><strong>Every spec here needs its own <code>permission_classes</code>.</strong> A spec with
+<code>permission_classes=None</code> makes <code>SpecCapability</code> raise
+<code>ImproperlyConfigured</code> rather than expose an ungated tool: over HTTP
+<code>None</code> means inherit — the view's classes, then
+<code>DEFAULT_PERMISSION_CLASSES</code> — and off HTTP there is nothing to inherit
+from, so a spec properly guarded behind a viewset would become callable by
+whatever the model decides to call.</p>
+<p>PAI's <code>require_permissions=False</code> migration flag is not exposed here; a
+project migrating a large registry constructs <code>SpecCapability</code> itself and
+passes it to <code>AgentConfig(capabilities=...)</code>. That path skips the
+tool-catalog registration this function participates in, so tool-call cards
+render unlabelled — a migration step, not a destination.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>specs</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Mapping">Mapping</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>] | <a class="autorefs autorefs-internal" title="SpecSource (django_pydantic_agent.integrations.types.spec_source.SpecSource)" href="#django_pydantic_agent.integrations.types.spec_source.SpecSource">SpecSource</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A <code>name -&gt; ServiceSpec/SelectorSpec</code> mapping, or a spec registry
+to read one from.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>exclude_names</code>
+            </td>
+            <td>
+                  <code><span title="frozenset">frozenset</span>[<span title="str">str</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Names a higher-precedence source (the <code>@tool</code> registry,
+the drf-mcp bridge) already claimed. They are dropped so that source
+wins the collision, since pydantic-ai raises <code>UserError</code> for a
+duplicate name at run time.</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="frozenset">frozenset</span>()</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -1162,17 +1205,14 @@ destination.</p>
     <div class="doc doc-contents first">
 
         <p>Return the <code>name -&gt; spec</code> mapping, whether given one or a registry.</p>
-<p>A :class:<code>~django_pydantic_agent.integrations.types.spec_source.SpecSource</code>
-(drf-services' <code>SpecRegistry</code>) is recognised <strong>structurally</strong>, by having a
-<code>specs()</code> method — this substrate names no drf-services type; see
-<code>SpecSource</code> for why.</p>
-<p>Public rather than private because a transport needs the same normalisation
-<em>before</em> :func:<code>~django_pydantic_agent.integrations.build_spec_capability.build_spec_capability</code>
-runs: the AG-UI view reserves each tool name into its collision-detection
-set, and iterating a registry yields <code>RegisteredSpec</code> records rather than
-names — so a transport that iterated the raw argument would fill that set
-with dataclasses and silently stop detecting collisions between the <code>@tool</code>
-registry, the drf-mcp bridge and these spec tools.</p>
+<p>A <a class="autorefs autorefs-internal" title="SpecSource" href="#django_pydantic_agent.integrations.types.spec_source.SpecSource"><code>SpecSource</code></a>
+is recognised structurally, by having a <code>specs()</code> method.</p>
+<p>Public because a transport needs the same normalisation <em>before</em>
+<a class="autorefs autorefs-internal" title="build_spec_capability" href="#django_pydantic_agent.integrations.build_spec_capability.build_spec_capability"><code>build_spec_capability</code></a>
+runs, when it reserves each tool name for collision detection: iterating a
+registry yields <code>RegisteredSpec</code> records rather than names, so a transport
+that iterated the raw argument would fill its set with dataclasses and
+silently stop detecting collisions.</p>
 
 
     </div>
@@ -1200,19 +1240,14 @@ registry, the drf-mcp bridge and these spec tools.</p>
         <p>Anything that can hand back a <code>name -&gt; spec</code> mapping.</p>
 <p><code>djangorestframework-services</code>' <code>SpecRegistry</code> (0.27+) is the intended
 implementation: a project exposing the same specs over more than one
-transport declares them once there, and each transport reads that one
-source instead of enumerating the list again.</p>
-<p>It is matched <strong>structurally rather than imported</strong>, deliberately. This
-substrate depends on <code>pydantic-ai-slim</code> alone — drf-services arrives only
-through the optional <code>[spec-tools]</code> extra — so naming <code>SpecRegistry</code> in
-a signature would either force a hard dependency on every install (including
-projects whose tools are plain <code>@tool</code> functions) or bury the type behind
-a lazy import where it can't appear in a signature at all. Duck typing costs
-one <code>specs()</code> call and keeps the core dependency-free. drf-services applies
-the same reasoning to <code>SelectorSpec.filter_set</code>, which is duck-typed so its
-<code>types/</code> package imports nothing.</p>
+transport declares them there once, and each transport reads that source.</p>
+<p>It is matched structurally rather than imported, because this substrate
+depends on <code>pydantic-ai-slim</code> alone and drf-services arrives only with the
+optional <code>[spec-tools]</code> extra. Naming <code>SpecRegistry</code> in a signature would
+force that dependency on every install or bury the type behind a lazy import
+where a signature cannot reach it.</p>
 <p>A plain <code>dict</code> is <em>not</em> a <code>SpecSource</code> — it has no <code>specs()</code> — which is
-exactly what lets a caller accept either and tell them apart.</p>
+what lets a caller accept either and tell them apart.</p>
 
 
 
@@ -1283,22 +1318,108 @@ exactly what lets a caller accept either and tell them apart.</p>
 
 
         <p>Exposes a drf-mcp <code>MCPServer</code>'s tools as a Pydantic-AI toolset.</p>
-<p>Built per request so the acting user is the current AG-UI user. Tool
-schemas and execution both route through drf-mcp's public in-process
-surface (<code>MCPServer.list_tools</code> / <code>acall_tool</code>), so the advertised
-parameters, serializer validation, and permissions match the HTTP transport
-exactly. Tool definitions carry the default <code>kind="function"</code> — the
-in-process kind the run loop routes into <code>call_tool</code>, which then emits a
-<code>TOOL_CALL_RESULT</code> and lets the model continue (an <code>external</code> tool
-would instead be deferred to the client and never run).</p>
-<p><code>exclude_names</code> carries the <code>@tool</code> registry's names: on a collision
-the registry tool wins (the same rule <code>build_tool_catalog</code> applies) and
-the drf-mcp twin is skipped — otherwise pydantic-ai raises <code>UserError</code>
-for the duplicate name at run time.</p>
-<p><code>max_retries</code> is each tool's retry budget: how many times a
-:class:<code>pydantic_ai.ModelRetry</code> (malformed arguments, a service-raised
-validation error) is fed back to the model before the run aborts. Defaults
-to <code>1</code>, matching pydantic-ai's own function-tool default.</p>
+<p>Built per request, so the agent acts as the request's logged-in user. Both
+schemas and execution route through drf-mcp's public in-process surface
+(<code>MCPServer.list_tools</code> / <code>acall_tool</code>, drf-mcp 0.9+), so the advertised
+parameters, serializer validation and permissions match the HTTP transport
+exactly — without the network hop. Tool definitions carry the default
+<code>kind="function"</code>, the in-process kind the run loop calls itself; an
+<code>external</code> tool would instead be deferred to the client and never run.</p>
+<p>Failures split three ways, along MCP's protocol-vs-tool boundary:</p>
+<ul>
+<li>JSON-RPC <code>-32602</code> and tool-level <code>validation_error</code> results raise
+  <code>pydantic_ai.ModelRetry</code>, so the model retries with the field
+  errors instead of the run dying;</li>
+<li>other tool-level failures (<code>service_error</code> / <code>not_found</code>) are returned
+  as the tool's content, for the model to read;</li>
+<li>protocol faults (auth, rate limits, an internal error) raise
+  <code>RuntimeError</code> and abort the run.</li>
+</ul>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>server</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The drf-mcp <code>MCPServer</code> whose registry is bridged.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>request</code>
+            </td>
+            <td>
+                  <code><span title="django.http.HttpRequest">HttpRequest</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The request carried into every call; its <code>user</code> is the
+acting user.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>exclude_names</code>
+            </td>
+            <td>
+                  <code><span title="frozenset">frozenset</span>[<span title="str">str</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Names the <code>@tool</code> registry has already claimed. A
+colliding drf-mcp tool is skipped, so the registry wins — the rule
+<code>build_tool_catalog</code> applies — because pydantic-ai raises
+<code>UserError</code> for a duplicate name at run time.</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="frozenset">frozenset</span>()</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_retries</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-tool retry budget: how many times a <code>ModelRetry</code> is
+fed back to the model before the run aborts. The default matches
+pydantic-ai's own function-tool default.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
 
@@ -1339,9 +1460,6 @@ to <code>1</code>, matching pydantic-ai's own function-tool default.</p>
     <div class="doc doc-contents ">
 
         <p>Load tool defs from drf-mcp's <code>tools/list</code> once, then wrap them.</p>
-<p>Loading runs in a thread (<code>sync_to_async</code>) because the sync
-<code>list_tools</code> may evaluate per-user listing permissions against the DB,
-which Django forbids on the async event loop.</p>
 
 
     </div>
