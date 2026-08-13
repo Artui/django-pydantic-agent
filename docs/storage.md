@@ -134,7 +134,25 @@ INSTALLED_APPS = [
 
 Then `migrate`, and pass the matching store to your transport
 (`conversation_store=` / `attachment_store=` / `step_store=`). The app provides
-`DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore`.
+`DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore`, and
+each is imported **from its own module**:
+
+```python
+from django_pydantic_agent.contrib.store.default_attachment_store import (
+    DefaultAttachmentStore,
+)
+from django_pydantic_agent.contrib.store.default_conversation_store import (
+    DefaultConversationStore,
+)
+from django_pydantic_agent.contrib.store.default_step_store import DefaultStepStore
+```
+
+The shorter `from django_pydantic_agent.contrib.store import DefaultConversationStore`
+is the natural guess and it does not exist. It cannot: this is a Django *app*, so
+`INSTALLED_APPS` imports the package itself, and a re-export there would import
+models before the app registry is ready — `AppRegistryNotReady` at startup, for
+every project, whether or not it uses the stores. The leaf path is the price of the
+package being importable at all.
 
 `DefaultAttachmentStore` keeps bytes in Django `Storage` and metadata in a row,
 so S3 and friends come free through `STORAGES` — you don't configure anything
