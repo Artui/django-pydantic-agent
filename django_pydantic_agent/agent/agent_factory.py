@@ -14,7 +14,8 @@ from django_pydantic_agent.registry.tool_registry import ToolRegistry
 
 
 def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps, Any]:
-    """Build a Pydantic-AI ``Agent`` from a registry and an :class:`AgentConfig`.
+    """Build a Pydantic-AI ``Agent`` from a registry and an
+    [`AgentConfig`][django_pydantic_agent.AgentConfig].
 
     Each registry tool is registered as a plain Pydantic-AI tool, and ``config``
     supplies the model, the toolsets and capabilities composed alongside them,
@@ -22,16 +23,18 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     ``RunAgentInput`` are merged by the adapter, not registered here.
 
     Three capabilities are added from ``config`` on request: an
-    :class:`AuditCapability` that times and records **every** tool the agent runs
-    — registry tools and composed toolsets alike — a :class:`ToolGuard` that
-    flips destructive tools to require approval, and a
-    :class:`ToolFailurePolicy`, on unless turned off, so a raising tool fails its
-    own call rather than the whole run. Each declares its position through
+    [`AuditCapability`][django_pydantic_agent.AuditCapability] that times and
+    records **every** tool the agent runs — registry tools and composed toolsets
+    alike — a [`ToolGuard`][django_pydantic_agent.ToolGuard] that flips
+    destructive tools to require approval, and a
+    [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy], on unless
+    turned off, so a raising tool fails its own call rather than the whole run.
+    Each declares its position through
     ``get_ordering`` and pydantic-ai sorts them, so the list needs no
     pre-ordering.
 
     The agent is typed ``Agent[AgentDeps, ...]``, so every run must be given
-    :class:`AgentDeps` through ``deps=``.
+    [`AgentDeps`][django_pydantic_agent.AgentDeps] through ``deps=``.
     """
     capabilities = list(config.capabilities) if config.capabilities is not None else []
     if config.audit_logger is not None and not isinstance(config.audit_logger, NullAuditLogger):

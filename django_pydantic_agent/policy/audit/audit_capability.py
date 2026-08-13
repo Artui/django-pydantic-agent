@@ -23,7 +23,8 @@ _fallback_logger = logging.getLogger("django_pydantic_agent.audit")
 
 
 class AuditCapability(AbstractCapability[Any]):
-    """Records every tool execution to an :class:`AuditLogger` sink.
+    """Records every tool execution to an
+    [`AuditLogger`][django_pydantic_agent.AuditLogger] sink.
 
     A Pydantic-AI capability on the ``wrap_tool_execute`` lifecycle hook, so it
     times and records **every** tool the agent runs: registry tools, the drf-mcp
@@ -34,7 +35,8 @@ class AuditCapability(AbstractCapability[Any]):
     costs audit records rather than the run.
 
     Args:
-        logger: The sink each :class:`AuditEvent` is recorded to.
+        logger: The sink each [`AuditEvent`][django_pydantic_agent.AuditEvent]
+            is recorded to.
         ip_address: Fallback client IP, used only when the run's deps carry no
             ``ip_address``. Per-run deps come first because a constructor
             argument is per-agent: taking the IP from it alone forces a fresh

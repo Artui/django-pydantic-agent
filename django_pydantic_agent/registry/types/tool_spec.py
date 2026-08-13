@@ -17,7 +17,7 @@ class ToolSpec:
 
     name: str
     """Stable identifier exposed to the agent, unique within a
-    :class:`~django_pydantic_agent.registry.tool_registry.ToolRegistry`."""
+    [`ToolRegistry`][django_pydantic_agent.ToolRegistry]."""
 
     fn: Callable[..., Any]
     """The callable implementing the tool. Its parameters must be typed; the

@@ -25,7 +25,7 @@ def build_spec_capability(
     surface, which enforces its ``permission_classes``. Nothing here closes over
     a request: ``SpecToolset``'s default extractor already reads
     ``ctx.deps.user``, so a run given
-    :class:`~django_pydantic_agent.agent.types.agent_deps.AgentDeps` binds the
+    [`AgentDeps`][django_pydantic_agent.AgentDeps] binds the
     acting user natively and the capability stays request-independent, which is
     what makes an agent built once reusable across runs.
 

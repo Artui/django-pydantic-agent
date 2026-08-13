@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 class ToolGuardConfig:
     """Resolved policy for the server-side tool-approval gate.
 
-    Turns the :class:`~django_pydantic_agent.policy.guard.tool_guard.ToolGuard`
+    Turns the [`ToolGuard`][django_pydantic_agent.ToolGuard]
     capability on and tunes which tools it flips to require human approval. Off
     by default, so the gate never surprises a project that has not opted in.
 

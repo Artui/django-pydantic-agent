@@ -37,7 +37,7 @@ def build_attachment_toolset(
 
     ``inline`` decides which binary types come back as file content and how large
     a file may be before it is described rather than attached; ``None`` takes the
-    :class:`~django_pydantic_agent.agent.types.attachment_inline_config.AttachmentInlineConfig`
+    [`AttachmentInlineConfig`][django_pydantic_agent.AttachmentInlineConfig]
     defaults. Read its docstring before widening either — inlined bytes go to the
     provider on every model request left in the run.
     """

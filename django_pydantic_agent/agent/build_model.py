@@ -16,7 +16,7 @@ _PREFIX_ALIASES = {"gemini": "google"}
 def build_model(model: str, *, api_key: str | None = None, provider: Any = None) -> Any:
     """Build a Pydantic-AI model from a ``"provider:name"`` string and explicit key.
 
-    Prefix resolution is delegated to Pydantic-AI's :func:`infer_model`, with a
+    Prefix resolution is delegated to Pydantic-AI's ``infer_model``, with a
     ``provider_factory`` that injects credentials rather than letting it read the
     environment. A ``provider`` instance takes precedence and is used as-is, so
     it may carry a custom ``base_url`` or client; otherwise ``api_key`` goes to

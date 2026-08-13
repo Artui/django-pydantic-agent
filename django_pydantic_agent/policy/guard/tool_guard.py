@@ -31,7 +31,7 @@ class ToolGuard(AbstractCapability[Any]):
       flag lives on the spec and never reaches pydantic-ai, which sees a bare
       callable, so the capability reads it directly.
     - **drf-mcp bridged tools**, through the
-      :data:`~django_pydantic_agent.constants.DESTRUCTIVE_METADATA_KEY` the
+      [`DESTRUCTIVE_METADATA_KEY`][django_pydantic_agent.DESTRUCTIVE_METADATA_KEY] the
       bridge stamps into ``ToolDefinition.metadata``.
     - **Project overrides**: ``require_approval`` force-gates a name, ``exempt``
       un-gates one, and ``exempt`` wins.
@@ -40,7 +40,7 @@ class ToolGuard(AbstractCapability[Any]):
     gated client-side, and an ``output`` tool is not executed.
 
     The guard touches only ``prepare_tools``, so it is orthogonal to
-    :class:`~django_pydantic_agent.policy.audit.audit_capability.AuditCapability`
+    [`AuditCapability`][django_pydantic_agent.AuditCapability]
     and audit still records the tool when an approved call finally runs.
     """
 

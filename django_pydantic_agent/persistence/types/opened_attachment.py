@@ -12,7 +12,7 @@ class OpenedAttachment:
 
     Returned by ``AttachmentStore.open``, so a download view and the
     ``read_attachment`` tool both get the content *and* the
-    :class:`AttachmentRef` in one owner-scoped call.
+    [`AttachmentRef`][django_pydantic_agent.AttachmentRef] in one owner-scoped call.
 
     ``content`` is an open binary stream rather than the bytes, so a large
     attachment streams out instead of being buffered. **The consumer owns it and

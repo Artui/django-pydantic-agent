@@ -13,7 +13,7 @@ from django_pydantic_agent.policy.guard.types.tool_guard_config import ToolGuard
 class AgentConfig:
     """Resolved construction parameters for a Pydantic-AI ``Agent``.
 
-    Bundles everything :func:`~django_pydantic_agent.agent.agent_factory.build_agent`
+    Bundles everything [`build_agent`][django_pydantic_agent.build_agent]
     needs so the call site passes one record instead of a long keyword list.
     A transport resolves these from its own configuration and hands the record
     down; ``toolsets`` and ``capabilities`` arrive already resolved to instances
@@ -49,7 +49,7 @@ class AgentConfig:
     tool_guard: ToolGuardConfig | None = None
     """Server-side destructive-tool approval policy. When set and ``enabled``,
     ``build_agent`` composes a
-    :class:`~django_pydantic_agent.policy.guard.tool_guard.ToolGuard` built from
+    [`ToolGuard`][django_pydantic_agent.ToolGuard] built from
     the registry's destructive tools; ``None`` or disabled leaves the agent
     ungated."""
 

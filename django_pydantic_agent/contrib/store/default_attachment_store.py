@@ -12,13 +12,15 @@ from django_pydantic_agent.persistence.types.opened_attachment import OpenedAtta
 
 
 class DefaultAttachmentStore(ModelAttachmentStore):
-    """A ready-to-use model-backed store over :class:`StoredAttachment`.
+    """A ready-to-use model-backed store over ``StoredAttachment``.
 
     Bytes live in Django ``Storage`` (filesystem by default, S3 or GCS through
     ``STORAGES``), metadata in a row. Add
     ``"django_pydantic_agent.contrib.store"`` to ``INSTALLED_APPS``, run
     ``migrate``, and pass an instance to your transport's ``attachment_store=``.
-    For a bespoke schema, subclass :class:`ModelAttachmentStore` instead.
+    For a bespoke schema, subclass
+    [`ModelAttachmentStore`][django_pydantic_agent.ModelAttachmentStore]
+    instead.
 
     Every query filters by the ``owner_id`` the base resolves, so one user's id
     never reaches another's file, and the public ``attachment_id`` is an opaque

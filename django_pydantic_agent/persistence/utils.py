@@ -24,9 +24,10 @@ def resolve_owner_id(request: HttpRequest, *, allow_anonymous: bool) -> str:
     """The owner-scoping id a model-backed store persists under (never ``None``).
 
     An authenticated request resolves to the user's pk. An anonymous one either
-    raises :class:`AnonymousOperationError`, or, with ``allow_anonymous``, gets a
-    per-browser ``anon:<session_key>`` bucket, creating the session if the
-    browser has none.
+    raises
+    [`AnonymousOperationError`][django_pydantic_agent.AnonymousOperationError],
+    or, with ``allow_anonymous``, gets a per-browser ``anon:<session_key>``
+    bucket, creating the session if the browser has none.
 
     Call this **inside** a sync context — the model stores wrap it in
     ``sync_to_async`` — because the anonymous branch may write a session row.

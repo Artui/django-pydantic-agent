@@ -10,7 +10,9 @@ from django_pydantic_agent.persistence.types.conversation_store import Conversat
 
 
 class ScopedConversationStore:
-    """Partition another :class:`ConversationStore` by a scope name.
+    """Partition another
+    [`ConversationStore`][django_pydantic_agent.ConversationStore] by a scope
+    name.
 
     Stores key threads by ``(owner_id, thread_id)``. Two AG-UI endpoints sharing
     one store therefore share one user's thread list: a conversation started at
@@ -31,7 +33,7 @@ class ScopedConversationStore:
     The partition is a thread-id prefix, so this composes with any
     implementation, third-party ones included, where a ``scope`` column would
     mean a migration and a breaking change to the
-    :class:`~django_pydantic_agent.persistence.types.conversation_store.ConversationStore`
+    [`ConversationStore`][django_pydantic_agent.ConversationStore]
     protocol every custom store implements.
 
     **Opt in explicitly.** A transport does not wrap by itself: doing so from its

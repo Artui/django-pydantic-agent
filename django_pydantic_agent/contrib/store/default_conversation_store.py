@@ -17,13 +17,13 @@ from django_pydantic_agent.persistence.utils import derive_preview, derive_title
 
 
 class DefaultConversationStore(ModelConversationStore):
-    """A ready-to-use model-backed store over :class:`StoredConversation`.
+    """A ready-to-use model-backed store over ``StoredConversation``.
 
     Cross-device, per-user history with a cheap thread list. Add
     ``"django_pydantic_agent.contrib.store"`` to ``INSTALLED_APPS``, run
     ``migrate``, and pass an instance to your transport's
     ``conversation_store=``. For a bespoke schema, subclass
-    :class:`ModelConversationStore` instead.
+    [`ModelConversationStore`][django_pydantic_agent.ModelConversationStore] instead.
 
     Every query filters by the ``owner_id`` the base resolves. A title is derived
     from the first user message at first save and then left alone except by a
