@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **The storage page now shows how to import the reference stores.** It named
+  `DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore` one
+  line under an `INSTALLED_APPS` snippet with no path at all, which reads as an
+  invitation to `from django_pydantic_agent.contrib.store import
+  DefaultConversationStore` — a spelling that raises. The page shows the leaf-module
+  imports, and says why the shorter one cannot exist: this package is a Django *app*,
+  so `INSTALLED_APPS` imports it while the app registry is being built, and a
+  re-export there would import models at that moment and raise `AppRegistryNotReady`
+  on startup for every project that installs it, whether or not it uses a store.
+  `contrib/store/__init__.py` carries the same explanation, so the next reader does
+  not "fix" the emptiness. Found by following the page from outside the package while
+  building the framework gallery; django-ag-ui's configuration page had it right,
+  which is why it went unnoticed — the wrong page is the one a newcomer reaches
+  first.
+
+  Held to that spelling by a test that **reads the page and runs what it shows**,
+  rather than importing the modules the test already knows about: a test that imports
+  the right thing passes just as happily while the docs teach the wrong thing.
+
 ### Fixed
 
 - **The reST literal-block marker no longer reaches the page.** Sphinx reads a
