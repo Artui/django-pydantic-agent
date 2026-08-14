@@ -271,4 +271,13 @@ ledger.
 
 It needs the `[harness]` extra, since the protocol it satisfies lives there.
 
+### `list_runs` answers oldest first
+
+Ascending `started_at` is upstream's documented protocol order — `StepStore`
+invites callers to take the most recent run with `[-1]` — so the store keeps it
+rather than serving the order a list happens to want to display. A UI showing
+recent runs first sorts where it renders; a store that reversed the contract
+would hand that idiom the oldest run instead, silently, and only where more than
+one run exists.
+
 Full signatures in the [persistence reference](reference/persistence.md).

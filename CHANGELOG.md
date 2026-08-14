@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **`DefaultStepStore.list_runs` says which order it answers in, and why that is
+  not ours to choose.** Ascending `started_at` is `pydantic-ai-harness`'s
+  documented `StepStore` contract — the protocol tells callers they may take the
+  most recent run with `[-1]` — so a store answering newest-first would hand
+  upstream's own idiom the oldest run, silently, and only in a project with more
+  than one run. Two consumers had documented the opposite order and neither
+  imposed it, which is what sent the question here; the answer is that the store
+  is right and a list showing recent runs first sorts where it renders. Now
+  stated on the method and on the storage page, so the next reader does not
+  "fix" it downhill.
+
+  The ordering test registered its runs oldest-first, where row order and instant
+  order agree — it would have passed with the `order_by` deleted. It now
+  registers them newest-first, so the assertion is about the sort.
+
 ## [0.15.1] — 2026-08-13
 
 ### Documentation

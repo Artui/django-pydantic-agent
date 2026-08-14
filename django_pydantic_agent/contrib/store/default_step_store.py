@@ -74,6 +74,13 @@ class DefaultStepStore:
         parent_run_id: str | None = None,
         conversation_id: str | None = None,
     ) -> list[RunRecord]:
+        """The owner's runs by ``started_at``, **oldest first** — a contract, not a default.
+
+        ``StepStore.list_runs`` documents ascending order and tells callers they
+        may take the most recent run with ``[-1]``, so answering newest-first
+        would quietly hand upstream's own idiom the wrong run. Presenting recent
+        runs first is a reading order, and belongs where the list is rendered.
+        """
         return await sync_to_async(self._list_runs)(parent_run_id, conversation_id)
 
     # -- Events ---------------------------------------------------------------
