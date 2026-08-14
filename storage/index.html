@@ -534,6 +534,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Step persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#list_runs-answers-oldest-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_runs answers oldest first
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -975,6 +992,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Step persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#list_runs-answers-oldest-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_runs answers oldest first
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -1267,6 +1301,13 @@ does not redeclare it. Owner scoping is entirely ours; no harness record carries
 one, which is what makes the store multi-tenant rather than a single-user
 ledger.</p>
 <p>It needs the <code>[harness]</code> extra, since the protocol it satisfies lives there.</p>
+<h3 id="list_runs-answers-oldest-first"><code>list_runs</code> answers oldest first<a class="headerlink" href="#list_runs-answers-oldest-first" title="Permanent link">&para;</a></h3>
+<p>Ascending <code>started_at</code> is upstream's documented protocol order — <code>StepStore</code>
+invites callers to take the most recent run with <code>[-1]</code> — so the store keeps it
+rather than serving the order a list happens to want to display. A UI showing
+recent runs first sorts where it renders; a store that reversed the contract
+would hand that idiom the oldest run instead, silently, and only where more than
+one run exists.</p>
 <p>Full signatures in the <a href="../reference/persistence/">persistence reference</a>.</p>
 
 
