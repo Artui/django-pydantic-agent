@@ -134,7 +134,25 @@ INSTALLED_APPS = [
 
 Then `migrate`, and pass the matching store to your transport
 (`conversation_store=` / `attachment_store=` / `step_store=`). The app provides
-`DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore`.
+`DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore`, and
+each is imported **from its own module**:
+
+```python
+from django_pydantic_agent.contrib.store.default_attachment_store import (
+    DefaultAttachmentStore,
+)
+from django_pydantic_agent.contrib.store.default_conversation_store import (
+    DefaultConversationStore,
+)
+from django_pydantic_agent.contrib.store.default_step_store import DefaultStepStore
+```
+
+The shorter `from django_pydantic_agent.contrib.store import DefaultConversationStore`
+is the natural guess and it does not exist. It cannot: this is a Django *app*, so
+`INSTALLED_APPS` imports the package itself, and a re-export there would import
+models before the app registry is ready — `AppRegistryNotReady` at startup, for
+every project, whether or not it uses the stores. The leaf path is the price of the
+package being importable at all.
 
 `DefaultAttachmentStore` keeps bytes in Django `Storage` and metadata in a row,
 so S3 and friends come free through `STORAGES` — you don't configure anything
@@ -252,5 +270,14 @@ one, which is what makes the store multi-tenant rather than a single-user
 ledger.
 
 It needs the `[harness]` extra, since the protocol it satisfies lives there.
+
+### `list_runs` answers oldest first
+
+Ascending `started_at` is upstream's documented protocol order — `StepStore`
+invites callers to take the most recent run with `[-1]` — so the store keeps it
+rather than serving the order a list happens to want to display. A UI showing
+recent runs first sorts where it renders; a store that reversed the contract
+would hand that idiom the oldest run instead, silently, and only where more than
+one run exists.
 
 Full signatures in the [persistence reference](reference/persistence.md).

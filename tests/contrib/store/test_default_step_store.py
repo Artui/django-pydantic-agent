@@ -95,9 +95,23 @@ async def test_register_run_overwrites_on_same_owner_and_run() -> None:
 
 
 async def test_list_runs_filters_and_orders_by_started_at() -> None:
+    """Ascending ``started_at`` is the harness protocol's order, so it is asserted.
+
+    Registered newest-first on purpose, so insertion order and instant order
+    disagree. Worth knowing what this still cannot catch: on SQLite the filter is
+    answered from the ``(owner_id, started_at)`` index, which hands back ascending
+    rows on its own, so deleting the ``order_by`` leaves this green. It pins the
+    contract, not the line — a backend returning rows in insertion order is where
+    it would bite.
+    """
     store = _store()
     await store.register_run(
-        RunRecord(run_id="r1", conversation_id="c1", parent_run_id="p1", started_at=_T0)
+        RunRecord(
+            run_id="r3",
+            conversation_id="c2",
+            parent_run_id="p1",
+            started_at=_T0 + timedelta(minutes=2),
+        )
     )
     await store.register_run(
         RunRecord(
@@ -108,12 +122,7 @@ async def test_list_runs_filters_and_orders_by_started_at() -> None:
         )
     )
     await store.register_run(
-        RunRecord(
-            run_id="r3",
-            conversation_id="c2",
-            parent_run_id="p1",
-            started_at=_T0 + timedelta(minutes=2),
-        )
+        RunRecord(run_id="r1", conversation_id="c1", parent_run_id="p1", started_at=_T0)
     )
 
     assert [r.run_id for r in await store.list_runs()] == ["r1", "r2", "r3"]

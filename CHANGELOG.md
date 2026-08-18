@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-08-14
+
+### Documentation
+
+- **`DefaultStepStore.list_runs` says which order it answers in, and why that is
+  not ours to choose.** Ascending `started_at` is `pydantic-ai-harness`'s
+  documented `StepStore` contract — the protocol tells callers they may take the
+  most recent run with `[-1]` — so a store answering newest-first would hand
+  upstream's own idiom the oldest run, silently, and only in a project with more
+  than one run. Two consumers had documented the opposite order and neither
+  imposed it, which is what sent the question here; the answer is that the store
+  is right and a list showing recent runs first sorts where it renders. Now
+  stated on the method and on the storage page, so the next reader does not
+  "fix" it downhill.
+
+  The ordering test registered its runs oldest-first, where row order and instant
+  order agree — it would have passed with the `order_by` deleted. It now
+  registers them newest-first, so the assertion is about the sort.
+
+## [0.15.1] — 2026-08-13
+
+### Documentation
+
+- **The storage page now shows how to import the reference stores.** It named
+  `DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore` one
+  line under an `INSTALLED_APPS` snippet with no path at all, which reads as an
+  invitation to `from django_pydantic_agent.contrib.store import
+  DefaultConversationStore` — a spelling that raises. The page shows the leaf-module
+  imports, and says why the shorter one cannot exist: this package is a Django *app*,
+  so `INSTALLED_APPS` imports it while the app registry is being built, and a
+  re-export there would import models at that moment and raise `AppRegistryNotReady`
+  on startup for every project that installs it, whether or not it uses a store.
+  `contrib/store/__init__.py` carries the same explanation, so the next reader does
+  not "fix" the emptiness. Found by following the page from outside the package while
+  building the framework gallery; django-ag-ui's configuration page had it right,
+  which is why it went unnoticed — the wrong page is the one a newcomer reaches
+  first.
+
+  Held to that spelling by a test that **reads the page and runs what it shows**,
+  rather than importing the modules the test already knows about: a test that imports
+  the right thing passes just as happily while the docs teach the wrong thing.
+
 ### Fixed
 
 - **The reST literal-block marker no longer reaches the page.** Sphinx reads a
@@ -839,7 +881,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.12.1...v0.13.0
