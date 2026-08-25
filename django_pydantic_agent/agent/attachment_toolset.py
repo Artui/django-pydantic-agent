@@ -52,6 +52,12 @@ def build_attachment_toolset(
         directly rather than asking the user to send it again. A file that is
         too large, or of a type that cannot be read, comes back as a short note
         giving its name, type and size.
+
+        **Attached file content lasts for the turn that asked for it.** Whether
+        it survives into a later turn depends on how the caller stores history,
+        and under some transports it does not. So if an earlier turn read a file
+        and you no longer have its contents, call this again with the same id
+        rather than saying you cannot see it — the file is still there.
         """
         opened = await store.open(attachment_id, request=request)
         if opened is None:
@@ -71,16 +77,40 @@ def _render(opened: OpenedAttachment, inline: AttachmentInlineConfig) -> str | T
         data = handle.read()
     text = _as_text(data, ref.mime)
     if text is not None:
+        # Capped on the same budget as the binary branch. What ``max_bytes``
+        # bounds is one request, and a decoded 9 MiB CSV reaches the provider
+        # and stays in the run's history exactly as 9 MiB of PDF would -- the
+        # decode changes the encoding, not the cost. Measured on the bytes read
+        # rather than the decoded string so one rule covers both branches and
+        # a multi-byte file is not judged by its character count.
+        if len(data) > inline.max_bytes:
+            return (
+                f"[{ref.name}] is a {ref.mime} file ({len(data)} bytes), over the "
+                f"{inline.max_bytes}-byte limit for returning a file's contents; "
+                "it was described rather than read."
+            )
         return text
     if ref.mime in inline.media_types:
         # Cap against the bytes in hand, not ``ref.size``: a store's declared
         # size need not match what it hands back, and only bytes reach the
         # provider.
         if len(data) <= inline.max_bytes:
+            # The two halves have different lifetimes, and only this one is
+            # guaranteed to survive the turn. ``return_value`` is what the
+            # transport streams and a client transcript keeps; the
+            # ``BinaryContent`` beside it does not travel the event stream at
+            # all, so a transport seeding later turns from that transcript --
+            # which is the ordinary case, not an exotic one -- replays this
+            # sentence with nothing attached to it. Said plainly, because the
+            # observed failure is a model reading "its contents are attached"
+            # in a later turn, finding nothing, and answering *about* the
+            # document rather than calling the tool again.
             return ToolReturn(
                 return_value=(
                     f"[{ref.name}] is a {ref.mime} file ({len(data)} bytes); "
-                    "its contents are attached below."
+                    "its contents are attached to this tool result, for this "
+                    "turn. Call read_attachment again with the same id if a "
+                    "later turn needs them."
                 ),
                 content=[BinaryContent(data=data, media_type=ref.mime)],
             )

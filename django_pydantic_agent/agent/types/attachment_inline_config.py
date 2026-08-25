@@ -8,11 +8,17 @@ class AttachmentInlineConfig:
     """Which attachment types ``read_attachment`` hands back as file content.
 
     Tunes ``build_attachment_toolset``.
-    A textual attachment is decoded and returned as text regardless; this record
-    governs the binary ones, where the choice is between attaching the bytes for
-    the model to look at and returning a one-line note about a file it will never
-    see. ``AttachmentInlineConfig(media_types=frozenset())`` switches inlining
-    off entirely.
+    ``media_types`` governs the **binary** attachments, where the choice is
+    between attaching the bytes for the model to look at and returning a
+    one-line note about a file it will never see;
+    ``AttachmentInlineConfig(media_types=frozenset())`` switches inlining off
+    entirely. A textual attachment is decoded and returned as text without
+    consulting that allowlist.
+
+    ``max_bytes`` governs **both**. A decoded text file reaches the provider and
+    stays in the run's history exactly as inlined bytes do -- decoding changes
+    the encoding, not the cost -- so a file over the limit is described rather
+    than returned whichever branch it takes.
 
     ``media_types`` is an allowlist rather than "everything that is not text"
     because bytes a provider cannot interpret make it reject the whole request:
@@ -43,8 +49,9 @@ class AttachmentInlineConfig:
     outside the set falls back to the one-line note."""
 
     max_bytes: int = 4 * 1024 * 1024
-    """Largest file, in bytes, attached rather than described. Measured against
-    the bytes the store returns, not the declared ``AttachmentRef.size``."""
+    """Largest file, in bytes, returned rather than described -- text and binary
+    alike. Measured against the bytes the store returns, not the declared
+    ``AttachmentRef.size``."""
 
 
 __all__ = ["AttachmentInlineConfig"]

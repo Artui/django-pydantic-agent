@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A text attachment over `max_bytes` is now described rather than returned.**
+  The decode attempt ran ahead of every size check, so the cap applied only to
+  the binary branch: a 9 MiB CSV came back whole while a 5 MiB PDF was refused.
+  Proven — the text path returned 9,437,184 bytes against a 4,194,304-byte cap
+  that had just refused a smaller file. What `max_bytes` bounds is one *request*,
+  and a decoded file reaches the provider and stays in the run's history exactly
+  as inlined bytes do; decoding changes the encoding, not the cost. The limit is
+  measured on the bytes read, so one rule covers both branches and a multi-byte
+  file is not judged by its character count.
+
+### Fixed
+
+- **An attached file's tool result claimed more than it could keep.** The result
+  has two halves with different lifetimes: `return_value` is streamed and kept
+  in a client transcript, while the `BinaryContent` beside it never travels the
+  event stream at all. A transport seeding later turns from that transcript —
+  the ordinary case — replays *"its contents are attached below"* with nothing
+  attached, so from the second turn the model holds a sentence promising a
+  document it cannot see. The observed failure is the bad one: a fluent,
+  confident answer *about* a file the model never read, with no error surfaced
+  anywhere. The sentence now scopes itself to the turn and says to call the tool
+  again, and `read_attachment`'s own description — which is in the tool schema on
+  every turn — says the same, so a later turn re-reads instead of apologising.
+
 ## [0.16.0] — 2026-08-25
 
 ### Upgrade notes
