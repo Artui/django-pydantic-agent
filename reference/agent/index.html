@@ -1720,11 +1720,16 @@ mean "on" to keep that default — backwards next to <code>tool_guard</code>.</p
 
         <p>Which attachment types <code>read_attachment</code> hands back as file content.</p>
 <p>Tunes <code>build_attachment_toolset</code>.
-A textual attachment is decoded and returned as text regardless; this record
-governs the binary ones, where the choice is between attaching the bytes for
-the model to look at and returning a one-line note about a file it will never
-see. <code>AttachmentInlineConfig(media_types=frozenset())</code> switches inlining
-off entirely.</p>
+<code>media_types</code> governs the <strong>binary</strong> attachments, where the choice is
+between attaching the bytes for the model to look at and returning a
+one-line note about a file it will never see;
+<code>AttachmentInlineConfig(media_types=frozenset())</code> switches inlining off
+entirely. A textual attachment is decoded and returned as text without
+consulting that allowlist.</p>
+<p><code>max_bytes</code> governs <strong>both</strong>. A decoded text file reaches the provider and
+stays in the run's history exactly as inlined bytes do -- decoding changes
+the encoding, not the cost -- so a file over the limit is described rather
+than returned whichever branch it takes.</p>
 <p><code>media_types</code> is an allowlist rather than "everything that is not text"
 because bytes a provider cannot interpret make it reject the whole request:
 a broad rule would trade a model that cannot read your PDF for a run that
@@ -1804,8 +1809,9 @@ outside the set falls back to the one-line note.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Largest file, in bytes, attached rather than described. Measured against
-the bytes the store returns, not the declared <code>AttachmentRef.size</code>.</p>
+        <p>Largest file, in bytes, returned rather than described -- text and binary
+alike. Measured against the bytes the store returns, not the declared
+<code>AttachmentRef.size</code>.</p>
 
     </div>
 
