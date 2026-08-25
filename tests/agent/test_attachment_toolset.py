@@ -176,3 +176,50 @@ async def test_a_row_whose_blob_is_gone_reaches_the_graceful_branch() -> None:
     read = _read_attachment(store, request)
 
     assert await read(ref.id) == f"No attachment with id {ref.id!r} is available."
+
+
+@pytest.mark.django_db
+async def test_a_text_file_over_the_cap_is_described_rather_than_returned() -> None:
+    """The cap bounds one request, and a decoded file costs what an inlined one does.
+
+    The asymmetry this closes: a 9 MiB CSV came back whole while a 5 MiB PDF was
+    refused, because the decode attempt ran ahead of every size check.
+    """
+    inline = AttachmentInlineConfig(max_bytes=1024)
+    store = _FakeStore(_opened("text/csv", b"a," * 2048, name="rows.csv", size=4096))
+    read = _read_attachment(store, RequestFactory().get("/"), inline=inline)
+
+    result = await read("a1")
+
+    assert isinstance(result, str)
+    assert "over the 1024-byte limit" in result
+    assert "a,a," not in result
+
+
+@pytest.mark.django_db
+async def test_a_text_file_under_the_cap_still_comes_back_whole() -> None:
+    inline = AttachmentInlineConfig(max_bytes=1024)
+    store = _FakeStore(_opened("text/csv", b"a,b\n1,2\n", name="rows.csv", size=8))
+    read = _read_attachment(store, RequestFactory().get("/"), inline=inline)
+
+    assert await read("a1") == "a,b\n1,2\n"
+
+
+@pytest.mark.django_db
+async def test_the_attached_result_says_the_content_is_for_this_turn() -> None:
+    """The persisted half must not out-claim what actually persists.
+
+    ``return_value`` is streamed and kept in a client transcript; the
+    ``BinaryContent`` beside it never travels the event stream. A transport
+    seeding later turns from that transcript replays this sentence with nothing
+    attached, so the sentence has to say so.
+    """
+    store = _FakeStore(_opened("application/pdf", b"%PDF-1.4", name="doc.pdf", size=8))
+    read = _read_attachment(store, RequestFactory().get("/"))
+
+    result = await read("a1")
+
+    assert isinstance(result, ToolReturn)
+    persisted = str(result.return_value)
+    assert "for this turn" in persisted
+    assert "read_attachment again" in persisted
