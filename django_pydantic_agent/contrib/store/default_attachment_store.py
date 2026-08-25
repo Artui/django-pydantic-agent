@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterable
 from uuid import uuid4
 
 from django.core.files.uploadedfile import UploadedFile
@@ -9,6 +11,46 @@ from django_pydantic_agent.contrib.store.utils import delete_attachments, hash_f
 from django_pydantic_agent.persistence.model_attachment_store import ModelAttachmentStore
 from django_pydantic_agent.persistence.types.attachment_ref import AttachmentRef
 from django_pydantic_agent.persistence.types.opened_attachment import OpenedAttachment
+
+logger = logging.getLogger(__name__)
+
+
+def _live_blob_name(twins: Iterable[StoredAttachment]) -> str | None:
+    """The first stored path these rows offer that storage can still produce.
+
+    A row is not proof of its bytes. Storage loses a blob without the row going
+    with it -- a lifecycle rule expiring a key, a dump restored beside an empty
+    bucket, a backend migrated underneath -- and a row can also carry no path at
+    all, from a write that failed after the INSERT.
+
+    Every candidate is tried rather than only one, because the rows here already
+    disagree with each other. Once an upload has healed a dead blob by writing
+    its own, the owner holds both a dead row and a live one for the same bytes;
+    consulting a single row would keep finding the dead one and write a fresh
+    copy on every upload thereafter -- dedup lost permanently for those bytes,
+    and storage growing without bound, which is the opposite of what this guard
+    is for.
+
+    **Newest first**, which is what keeps the scan short. Any live blob with this
+    digest is as good as any other, so the healed row is the one worth finding,
+    and it is the most recent by construction. Ascending order would put every
+    dead legacy path ahead of it and re-walk them on every upload, forever: rows
+    hashed by the backfill command can point at distinct files written before
+    dedup existed, and once storage loses those the scan pays an ``exists`` for
+    each one and never improves. Descending, the ordinary case and the healed
+    case both cost one call, and only the first upload after a wipe walks far.
+    Duplicate paths are collapsed, so rows sharing a blob cost one call between
+    them.
+    """
+    seen: set[str] = set()
+    for twin in twins:
+        name = twin.file.name
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if twin.file.storage.exists(name):
+            return name
+    return None
 
 
 class DefaultAttachmentStore(ModelAttachmentStore):
@@ -61,15 +103,26 @@ class DefaultAttachmentStore(ModelAttachmentStore):
             size=size,
             sha256=digest,
         )
-        twin = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).first()
-        if twin is None:
-            # ``save=False`` writes the bytes through Storage but defers the row
-            # INSERT to the single ``row.save()`` below.
-            row.file.save(attachment_id, upload, save=False)
-        else:
+        twins = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).order_by("-pk")
+        adopted = _live_blob_name(twins)
+        if adopted is not None:
             # Assigning the stored name adopts the existing blob without touching
             # Storage: no second read, no second write.
-            row.file = twin.file.name
+            row.file = adopted
+        else:
+            # ``save=False`` writes the bytes through Storage but defers the row
+            # INSERT to the single ``row.save()`` below.
+            #
+            # A twin row is not proof its blob survives. Bytes go missing without
+            # the row going with them -- a lifecycle rule expiring a key, a dump
+            # restored beside an empty bucket, a backend migrated underneath.
+            # Adopting the name on the row's word alone writes nothing and hands
+            # back a reference to a file that is not there, and because identical
+            # bytes hash identically, the re-upload that would repair it matches
+            # the same dead twin and fails the same way. One ``exists`` on the
+            # backend this branch is about to write to anyway is what keeps the
+            # store self-healing rather than accumulating unreadable rows.
+            row.file.save(attachment_id, upload, save=False)
         row.save()
         return AttachmentRef(id=attachment_id, name=name, mime=mime, size=size)
 
@@ -82,9 +135,38 @@ class DefaultAttachmentStore(ModelAttachmentStore):
         # Hand back the open storage handle rather than reading the file: both
         # ``FileResponse`` and the tool's ``with`` block stream and close it, so a
         # large attachment never lands in memory whole.
+        try:
+            content = row.file.open("rb")
+        except (FileNotFoundError, ValueError):
+            # A row whose bytes are gone is an attachment this caller cannot have,
+            # which is what ``open`` already promises to report as ``None`` -- the
+            # contract exists so a caller has one branch for "unavailable" and
+            # cannot tell a missing file from another owner's. Raising here sends
+            # every caller down a path none of them writes: the toolset has a
+            # sentence ready for ``None`` and gets an opaque tool failure instead,
+            # and a ``FileResponse`` view returns a 500 where it means 404. Logged
+            # rather than swallowed, because a missing blob beside a live row is a
+            # storage fault worth someone's attention even though this request can
+            # do nothing with it.
+            #
+            # Two ways to have no readable bytes, and the contract draws no line
+            # between them: storage has lost the blob (``FileNotFoundError``), or
+            # the row never recorded a path for one (``ValueError``, from
+            # ``FieldFile``'s own empty-file guard).
+            #
+            # The owner is deliberately absent from the message. An anonymous
+            # store spells it ``anon:<session_key>``, which is the caller's live
+            # session credential, and application logs are the wrong place to put
+            # one. The attachment id finds the row on its own.
+            logger.warning(
+                "Attachment %s has no readable stored file at %r; reporting it as unavailable.",
+                row.attachment_id,
+                row.file.name,
+            )
+            return None
         return OpenedAttachment(
             ref=AttachmentRef(id=row.attachment_id, name=row.name, mime=row.mime, size=row.size),
-            content=row.file.open("rb"),
+            content=content,
         )
 
     def _remove(self, attachment_id: str, owner_id: str | None) -> None:

@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-25
+
+### Upgrade notes
+
+**There is a migration, and it is heavier on SQLite than it looks.** Giving
+`StoredAttachment.file` a configurable storage changes how the field
+deconstructs, so `0004_alter_storedattachment_file` is an `AlterField`. It
+changes no column and moves no data — but SQLite implements `ALTER` by rebuilding
+the table, so on that backend the cost scales with the number of attachment rows.
+On PostgreSQL and MySQL it emits no statements at all. Plan the window accordingly if the
+table is large.
+
+**Nothing else needs configuring.** Without the new `STORAGES` alias, attachments
+resolve to `default_storage` — the same lazy object as before, so a project that
+rebinds storage settings at runtime (any test using `override_settings`, on
+`STORAGES` or even `STATIC_URL`) keeps the behaviour it had.
+
+**One behaviour change worth knowing even though it is a fix:** a row whose blob
+is missing now reads as an unavailable attachment rather than raising. Code that
+was catching `FileNotFoundError` around `store.open` to detect this can drop the
+handler and check for `None`, which is what the contract always said.
+
+### Changed
+
+- **The `anthropic` extra now requires `pydantic-ai-slim>=2.33`**, up from
+  `>=2.16`. The `anthropic` SDK 1.0.0 reached PyPI on 2026-08-20 rebuilt on
+  `httpx2`, with legacy `httpx` support removed, and every pydantic-ai before
+  2.33 hands `AnthropicProvider` an `httpx.AsyncClient` that the 1.x SDK
+  rejects — so those releases permitted the pairing without supporting it, and a
+  fresh install at the old floor resolved a combination that failed at runtime.
+  Raised rather than capping `anthropic`, which would hold consumers on an SDK
+  major upstream has already moved past. The `openai` and `google` extras and
+  the core `pydantic-ai-slim` floor are unaffected and stay at `>=2.16`.
+
+### Fixed
+
+- **An attachment whose bytes were gone was unreadable *and* unrepairable.** Two
+  defects compounded on a `StoredAttachment` row whose blob had left storage —
+  a lifecycle rule expiring a key, a dump restored beside an empty bucket, a
+  backend migrated underneath.
+
+  `DefaultAttachmentStore.open` raised `FileNotFoundError` where the
+  `AttachmentStore` contract says it returns `None`, so every caller went down a
+  path none of them writes: the attachment tool has a sentence ready for an
+  unavailable file and got an opaque tool failure instead, leaving the agent to
+  describe a file it could not read and be told not to retry, and a
+  `FileResponse` download view returned a 500 where it meant 404. An unreadable
+  blob is now reported as unavailable, per the contract, and logged as the
+  storage fault it is.
+
+  Worse, the content-hash dedup adopted a matching row's stored path **without
+  checking the blob was there**, so the obvious recovery could not work:
+  re-uploading the same file hashed to the same digest, matched the same dead
+  row, wrote nothing, and returned a reference to a file that did not exist.
+  Every attempt added another unreadable row. Dedup now confirms the blob before
+  adopting it, so the next upload repairs the owner instead of joining the
+  wreckage. The guard costs one `exists()` per deduplicated upload — a HEAD on
+  S3, paid on the branch that writes nothing — and scans past a dead twin to a
+  live one, so an owner who has already healed keeps deduplicating instead of
+  writing a fresh copy every time.
+
+### Added
+
+- **`STORAGES` alias `django_pydantic_agent_attachments`**, so attachment bytes
+  can live somewhere other than the project's global default. Agent uploads are
+  user-supplied files a project usually wants in a private bucket, and the only
+  way to move them used to be changing the *global* default — which moves every
+  other `FileField` in the project with it. Leave the alias unset and nothing
+  changes: attachments continue to use `default`.
+
 ## [0.15.2] — 2026-08-14
 
 ### Documentation
@@ -881,7 +951,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.14.0...v0.15.0

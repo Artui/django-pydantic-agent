@@ -158,6 +158,43 @@ package being importable at all.
 so S3 and friends come free through `STORAGES` — you don't configure anything
 here beyond your normal Django storage backend.
 
+### Putting attachments somewhere other than the default
+
+Agent uploads are user-supplied files, and a project often wants them in a
+private bucket rather than wherever its other media goes. Name a backend under
+the `django_pydantic_agent_attachments` alias and attachments use it; leave the
+alias out and they use `default`, which is what every existing project gets:
+
+```python
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    "django_pydantic_agent_attachments": {
+        "BACKEND": "myproject.storages.PrivateMediaStorage",
+    },
+}
+```
+
+The alias is resolved once, when the model's field is constructed, so it has to
+be in `STORAGES` before the app's models are imported — settings, in other
+words, which is where it already is.
+
+**Point it somewhere new and the old attachments do not come with it.** Rows keep
+the path they were written with, and that path is asked of the *new* backend — so
+every attachment written before the switch reads as unavailable until you move
+the blobs across yourself. Re-uploading is not a shortcut: it writes fresh copies
+rather than finding the originals. Move the files, or accept the loss knowingly.
+
+**The bucket policy needs `s3:ListBucket`** if you point the alias at S3. Saving
+an attachment asks the backend whether a matching blob is already there, and with
+that permission S3 answers 404 for a key that is absent. Without it S3 answers
+403 instead, which django-storages re-raises — turning an upload that would have
+been deduplicated into a 500.
+
+A misspelled `BACKEND` raises rather than falling back to `default`. Silently
+writing user-supplied files to the public default over a one-character typo is
+the outcome this alias exists to prevent.
+
 Everything from here down is the **reference implementation's** behaviour, not
 the contract. `ConversationStore` and `AttachmentStore` stay id-based, the wire
 is unchanged, and a session-backed or S3-only store you plug in yourself owes

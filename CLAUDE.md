@@ -37,6 +37,15 @@ This is what keeps the transports independent: `django-ag-ui` keeps reading
 for keys. A settings read added here would turn every consumer's upgrade into a
 key migration. **If you need a value, put it on `AgentConfig`.**
 
+**One recorded exception: `STORAGES[ATTACHMENT_STORAGE_ALIAS]`.** A
+`FileField`'s storage is bound when the model class is constructed, before any
+`AgentConfig` exists, so a constructor argument cannot reach it — `STORAGES` is
+Django's own hook and the only one available. It is scoped so the rule's
+rationale does not apply: the key is optional, its absence is the previous
+behaviour exactly, so no consumer's upgrade becomes a key migration. Do not read
+this as licence for a second one; anything reachable from `AgentConfig` belongs
+there.
+
 ## What belongs here vs. in a transport
 
 The litmus test: **if it maps agent output to a specific wire format, or serves a
