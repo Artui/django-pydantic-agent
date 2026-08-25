@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-25
+
+### Upgrade notes
+
+**There is a migration, and it is heavier on SQLite than it looks.** Giving
+`StoredAttachment.file` a configurable storage changes how the field
+deconstructs, so `0004_alter_storedattachment_file` is an `AlterField`. It
+changes no column and moves no data — but SQLite implements `ALTER` by rebuilding
+the table, so on that backend the cost scales with the number of attachment rows.
+On PostgreSQL and MySQL it is metadata only. Plan the window accordingly if the
+table is large.
+
+**Nothing else needs configuring.** Without the new `STORAGES` alias, attachments
+resolve to `default` exactly as before.
+
+**One behaviour change worth knowing even though it is a fix:** a row whose blob
+is missing now reads as an unavailable attachment rather than raising. Code that
+was catching `FileNotFoundError` around `store.open` to detect this can drop the
+handler and check for `None`, which is what the contract always said.
+
 ### Fixed
 
 - **An attachment whose bytes were gone was unreadable *and* unrepairable.** Two
@@ -915,7 +935,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.14.0...v0.15.0
