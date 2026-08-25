@@ -344,3 +344,32 @@ def test_a_twin_carrying_no_path_is_not_adopted() -> None:
     assert opened is not None
     with opened.content as handle:
         assert handle.read() == b"hello"
+
+
+def test_rows_sharing_one_dead_path_cost_a_single_existence_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deduplication means many rows point at one blob. When that blob goes, the
+    # scan meets the same dead path once per row, and would ask the backend about
+    # each of them -- a HEAD apiece on the hot upload path -- without collapsing
+    # them first. A live twin short-circuits the scan, so this is the state that
+    # exercises the collapsing at all.
+    store = DefaultAttachmentStore()
+    for _ in range(5):
+        store._save(_upload(content=b"hello"), "7")
+    dead = _stored_name(store._save(_upload(content=b"hello"), "7").id)
+    default_storage.delete(dead)
+
+    checked: list[str] = []
+    original = default_storage.exists
+
+    def _record(name: str) -> bool:
+        checked.append(name)
+        return original(name)
+
+    monkeypatch.setattr(default_storage, "exists", _record)
+    store._save(_upload(content=b"hello"), "7")
+
+    # Counted for the dead path alone: the write that follows asks about its own
+    # new name too, and that call is not what this is measuring.
+    assert checked.count(dead) == 1

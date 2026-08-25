@@ -23,14 +23,24 @@ def _live_blob_name(twins: Iterable[StoredAttachment]) -> str | None:
     bucket, a backend migrated underneath -- and a row can also carry no path at
     all, from a write that failed after the INSERT.
 
-    Every candidate is tried rather than only the oldest, because the rows here
-    already disagree with each other. Once one upload has healed a dead blob by
-    writing its own, the owner holds both a dead row and a live one for the same
-    bytes; checking only the oldest would find the dead one every time and write
-    a fresh copy on every upload thereafter -- dedup lost permanently for those
-    bytes, and storage growing without bound, which is the opposite of what this
-    guard is for. Distinct paths are tried in row order, so the check costs one
-    ``exists`` in the ordinary case where the oldest is alive.
+    Every candidate is tried rather than only one, because the rows here already
+    disagree with each other. Once an upload has healed a dead blob by writing
+    its own, the owner holds both a dead row and a live one for the same bytes;
+    consulting a single row would keep finding the dead one and write a fresh
+    copy on every upload thereafter -- dedup lost permanently for those bytes,
+    and storage growing without bound, which is the opposite of what this guard
+    is for.
+
+    **Newest first**, which is what keeps the scan short. Any live blob with this
+    digest is as good as any other, so the healed row is the one worth finding,
+    and it is the most recent by construction. Ascending order would put every
+    dead legacy path ahead of it and re-walk them on every upload, forever: rows
+    hashed by the backfill command can point at distinct files written before
+    dedup existed, and once storage loses those the scan pays an ``exists`` for
+    each one and never improves. Descending, the ordinary case and the healed
+    case both cost one call, and only the first upload after a wipe walks far.
+    Duplicate paths are collapsed, so rows sharing a blob cost one call between
+    them.
     """
     seen: set[str] = set()
     for twin in twins:
@@ -93,7 +103,7 @@ class DefaultAttachmentStore(ModelAttachmentStore):
             size=size,
             sha256=digest,
         )
-        twins = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).order_by("pk")
+        twins = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).order_by("-pk")
         adopted = _live_blob_name(twins)
         if adopted is not None:
             # Assigning the stored name adopts the existing blob without touching

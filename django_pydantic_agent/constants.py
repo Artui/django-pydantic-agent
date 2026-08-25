@@ -44,7 +44,15 @@ X_SUMMARY_KEY = "x-summary"
 DESTRUCTIVE_METADATA_KEY = "django_pydantic_agent.destructive"
 
 
+# The ``STORAGES`` alias attachment bytes are written through, when a project
+# names one. Agent uploads are user-supplied files a project usually wants in a
+# private bucket, and without this the only way to move them is to change the
+# global default and every other ``FileField`` with it.
+ATTACHMENT_STORAGE_ALIAS = "django_pydantic_agent_attachments"
+
+
 __all__ = [
+    "ATTACHMENT_STORAGE_ALIAS",
     "DESTRUCTIVE_METADATA_KEY",
     "X_CATEGORY_KEY",
     "X_CONFIRM_KEY",
@@ -52,9 +60,3 @@ __all__ = [
     "X_SUMMARY_KEY",
     "ToolCategory",
 ]
-
-# The ``STORAGES`` alias attachment bytes are written through, when a project
-# names one. Agent uploads are user-supplied files a project usually wants in a
-# private bucket, and without this the only way to move them is to change the
-# global default and every other ``FileField`` with it.
-ATTACHMENT_STORAGE_ALIAS = "django_pydantic_agent_attachments"

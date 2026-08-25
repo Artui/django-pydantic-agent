@@ -185,6 +185,12 @@ every attachment written before the switch reads as unavailable until you move
 the blobs across yourself. Re-uploading is not a shortcut: it writes fresh copies
 rather than finding the originals. Move the files, or accept the loss knowingly.
 
+**The bucket policy needs `s3:ListBucket`** if you point the alias at S3. Saving
+an attachment asks the backend whether a matching blob is already there, and with
+that permission S3 answers 404 for a key that is absent. Without it S3 answers
+403 instead, which django-storages re-raises — turning an upload that would have
+been deduplicated into a 500.
+
 A misspelled `BACKEND` raises rather than falling back to `default`. Silently
 writing user-supplied files to the public default over a one-character typo is
 the outcome this alias exists to prevent.
