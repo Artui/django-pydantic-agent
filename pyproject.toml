@@ -53,7 +53,14 @@ dependencies = [
 [project.optional-dependencies]
 # Model-provider extras (slim ships none). Install one to use a "provider:model"
 # string, e.g. `pip install django-pydantic-agent[anthropic]`.
-anthropic = ["pydantic-ai-slim[anthropic]>=2.16,<3"]
+# Anthropic's own floor is higher than the others and stays that way. The
+# ``anthropic`` SDK 1.0.0 (PyPI, 2026-08-20) is rebuilt on ``httpx2`` and drops
+# legacy ``httpx``, and every pydantic-ai before 2.33 hands ``AnthropicProvider``
+# an ``httpx.AsyncClient`` the 1.x SDK rejects at runtime. Those releases permit
+# the pairing without supporting it, so a fresh install of a 2.16 floor resolves
+# a broken set. Raised rather than capping ``anthropic``, which would pin
+# consumers to an SDK major that upstream has already moved past.
+anthropic = ["pydantic-ai-slim[anthropic]>=2.33,<3"]
 openai = ["pydantic-ai-slim[openai]>=2.16,<3"]
 google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
@@ -99,7 +106,10 @@ dev = [
     "pydantic-ai-harness[code-mode]>=0.13",
     # Provider libs so the api_key / provider model-building path is exercised
     # in dev/CI (the extras above ship to consumers, not the dev env).
-    "pydantic-ai-slim[anthropic,openai,google]>=2.16",
+    # Floored with the ``anthropic`` extra above, for the reason given there --
+    # the floor job resolves this group too, and at 2.16 it resolves a pairing
+    # that fails at runtime.
+    "pydantic-ai-slim[anthropic,openai,google]>=2.33",
 ]
 docs = [
     "mkdocs>=1.6",

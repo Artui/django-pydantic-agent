@@ -29,6 +29,18 @@ is missing now reads as an unavailable attachment rather than raising. Code that
 was catching `FileNotFoundError` around `store.open` to detect this can drop the
 handler and check for `None`, which is what the contract always said.
 
+### Changed
+
+- **The `anthropic` extra now requires `pydantic-ai-slim>=2.33`**, up from
+  `>=2.16`. The `anthropic` SDK 1.0.0 reached PyPI on 2026-08-20 rebuilt on
+  `httpx2`, with legacy `httpx` support removed, and every pydantic-ai before
+  2.33 hands `AnthropicProvider` an `httpx.AsyncClient` that the 1.x SDK
+  rejects — so those releases permitted the pairing without supporting it, and a
+  fresh install at the old floor resolved a combination that failed at runtime.
+  Raised rather than capping `anthropic`, which would hold consumers on an SDK
+  major upstream has already moved past. The `openai` and `google` extras and
+  the core `pydantic-ai-slim` floor are unaffected and stay at `>=2.16`.
+
 ### Fixed
 
 - **An attachment whose bytes were gone was unreadable *and* unrepairable.** Two
