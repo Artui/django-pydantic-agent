@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.db import models
 
-from django_pydantic_agent.contrib.store.storage import attachment_storage
+from django_pydantic_agent.contrib.store.attachment_storage import attachment_storage
 
 
 class StoredConversation(models.Model):

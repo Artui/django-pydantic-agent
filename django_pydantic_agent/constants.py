@@ -52,3 +52,9 @@ __all__ = [
     "X_SUMMARY_KEY",
     "ToolCategory",
 ]
+
+# The ``STORAGES`` alias attachment bytes are written through, when a project
+# names one. Agent uploads are user-supplied files a project usually wants in a
+# private bucket, and without this the only way to move them is to change the
+# global default and every other ``FileField`` with it.
+ATTACHMENT_STORAGE_ALIAS = "django_pydantic_agent_attachments"

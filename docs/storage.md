@@ -177,9 +177,17 @@ STORAGES = {
 
 The alias is resolved once, when the model's field is constructed, so it has to
 be in `STORAGES` before the app's models are imported — settings, in other
-words, which is where it already is. Changing it later does not move blobs that
-are already written: the stored path stays the same, and the new backend is
-asked for it.
+words, which is where it already is.
+
+**Point it somewhere new and the old attachments do not come with it.** Rows keep
+the path they were written with, and that path is asked of the *new* backend — so
+every attachment written before the switch reads as unavailable until you move
+the blobs across yourself. Re-uploading is not a shortcut: it writes fresh copies
+rather than finding the originals. Move the files, or accept the loss knowingly.
+
+A misspelled `BACKEND` raises rather than falling back to `default`. Silently
+writing user-supplied files to the public default over a one-character typo is
+the outcome this alias exists to prevent.
 
 Everything from here down is the **reference implementation's** behaviour, not
 the contract. `ConversationStore` and `AttachmentStore` stay id-based, the wire

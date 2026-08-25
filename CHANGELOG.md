@@ -16,11 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 deconstructs, so `0004_alter_storedattachment_file` is an `AlterField`. It
 changes no column and moves no data — but SQLite implements `ALTER` by rebuilding
 the table, so on that backend the cost scales with the number of attachment rows.
-On PostgreSQL and MySQL it is metadata only. Plan the window accordingly if the
+On PostgreSQL and MySQL it emits no statements at all. Plan the window accordingly if the
 table is large.
 
 **Nothing else needs configuring.** Without the new `STORAGES` alias, attachments
-resolve to `default` exactly as before.
+resolve to `default_storage` — the same lazy object as before, so a project that
+rebinds storage settings at runtime (any test using `override_settings`, on
+`STORAGES` or even `STATIC_URL`) keeps the behaviour it had.
 
 **One behaviour change worth knowing even though it is a fix:** a row whose blob
 is missing now reads as an unavailable attachment rather than raising. Code that
@@ -49,8 +51,10 @@ handler and check for `None`, which is what the contract always said.
   row, wrote nothing, and returned a reference to a file that did not exist.
   Every attempt added another unreadable row. Dedup now confirms the blob before
   adopting it, so the next upload repairs the owner instead of joining the
-  wreckage — at the cost of one `exists()` on the backend that branch was about
-  to write to anyway.
+  wreckage. The guard costs one `exists()` per deduplicated upload — a HEAD on
+  S3, paid on the branch that writes nothing — and scans past a dead twin to a
+  live one, so an owner who has already healed keeps deduplicating instead of
+  writing a fresh copy every time.
 
 ### Added
 

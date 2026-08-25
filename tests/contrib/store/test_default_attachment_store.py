@@ -273,15 +273,60 @@ def test_a_re_upload_repairs_an_owner_whose_blob_went_missing() -> None:
         assert handle.read() == b"hello"
 
 
-def test_deduplication_still_skips_the_write_when_the_blob_is_there() -> None:
-    # The guard costs one ``exists`` and must not cost the optimisation: a live
-    # twin is still adopted, one blob under two rows.
+def test_deduplication_still_skips_the_write_when_the_blob_is_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The guard costs one ``exists`` and must not cost the optimisation. Asserted
+    # against Storage rather than against the rows: code that wrote a blob and
+    # *then* adopted the twin's name would satisfy a row count while orphaning
+    # the bytes it had just written.
     store = DefaultAttachmentStore()
     first = store._save(_upload(content=b"hello"), "7")
+
+    writes: list[str] = []
+    original = default_storage._save
+
+    def _record(name: str, content: object) -> str:
+        writes.append(name)
+        return original(name, content)
+
+    monkeypatch.setattr(default_storage, "_save", _record)
     second = store._save(_upload(content=b"hello"), "7")
 
+    assert writes == []
     assert _stored_name(first.id) == _stored_name(second.id)
     assert _distinct_blobs() == 1
+
+
+def test_dedup_survives_an_owner_whose_oldest_blob_died() -> None:
+    # The healed owner holds a dead row and a live one for the same bytes.
+    # Consulting only the oldest would find the dead one every time and write a
+    # fresh copy on every upload after it -- dedup lost for good, storage growing
+    # without bound.
+    store = DefaultAttachmentStore()
+    first = store._save(_upload(content=b"hello"), "7")
+    default_storage.delete(_stored_name(first.id))
+
+    healed = store._save(_upload(content=b"hello"), "7")
+    third = store._save(_upload(content=b"hello"), "7")
+
+    assert _stored_name(third.id) == _stored_name(healed.id)
+    live = {
+        name
+        for name in (_stored_name(healed.id), _stored_name(third.id))
+        if default_storage.exists(name)
+    }
+    assert len(live) == 1
+
+
+def test_open_reports_a_row_that_never_recorded_a_path() -> None:
+    # The other way to have no readable bytes. ``FieldFile`` guards an empty path
+    # with ``ValueError``, not ``FileNotFoundError``, and the contract draws no
+    # line between the two.
+    StoredAttachment.objects.create(attachment_id="pathless", owner_id="7", file="")
+    store = DefaultAttachmentStore()
+
+    assert store._open("pathless", "7") is None
 
 
 def test_a_twin_carrying_no_path_is_not_adopted() -> None:

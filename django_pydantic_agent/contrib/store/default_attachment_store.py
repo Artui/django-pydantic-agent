@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from uuid import uuid4
 
 from django.core.files.uploadedfile import UploadedFile
@@ -14,21 +15,32 @@ from django_pydantic_agent.persistence.types.opened_attachment import OpenedAtta
 logger = logging.getLogger(__name__)
 
 
-def _live_blob_name(twin: StoredAttachment | None) -> str | None:
-    """The stored path a matching row offers, or ``None`` when there is none to take.
+def _live_blob_name(twins: Iterable[StoredAttachment]) -> str | None:
+    """The first stored path these rows offer that storage can still produce.
 
     A row is not proof of its bytes. Storage loses a blob without the row going
     with it -- a lifecycle rule expiring a key, a dump restored beside an empty
     bucket, a backend migrated underneath -- and a row can also carry no path at
-    all, from a write that failed after the INSERT. Either way the only safe
-    reading is that there is nothing to adopt.
+    all, from a write that failed after the INSERT.
+
+    Every candidate is tried rather than only the oldest, because the rows here
+    already disagree with each other. Once one upload has healed a dead blob by
+    writing its own, the owner holds both a dead row and a live one for the same
+    bytes; checking only the oldest would find the dead one every time and write
+    a fresh copy on every upload thereafter -- dedup lost permanently for those
+    bytes, and storage growing without bound, which is the opposite of what this
+    guard is for. Distinct paths are tried in row order, so the check costs one
+    ``exists`` in the ordinary case where the oldest is alive.
     """
-    if twin is None:
-        return None
-    name = twin.file.name
-    if not name or not twin.file.storage.exists(name):
-        return None
-    return name
+    seen: set[str] = set()
+    for twin in twins:
+        name = twin.file.name
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if twin.file.storage.exists(name):
+            return name
+    return None
 
 
 class DefaultAttachmentStore(ModelAttachmentStore):
@@ -81,8 +93,8 @@ class DefaultAttachmentStore(ModelAttachmentStore):
             size=size,
             sha256=digest,
         )
-        twin = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).first()
-        adopted = _live_blob_name(twin)
+        twins = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).order_by("pk")
+        adopted = _live_blob_name(twins)
         if adopted is not None:
             # Assigning the stored name adopts the existing blob without touching
             # Storage: no second read, no second write.
@@ -115,7 +127,7 @@ class DefaultAttachmentStore(ModelAttachmentStore):
         # large attachment never lands in memory whole.
         try:
             content = row.file.open("rb")
-        except FileNotFoundError:
+        except (FileNotFoundError, ValueError):
             # A row whose bytes are gone is an attachment this caller cannot have,
             # which is what ``open`` already promises to report as ``None`` -- the
             # contract exists so a caller has one branch for "unavailable" and
@@ -126,10 +138,19 @@ class DefaultAttachmentStore(ModelAttachmentStore):
             # rather than swallowed, because a missing blob beside a live row is a
             # storage fault worth someone's attention even though this request can
             # do nothing with it.
+            #
+            # Two ways to have no readable bytes, and the contract draws no line
+            # between them: storage has lost the blob (``FileNotFoundError``), or
+            # the row never recorded a path for one (``ValueError``, from
+            # ``FieldFile``'s own empty-file guard).
+            #
+            # The owner is deliberately absent from the message. An anonymous
+            # store spells it ``anon:<session_key>``, which is the caller's live
+            # session credential, and application logs are the wrong place to put
+            # one. The attachment id finds the row on its own.
             logger.warning(
-                "Attachment %s for owner %r has no stored file at %r; reporting it as unavailable.",
+                "Attachment %s has no readable stored file at %r; reporting it as unavailable.",
                 row.attachment_id,
-                row.owner_id,
                 row.file.name,
             )
             return None
