@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 from typing import Any
 
+import pytest
+from asgiref.sync import sync_to_async
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpRequest
 from django.test import RequestFactory
 from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from django_pydantic_agent.agent.attachment_toolset import build_attachment_toolset
 from django_pydantic_agent.agent.types.attachment_inline_config import AttachmentInlineConfig
+from django_pydantic_agent.contrib.store.default_attachment_store import DefaultAttachmentStore
+from django_pydantic_agent.contrib.store.models import StoredAttachment
 from django_pydantic_agent.persistence.types.attachment_ref import AttachmentRef
 from django_pydantic_agent.persistence.types.opened_attachment import OpenedAttachment
 
@@ -145,3 +152,27 @@ async def test_a_zero_byte_inlineable_file_is_still_inlined() -> None:
     result = await read("a1")
     assert isinstance(result, ToolReturn)
     assert result.content == [BinaryContent(data=b"", media_type="application/pdf")]
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_a_row_whose_blob_is_gone_reaches_the_graceful_branch() -> None:
+    """End to end, because the two halves are what used to disagree.
+
+    The toolset has always had a sentence ready for an unavailable attachment,
+    and the shipped store used to raise past it -- so the agent got an opaque
+    tool failure and was told not to retry, for a condition the tool could have
+    described. This asserts the halves now meet over a real store rather than a
+    fake that returns ``None`` by construction.
+    """
+    store = DefaultAttachmentStore()
+    ref = await sync_to_async(store._save)(
+        SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain"), "7"
+    )
+    row = await StoredAttachment.objects.aget(attachment_id=ref.id)
+    await sync_to_async(default_storage.delete)(row.file.name)
+
+    request = RequestFactory().get("/")
+    request.user = SimpleNamespace(is_authenticated=True, pk="7")
+    read = _read_attachment(store, request)
+
+    assert await read(ref.id) == f"No attachment with id {ref.id!r} is available."

@@ -158,6 +158,29 @@ package being importable at all.
 so S3 and friends come free through `STORAGES` — you don't configure anything
 here beyond your normal Django storage backend.
 
+### Putting attachments somewhere other than the default
+
+Agent uploads are user-supplied files, and a project often wants them in a
+private bucket rather than wherever its other media goes. Name a backend under
+the `django_pydantic_agent_attachments` alias and attachments use it; leave the
+alias out and they use `default`, which is what every existing project gets:
+
+```python
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    "django_pydantic_agent_attachments": {
+        "BACKEND": "myproject.storages.PrivateMediaStorage",
+    },
+}
+```
+
+The alias is resolved once, when the model's field is constructed, so it has to
+be in `STORAGES` before the app's models are imported — settings, in other
+words, which is where it already is. Changing it later does not move blobs that
+are already written: the stored path stays the same, and the new backend is
+asked for it.
+
 Everything from here down is the **reference implementation's** behaviour, not
 the contract. `ConversationStore` and `AttachmentStore` stay id-based, the wire
 is unchanged, and a session-backed or S3-only store you plug in yourself owes

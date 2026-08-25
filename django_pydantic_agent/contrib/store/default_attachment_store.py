@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from django.core.files.uploadedfile import UploadedFile
@@ -9,6 +10,25 @@ from django_pydantic_agent.contrib.store.utils import delete_attachments, hash_f
 from django_pydantic_agent.persistence.model_attachment_store import ModelAttachmentStore
 from django_pydantic_agent.persistence.types.attachment_ref import AttachmentRef
 from django_pydantic_agent.persistence.types.opened_attachment import OpenedAttachment
+
+logger = logging.getLogger(__name__)
+
+
+def _live_blob_name(twin: StoredAttachment | None) -> str | None:
+    """The stored path a matching row offers, or ``None`` when there is none to take.
+
+    A row is not proof of its bytes. Storage loses a blob without the row going
+    with it -- a lifecycle rule expiring a key, a dump restored beside an empty
+    bucket, a backend migrated underneath -- and a row can also carry no path at
+    all, from a write that failed after the INSERT. Either way the only safe
+    reading is that there is nothing to adopt.
+    """
+    if twin is None:
+        return None
+    name = twin.file.name
+    if not name or not twin.file.storage.exists(name):
+        return None
+    return name
 
 
 class DefaultAttachmentStore(ModelAttachmentStore):
@@ -62,14 +82,25 @@ class DefaultAttachmentStore(ModelAttachmentStore):
             sha256=digest,
         )
         twin = StoredAttachment.objects.filter(owner_id=owner, sha256=digest).first()
-        if twin is None:
-            # ``save=False`` writes the bytes through Storage but defers the row
-            # INSERT to the single ``row.save()`` below.
-            row.file.save(attachment_id, upload, save=False)
-        else:
+        adopted = _live_blob_name(twin)
+        if adopted is not None:
             # Assigning the stored name adopts the existing blob without touching
             # Storage: no second read, no second write.
-            row.file = twin.file.name
+            row.file = adopted
+        else:
+            # ``save=False`` writes the bytes through Storage but defers the row
+            # INSERT to the single ``row.save()`` below.
+            #
+            # A twin row is not proof its blob survives. Bytes go missing without
+            # the row going with them -- a lifecycle rule expiring a key, a dump
+            # restored beside an empty bucket, a backend migrated underneath.
+            # Adopting the name on the row's word alone writes nothing and hands
+            # back a reference to a file that is not there, and because identical
+            # bytes hash identically, the re-upload that would repair it matches
+            # the same dead twin and fails the same way. One ``exists`` on the
+            # backend this branch is about to write to anyway is what keeps the
+            # store self-healing rather than accumulating unreadable rows.
+            row.file.save(attachment_id, upload, save=False)
         row.save()
         return AttachmentRef(id=attachment_id, name=name, mime=mime, size=size)
 
@@ -82,9 +113,29 @@ class DefaultAttachmentStore(ModelAttachmentStore):
         # Hand back the open storage handle rather than reading the file: both
         # ``FileResponse`` and the tool's ``with`` block stream and close it, so a
         # large attachment never lands in memory whole.
+        try:
+            content = row.file.open("rb")
+        except FileNotFoundError:
+            # A row whose bytes are gone is an attachment this caller cannot have,
+            # which is what ``open`` already promises to report as ``None`` -- the
+            # contract exists so a caller has one branch for "unavailable" and
+            # cannot tell a missing file from another owner's. Raising here sends
+            # every caller down a path none of them writes: the toolset has a
+            # sentence ready for ``None`` and gets an opaque tool failure instead,
+            # and a ``FileResponse`` view returns a 500 where it means 404. Logged
+            # rather than swallowed, because a missing blob beside a live row is a
+            # storage fault worth someone's attention even though this request can
+            # do nothing with it.
+            logger.warning(
+                "Attachment %s for owner %r has no stored file at %r; reporting it as unavailable.",
+                row.attachment_id,
+                row.owner_id,
+                row.file.name,
+            )
+            return None
         return OpenedAttachment(
             ref=AttachmentRef(id=row.attachment_id, name=row.name, mime=row.mime, size=row.size),
-            content=row.file.open("rb"),
+            content=content,
         )
 
     def _remove(self, attachment_id: str, owner_id: str | None) -> None:

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An attachment whose bytes were gone was unreadable *and* unrepairable.** Two
+  defects compounded on a `StoredAttachment` row whose blob had left storage —
+  a lifecycle rule expiring a key, a dump restored beside an empty bucket, a
+  backend migrated underneath.
+
+  `DefaultAttachmentStore.open` raised `FileNotFoundError` where the
+  `AttachmentStore` contract says it returns `None`, so every caller went down a
+  path none of them writes: the attachment tool has a sentence ready for an
+  unavailable file and got an opaque tool failure instead, leaving the agent to
+  describe a file it could not read and be told not to retry, and a
+  `FileResponse` download view returned a 500 where it meant 404. An unreadable
+  blob is now reported as unavailable, per the contract, and logged as the
+  storage fault it is.
+
+  Worse, the content-hash dedup adopted a matching row's stored path **without
+  checking the blob was there**, so the obvious recovery could not work:
+  re-uploading the same file hashed to the same digest, matched the same dead
+  row, wrote nothing, and returned a reference to a file that did not exist.
+  Every attempt added another unreadable row. Dedup now confirms the blob before
+  adopting it, so the next upload repairs the owner instead of joining the
+  wreckage — at the cost of one `exists()` on the backend that branch was about
+  to write to anyway.
+
+### Added
+
+- **`STORAGES` alias `django_pydantic_agent_attachments`**, so attachment bytes
+  can live somewhere other than the project's global default. Agent uploads are
+  user-supplied files a project usually wants in a private bucket, and the only
+  way to move them used to be changing the *global* default — which moves every
+  other `FileField` in the project with it. Leave the alias unset and nothing
+  changes: attachments continue to use `default`.
+
 ## [0.15.2] — 2026-08-14
 
 ### Documentation

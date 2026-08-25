@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from io import BytesIO
 
 import pytest
@@ -219,3 +220,82 @@ def test_removing_the_last_row_sharing_a_blob_deletes_the_file() -> None:
     assert default_storage.exists(stored_name)
     store._remove(second.id, "7")
     assert not default_storage.exists(stored_name)
+
+
+# --- a row whose bytes are gone ------------------------------------------------
+#
+# Rows outlive blobs: a lifecycle rule expires a key, a dump is restored beside an
+# empty bucket, a backend is migrated underneath. The row is then a promise the
+# storage cannot keep, and the two defects below used to compound -- the read
+# raised where the contract says ``None``, and the re-upload that should have
+# repaired it adopted the same dead path and wrote nothing.
+
+
+def test_open_reports_a_missing_blob_as_unavailable() -> None:
+    store = DefaultAttachmentStore()
+    ref = store._save(_upload(), "7")
+    default_storage.delete(_stored_name(ref.id))
+
+    # ``None``, not ``FileNotFoundError``: the contract gives a caller one branch
+    # for "unavailable" and keeps a missing file indistinguishable from another
+    # owner's.
+    assert store._open(ref.id, "7") is None
+
+
+def test_open_logs_the_missing_blob_it_reports(caplog: pytest.LogCaptureFixture) -> None:
+    store = DefaultAttachmentStore()
+    ref = store._save(_upload(), "7")
+    name = _stored_name(ref.id)
+    default_storage.delete(name)
+
+    with caplog.at_level(logging.WARNING):
+        assert store._open(ref.id, "7") is None
+
+    # Reported to the caller as unavailable, but a storage fault to whoever reads
+    # the logs -- the row is still there.
+    assert name in caplog.text
+
+
+def test_a_re_upload_repairs_an_owner_whose_blob_went_missing() -> None:
+    store = DefaultAttachmentStore()
+    first = store._save(_upload(content=b"hello"), "7")
+    dead = _stored_name(first.id)
+    default_storage.delete(dead)
+
+    # The user's natural recovery. Identical bytes hash identically, so this is
+    # exactly the upload that used to match the dead twin and write nothing.
+    second = store._save(_upload(content=b"hello"), "7")
+
+    assert default_storage.exists(_stored_name(second.id))
+    opened = store._open(second.id, "7")
+    assert opened is not None
+    with opened.content as handle:
+        assert handle.read() == b"hello"
+
+
+def test_deduplication_still_skips_the_write_when_the_blob_is_there() -> None:
+    # The guard costs one ``exists`` and must not cost the optimisation: a live
+    # twin is still adopted, one blob under two rows.
+    store = DefaultAttachmentStore()
+    first = store._save(_upload(content=b"hello"), "7")
+    second = store._save(_upload(content=b"hello"), "7")
+
+    assert _stored_name(first.id) == _stored_name(second.id)
+    assert _distinct_blobs() == 1
+
+
+def test_a_twin_carrying_no_path_is_not_adopted() -> None:
+    # A row can exist with no stored path at all, from a write that failed after
+    # the INSERT. It offers nothing to adopt, so the upload writes its own bytes
+    # rather than pointing at nowhere.
+    store = DefaultAttachmentStore()
+    digest = hashlib.sha256(b"hello").hexdigest()
+    StoredAttachment.objects.create(attachment_id="orphan", owner_id="7", sha256=digest, file="")
+
+    ref = store._save(_upload(content=b"hello"), "7")
+
+    assert _stored_name(ref.id) != ""
+    opened = store._open(ref.id, "7")
+    assert opened is not None
+    with opened.content as handle:
+        assert handle.read() == b"hello"

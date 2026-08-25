@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from django.db import models
 
+from django_pydantic_agent.contrib.store.storage import attachment_storage
+
 
 class StoredConversation(models.Model):
     """The reference durable conversation row, one per ``(owner_id, thread_id)``.
@@ -68,8 +70,14 @@ class StoredAttachment(models.Model):
     size = models.PositiveBigIntegerField(default=0)
     sha256 = models.CharField(max_length=64, blank=True, default="")
     # Indexed because deleting a row has to ask whether any other row still
-    # points at the same stored blob before removing the bytes.
-    file = models.FileField(upload_to="django_pydantic_agent/attachments/", db_index=True)
+    # points at the same stored blob before removing the bytes. ``storage`` is a
+    # callable so the migration records which backend to ask for rather than the
+    # one a project happened to have configured when it was written.
+    file = models.FileField(
+        upload_to="django_pydantic_agent/attachments/",
+        storage=attachment_storage,
+        db_index=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
