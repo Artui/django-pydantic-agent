@@ -2,50 +2,50 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/concepts/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/integrations/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/policy/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/storage/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/tools/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/reference/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/reference/agent/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/reference/integrations/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/reference/persistence/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/reference/policy/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-pydantic-agent/reference/registry/</loc>
-         <lastmod>2026-08-14</lastmod>
+         <lastmod>2026-08-25</lastmod>
     </url>
 </urlset>

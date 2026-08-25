@@ -473,6 +473,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The reference models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#putting-attachments-somewhere-other-than-the-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting attachments somewhere other than the default
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -931,6 +948,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The reference models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#putting-attachments-somewhere-other-than-the-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting attachments somewhere other than the default
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1198,6 +1232,35 @@ package being importable at all.</p>
 <p><code>DefaultAttachmentStore</code> keeps bytes in Django <code>Storage</code> and metadata in a row,
 so S3 and friends come free through <code>STORAGES</code> — you don't configure anything
 here beyond your normal Django storage backend.</p>
+<h3 id="putting-attachments-somewhere-other-than-the-default">Putting attachments somewhere other than the default<a class="headerlink" href="#putting-attachments-somewhere-other-than-the-default" title="Permanent link">&para;</a></h3>
+<p>Agent uploads are user-supplied files, and a project often wants them in a
+private bucket rather than wherever its other media goes. Name a backend under
+the <code>django_pydantic_agent_attachments</code> alias and attachments use it; leave the
+alias out and they use <code>default</code>, which is what every existing project gets:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">STORAGES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django.core.files.storage.FileSystemStorage&quot;</span><span class="p">},</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="s2">&quot;staticfiles&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;django.contrib.staticfiles.storage.StaticFilesStorage&quot;</span><span class="p">},</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="s2">&quot;django_pydantic_agent_attachments&quot;</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="s2">&quot;BACKEND&quot;</span><span class="p">:</span> <span class="s2">&quot;myproject.storages.PrivateMediaStorage&quot;</span><span class="p">,</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="p">},</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>The alias is resolved once, when the model's field is constructed, so it has to
+be in <code>STORAGES</code> before the app's models are imported — settings, in other
+words, which is where it already is.</p>
+<p><strong>Point it somewhere new and the old attachments do not come with it.</strong> Rows keep
+the path they were written with, and that path is asked of the <em>new</em> backend — so
+every attachment written before the switch reads as unavailable until you move
+the blobs across yourself. Re-uploading is not a shortcut: it writes fresh copies
+rather than finding the originals. Move the files, or accept the loss knowingly.</p>
+<p><strong>The bucket policy needs <code>s3:ListBucket</code></strong> if you point the alias at S3. Saving
+an attachment asks the backend whether a matching blob is already there, and with
+that permission S3 answers 404 for a key that is absent. Without it S3 answers
+403 instead, which django-storages re-raises — turning an upload that would have
+been deduplicated into a 500.</p>
+<p>A misspelled <code>BACKEND</code> raises rather than falling back to <code>default</code>. Silently
+writing user-supplied files to the public default over a one-character typo is
+the outcome this alias exists to prevent.</p>
 <p>Everything from here down is the <strong>reference implementation's</strong> behaviour, not
 the contract. <code>ConversationStore</code> and <code>AttachmentStore</code> stay id-based, the wire
 is unchanged, and a session-backed or S3-only store you plug in yourself owes
@@ -1275,7 +1338,7 @@ cannot tell an upload abandoned last month from one sitting in a composer right
 now — both have zero. The threshold is the floor on how long an upload must
 survive before it counts as abandoned, so set it to comfortably more than the
 longest a message may sit unsent in your product:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_prune_attachments<span class="w"> </span>--older-than<span class="w"> </span>7d<span class="w"> </span>--dry-run
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_prune_attachments<span class="w"> </span>--older-than<span class="w"> </span>7d<span class="w"> </span>--dry-run
 </span></code></pre></div>
 <h3 id="reclaiming-space-from-threads-that-inlined-files">Reclaiming space from threads that inlined files<a class="headerlink" href="#reclaiming-space-from-threads-that-inlined-files" title="Permanent link">&para;</a></h3>
 <p>A transport that hands the model an attachment inline serialises the file into
@@ -1283,8 +1346,8 @@ the message list as base64, and the message list is persisted: a 2.6 MB PDF cost
 roughly 3.5 MB in one row, loaded whole every time the thread is opened.
 Transports have stopped writing them and strip them on the way in, but a row
 already written keeps its payload until something rewrites it:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_strip_inline_bytes<span class="w"> </span>--dry-run
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_strip_inline_bytes
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_strip_inline_bytes<span class="w"> </span>--dry-run
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_strip_inline_bytes
 </span></code></pre></div>
 <p>It edits the JSON structurally rather than round-tripping it through a message
 type, because that round trip is exactly what would drop each message's <code>id</code> and
