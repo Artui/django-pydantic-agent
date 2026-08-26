@@ -24,7 +24,9 @@ class ToolCategory(str, Enum):
 # root, which is what carries them to the *client*: AG-UI has no native concept
 # for any of them and passes unknown keys through verbatim.
 
-# This tool mutates. Read client-side to gate execution behind a confirmation.
+# This tool mutates. Read client-side to gate execution behind a confirmation,
+# and server-side by ``ToolGuard`` for a tool whose schema is the only place its
+# author said so.
 X_DESTRUCTIVE_KEY = "x-destructive"
 
 # The tool's category, so a frontend can group or filter without a side channel.
@@ -37,10 +39,11 @@ X_CONFIRM_KEY = "x-confirm"
 X_SUMMARY_KEY = "x-summary"
 
 # The same "this tool mutates" signal, but on ``ToolDefinition.metadata`` rather
-# than the schema, because its audience is *server-side*: ``ToolGuard`` reads it
-# at ``prepare_tools`` time for tools whose destructiveness the ``@tool``
-# registry does not know, such as a drf-mcp tool whose ``readOnlyHint`` the
-# bridge maps onto this key.
+# than the schema, because metadata is the channel a *bridge* controls where the
+# schema belongs to the tool's author: ``ToolGuard`` reads it at
+# ``prepare_tools`` time for tools whose destructiveness the ``@tool`` registry
+# does not know, such as a drf-mcp tool whose ``readOnlyHint`` the bridge maps
+# onto this key.
 DESTRUCTIVE_METADATA_KEY = "django_pydantic_agent.destructive"
 
 

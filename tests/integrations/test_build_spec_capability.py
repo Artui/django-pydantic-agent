@@ -119,3 +119,37 @@ def test_exclude_names_apply_to_a_registry_too() -> None:
 
     capability = build_spec_capability(registry, exclude_names=frozenset({"dup"}))
     assert set(capability.get_toolset()._specs) == {"ping"}
+
+
+async def test_a_specs_progress_reports_reach_the_runs_sink() -> None:
+    """The other half of what rides ``ctx.deps``.
+
+    ``SpecToolset`` reads its reporter off ``ctx.deps.progress`` exactly as it
+    reads the user off ``ctx.deps.user``. With no such field the reports resolved
+    to drf-services' no-op and a long-running spec reported into nothing, with no
+    warning anywhere.
+    """
+    reports: list[tuple[int, int | None, str | None]] = []
+
+    def sink(
+        progress: int, *, total: int | None = None, message: str | None = None, **_: Any
+    ) -> None:
+        reports.append((progress, total, message))
+
+    def import_rows(user: Any, progress: Any) -> dict[str, Any]:
+        """Import rows."""
+        progress(45, total=100, message="importing rows")
+        return {"ok": True}
+
+    capability = build_spec_capability(
+        {
+            "import_rows": ServiceSpec(
+                service=import_rows, atomic=False, permission_classes=[AllowAny]
+            )
+        }
+    )
+    ctx = SimpleNamespace(deps=AgentDeps(user=SimpleNamespace(name="alice"), progress=sink))
+
+    await capability.get_toolset().call_tool("import_rows", {}, ctx, None)
+
+    assert reports == [(45, 100, "importing rows")]

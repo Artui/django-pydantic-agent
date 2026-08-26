@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,14 +22,24 @@ class AgentDeps:
     ``ctx.deps.user`` as its default user extractor, so a run given these deps
     binds the acting user with nothing passed at the call site.
 
-    For more per-run context, subclass this and set ``AgentConfig.deps_factory``;
-    the fields below are the ones the framework itself reads.
+    For more per-run context, subclass this and build it in your transport's
+    ``deps_factory`` (``AGUIServer(deps_factory=...)`` for django-ag-ui); the
+    fields below are the ones the framework itself reads. The factory belongs to
+    the transport rather than to ``AgentConfig`` because the deps are per-request
+    and the config is not — an agent built once serves every run.
     """
 
-    user: Any = None
+    user: Any
     """The acting Django user (``request.user``), or ``None`` for an
     unauthenticated run. ``Any`` because it is a Django boundary: a ``User``, an
-    ``AnonymousUser``, or a project's own model."""
+    ``AnonymousUser``, or a project's own model.
+
+    **Required, with no default.** Pydantic-AI types ``deps`` as
+    ``AgentDepsT = None`` and never validates it, so nothing downstream would
+    catch a run built without one. A registry tool does not fail closed the way a
+    spec tool does: it runs with no user context, audit records it with the
+    fields it has, and the answer reads like any other. Saying ``user=None`` is
+    one word, and it is a decision rather than an omission."""
 
     ip_address: str | None = None
     """The client IP this run was driven from, stamped onto every audit event
@@ -51,6 +62,24 @@ class AgentDeps:
     mapping through unvalidated. Seed it with a Pydantic model instance to get
     validation, which the adapter runs against ``type(deps.state)``.
     """
+
+    progress: Callable[..., None] | None = None
+    """Where a spec's ``progress(...)`` calls go for this run, or ``None``.
+
+    A drf-services ``ProgressReporter``: a callable
+    ``(progress, *, total, message, meta) -> None``. ``SpecToolset`` reads this
+    field by name and forwards it into the dispatch pool, so a service that
+    declares a ``progress`` parameter reports to whatever the caller passed.
+    Typed structurally rather than as the Protocol, which lives in an optional
+    dependency.
+
+    **Nothing here constructs one.** Where a report should go is a transport's
+    decision — an SSE frame, a task record, a log line — and a substrate that
+    picked one would have chosen a transport it does not own. ``None`` is the
+    honest default and costs nothing: drf-services substitutes its no-op, so a
+    service declaring ``progress`` runs unchanged whether or not anyone is
+    listening. A transport that wants the reports on the wire supplies the sink
+    from its ``deps_factory`` and emits the events itself."""
 
 
 __all__ = ["AgentDeps"]

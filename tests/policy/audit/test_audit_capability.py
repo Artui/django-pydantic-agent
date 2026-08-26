@@ -86,8 +86,8 @@ async def test_the_runs_deps_supply_the_ip() -> None:
     audit = _CapturingLogger()
     agent = _pinging_agent(AuditCapability(audit, ip_address="10.0.0.7"))
 
-    await agent.run("ping", deps=AgentDeps(ip_address="203.0.113.9"))
-    await agent.run("ping", deps=AgentDeps(ip_address="198.51.100.4"))
+    await agent.run("ping", deps=AgentDeps(user=None, ip_address="203.0.113.9"))
+    await agent.run("ping", deps=AgentDeps(user=None, ip_address="198.51.100.4"))
 
     assert [e.ip_address for e in audit.events] == ["203.0.113.9", "198.51.100.4"]
 
@@ -96,7 +96,7 @@ async def test_a_run_with_no_ip_falls_back_to_the_constructed_one() -> None:
     audit = _CapturingLogger()
     agent = _pinging_agent(AuditCapability(audit, ip_address="10.0.0.7"))
 
-    await agent.run("ping", deps=AgentDeps())
+    await agent.run("ping", deps=AgentDeps(user=None))
 
     assert audit.events[0].ip_address == "10.0.0.7"
 

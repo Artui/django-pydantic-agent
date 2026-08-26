@@ -33,6 +33,17 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     ``get_ordering`` and pydantic-ai sorts them, so the list needs no
     pre-ordering.
 
+    **A destructive tool is not confirmed unless a config asks for it.** The
+    approval interrupt exists only when ``config.tool_guard`` is enabled, and
+    even then it reaches a tool only if that tool's source declares the mutation
+    — a registry ``@tool(destructive=True)``, an MCP ``readOnlyHint`` of
+    ``False``, an ``x-destructive`` schema stamp, or an explicit
+    ``require_approval`` name. With no ``tool_guard``, every server-side tool
+    here runs the moment the model calls it. The browser's own confirmation card
+    is no substitute: it is driven by a client-registered tool's schema and never
+    sees a tool that executes server-side. A transport describing this agent to
+    the model should say which of the two it configured.
+
     The agent is typed ``Agent[AgentDeps, ...]``, so every run must be given
     [`AgentDeps`][django_pydantic_agent.AgentDeps] through ``deps=``.
     """
