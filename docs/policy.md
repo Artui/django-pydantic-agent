@@ -76,8 +76,8 @@ When enabled, a tool is gated unless its name is in `exempt`, and it is gated
 when **either** it is destructive **or** its name is in `require_approval`.
 `exempt` wins over `require_approval`.
 
-Destructiveness is unified from three sources, so one hook covers every tool
-regardless of origin:
+Destructiveness is unified from every vocabulary a toolset declares it in, so
+one hook covers every tool regardless of origin:
 
 - **Registry tools** — `@tool(destructive=True)`. The flag lives on the spec and
   never reaches pydantic-ai as a bare callable, so the guard reads it from the
@@ -85,11 +85,37 @@ regardless of origin:
 - **drf-mcp bridged tools** — the bridge maps each tool's `readOnlyHint`
   annotation onto `DESTRUCTIVE_METADATA_KEY`, which the guard reads from
   pydantic-ai's tool metadata.
-- **`require_approval`** — an explicit opt-in for anything the first two miss.
+- **MCP tool annotations** — `metadata["annotations"]["readOnlyHint"] is False`,
+  which is how a toolset speaking MCP's own vocabulary says it mutates. A
+  drf-services `ServiceSpec` exposed through `SpecToolset` is the case that
+  matters: without this the *same* spec was gated over the drf-mcp bridge and
+  ungated attached in process, so a transport swap removed the gate silently.
+- **The `x-destructive` schema stamp** at the root of `parameters_json_schema`,
+  which is what `build_input_schema` writes. A project deriving a schema with
+  that helper and attaching the tool through `toolsets=` gets the gate from it.
+- **`require_approval`** — an explicit opt-in for anything the rest miss.
 
-That is why `DESTRUCTIVE_METADATA_KEY` rides tool *metadata* rather than the
-`x-destructive` JSON-Schema stamp: the schema keys are for the client, this one
-is read server-side at `prepare_tools` time.
+A hint has to *say* the tool mutates. A missing `readOnlyHint`, an absent stamp,
+or metadata of some other shape entirely leaves the tool alone — silence is not
+a claim, and `require_approval` is the answer for a tool whose source declares
+nothing.
+
+`DESTRUCTIVE_METADATA_KEY` still rides tool *metadata* rather than only the
+schema, because metadata is the channel a bridge controls and the schema is the
+tool author's; the guard reads both, and a client reads the schema alone.
+
+### What is gated, and what is not
+
+Worth stating plainly, because a system prompt that promises a confirmation the
+server does not perform is worse than no promise at all:
+
+- With **no `tool_guard`** — the stock configuration — every server-side tool
+  runs the moment the model calls it. There is no interrupt and no card.
+- With `tool_guard` **enabled**, a tool is gated when the registry, its
+  metadata, its schema or `require_approval` says so, and not otherwise.
+- The browser's own confirmation card is a **separate** path: it reads a
+  *client-registered* tool's `parameters`, so it never sees a tool that executes
+  server-side. Neither path substitutes for the other.
 
 ## What a raising tool costs
 
@@ -133,6 +159,26 @@ Two things worth knowing:
 - **It spends no retry budget**, because `ToolFailed` deliberately doesn't.
   A model can call a persistently broken tool again; bound that with run-level
   `UsageLimits` rather than expecting this to stop it.
+
+### A denial is not a tool failure
+
+An authorization refusal passes through untouched and ends the run, exactly as
+it would with the policy off. `django.core.exceptions.PermissionDenied` and —
+when DRF is installed — `rest_framework.exceptions.PermissionDenied` are both in
+the default set; a spec tool's permission check raises the latter.
+
+Converting one would leave the run alive with the model free to try the next
+row, and a failed result stays distinguishable from a `{"error": "not found"}`
+one. A sweep over ids therefore turns the permission boundary into an existence
+oracle over rows the acting user cannot read — inside a single turn, spending no
+retry budget, bounded by nothing `build_agent` sets.
+
+The set is a project decision:
+
+```python
+ToolFailureConfig(reraise=())  # convert everything (the old behaviour)
+ToolFailureConfig(reraise=(PermissionDenied, LookupError))
+```
 
 ## Ordering
 

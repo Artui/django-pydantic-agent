@@ -42,9 +42,26 @@ class ScopedConversationStore:
 
     The scope is invisible on the wire. Thread ids are echoed back to the client
     unchanged; only the storage key carries the prefix.
+
+    **``:`` is reserved and a scope containing one is refused.** The prefix is
+    the whole partition, so an ambiguous prefix is an ambiguous partition: with
+    scopes ``admin`` and ``admin:readonly``, the readonly mount's thread keys to
+    ``admin:readonly:t1``, which the admin mount's own prefix filter matches. It
+    would list that thread as ``readonly:t1``, and load, rename and delete would
+    all resolve there — silently, in both directions, since thread ids come from
+    the client. Refused at construction rather than escaped at the key, because
+    escaping would rewrite the storage key of every thread already saved.
+    Scopes that merely share a prefix (``admin`` / ``administrators``) are
+    unaffected: the separator ends the scope.
     """
 
     def __init__(self, inner: ConversationStore, *, scope: str) -> None:
+        if ":" in scope:
+            raise ValueError(
+                f"scope {scope!r} contains ':', which separates the scope from the "
+                "thread id in the storage key. A scope holding one can collide with "
+                "another scope's threads; use a different separator."
+            )
         self._inner = inner
         self._scope = scope
 

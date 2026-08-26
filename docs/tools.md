@@ -40,7 +40,7 @@ reaches a client without inventing a side channel:
 
 | Argument | Schema key | What it is for |
 | --- | --- | --- |
-| `destructive=True` | `x-destructive` | This tool mutates. AG-UI has no native destructive-tool concept, so it is stamped at the schema root and read client-side to gate execution behind a confirmation. |
+| `destructive=True` | `x-destructive` | This tool mutates. AG-UI has no native destructive-tool concept, so it is stamped at the schema root and read client-side to gate execution behind a confirmation — and server-side by the [tool guard](policy.md), for a tool whose schema is the only place its author said so. |
 | `category=` | `x-category` | Coarse grouping (`ToolCategory`) so a frontend can group or filter, or a system prompt can reason about capability classes. |
 | `confirm="Activate this project?"` | `x-confirm` | The confirmation prompt shown instead of a generic "Run *tool*?". |
 | `summary="Query orders"` | `x-summary` | A short display label shown on a tool-call card instead of the raw tool name. |
@@ -50,11 +50,18 @@ policy; `destructive` is the flag that drives the approval gate.
 
 There is a fifth key that is *not* a schema stamp: `DESTRUCTIVE_METADATA_KEY`
 (`"django_pydantic_agent.destructive"`) rides pydantic-ai's `ToolDefinition`
-metadata rather than the schema, because it has a different audience. The `x-*`
-keys reach the *client*; this one is read **server-side** at `prepare_tools`
-time by the [tool guard](policy.md), which needs destructiveness for tools whose
-flag doesn't come from the `@tool` registry at all — a bridged drf-mcp tool,
-whose `readOnlyHint` annotation the bridge maps onto this key.
+metadata rather than the schema, because metadata is the channel a *bridge*
+controls where the schema belongs to the tool's author. It is read
+**server-side** at `prepare_tools` time by the [tool guard](policy.md), which
+needs destructiveness for tools whose flag doesn't come from the `@tool`
+registry at all — a bridged drf-mcp tool, whose `readOnlyHint` annotation the
+bridge maps onto this key.
+
+A registry tool's own `destructive=True` never travels either channel: it stays
+on the spec, and the guard reads it from the registry directly. What reaches the
+guard through the schema is the case where `build_input_schema` was used
+[on its own](#deriving-a-schema-on-its-own) and the tool attached through
+`toolsets=`.
 
 ## The tool catalog
 
@@ -103,5 +110,12 @@ from django_pydantic_agent import build_input_schema
 
 schema = build_input_schema(find_order, destructive=False, category=ToolCategory.UI_READ)
 ```
+
+A leading `ctx: RunContext[...]` parameter is **not** a tool argument and is
+left out of the schema: pydantic-ai fills it from the run, so advertising it
+would ask the model to invent a value for something it cannot supply. Dispatch
+follows the same rule — `registry.call(name, arguments, ctx=ctx)` binds it from
+the caller, and a tool that declares one and is dispatched without a `ctx`
+raises rather than being handed `None`.
 
 See the [registry reference](reference/registry.md) for the full signatures.

@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Union
 
+from pydantic_ai import RunContext
+
+from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.constants import ToolCategory
 from django_pydantic_agent.registry.build_input_schema import build_input_schema
 
@@ -134,3 +137,50 @@ def test_no_defaults_omits_required() -> None:
         del a
 
     assert "required" not in build_input_schema(fn)
+
+
+class TestTheRunContextParameterIsNotAToolArgument:
+    """``ctx: RunContext[...]`` is how a tool reaches the acting user, and
+    pydantic-ai supplies it. The derivation used to emit it as a property with an
+    empty schema and add it to ``required``, so a schema handed to a client or to
+    another model advertised a phantom argument the model had to invent."""
+
+    def test_a_run_context_first_parameter_is_skipped(self) -> None:
+        def find_order(ctx: RunContext[AgentDeps], order_id: int) -> None:
+            del ctx, order_id
+
+        schema = build_input_schema(find_order)
+
+        assert schema["properties"] == {"order_id": {"type": "integer"}}
+        assert schema["required"] == ["order_id"]
+
+    def test_a_run_context_only_tool_advertises_no_arguments(self) -> None:
+        def whoami(ctx: RunContext[AgentDeps]) -> None:
+            del ctx
+
+        schema = build_input_schema(whoami)
+
+        assert schema["properties"] == {}
+        assert "required" not in schema
+
+    def test_a_bare_run_context_annotation_counts(self) -> None:
+        def whoami(ctx: RunContext) -> None:  # type: ignore[type-arg]
+            del ctx
+
+        assert build_input_schema(whoami)["properties"] == {}
+
+    def test_only_the_first_parameter_is_treated_this_way(self) -> None:
+        """Pydantic-AI takes the context first or not at all, so a later
+        parameter of that type is an ordinary (unschematisable) argument rather
+        than a second hidden one."""
+
+        def odd(order_id: int, ctx: RunContext[AgentDeps]) -> None:
+            del order_id, ctx
+
+        assert set(build_input_schema(odd)["properties"]) == {"order_id", "ctx"}
+
+    def test_a_parameter_merely_named_ctx_is_still_an_argument(self) -> None:
+        def fn(ctx: str) -> None:
+            del ctx
+
+        assert build_input_schema(fn)["properties"] == {"ctx": {"type": "string"}}

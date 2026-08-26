@@ -30,5 +30,22 @@ class ToolFailureConfig:
     text. An exception message is written for an operator, not for a model or
     the browser that renders its answer."""
 
+    reraise: tuple[type[BaseException], ...] | None = None
+    """Exception types that pass through untouched, ending the run as they would
+    without the policy.
+
+    ``None`` means the built-in set: an authorization refusal, in both the
+    flavours a Django project raises it — ``django.core.exceptions``' and, when
+    DRF is installed, ``rest_framework.exceptions``'. Pass a tuple to replace
+    that set wholesale, or ``()`` to convert every exception.
+
+    **Why a denial is not a tool failure.** A converted denial leaves the run
+    alive and the model free to call the same tool on the next row, while a
+    failed result stays distinguishable from a "not found" one — so a sweep over
+    ids turns a permission boundary into an existence oracle inside a single
+    turn. A ``ToolFailed`` spends no retry budget, so nothing bounds the sweep
+    but run-level ``UsageLimits``. Refusing to run is the *answer* to a denied
+    call, not a fault to route around."""
+
 
 __all__ = ["ToolFailureConfig"]

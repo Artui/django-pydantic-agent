@@ -7,7 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`AgentDeps.progress` — a per-run sink for a spec's progress reports.**
+  `SpecToolset` reads its reporter off `ctx.deps.progress`, exactly as it reads
+  the acting user off `ctx.deps.user`. There was no such field, so
+  `_default_get_progress` found nothing and every `progress(...)` call a
+  long-running `ServiceSpec` made resolved to drf-services' no-op and vanished
+  with no warning — and a project could not fix it by subclassing `AgentDeps`
+  either, because the extractor is keyed on the field name. Pass a callable and
+  the reports arrive; leave it `None` and the no-op stands. Nothing here
+  constructs a sink: where a report should *go* is a transport's decision, and a
+  substrate that picked one would have chosen a transport it does not own.
+
+- **`ToolFailureConfig.reraise` — the exception types the failure policy leaves
+  alone.** `None`, the default, means authorization refusals (see below); a
+  tuple replaces that set wholesale, and `()` restores the previous
+  convert-everything behaviour.
+
+- **`ToolRegistry.call` / `acall` take `ctx=`.** A tool declaring a leading
+  `ctx: RunContext[...]` — the only way a registry tool reaches the acting user
+  — could not be dispatched through the registry at all: `sig.bind` was given
+  the model's arguments alone and raised `TypeError` for the missing parameter.
+  The caller now supplies it, the way pydantic-ai supplies it from a run.
+  Dispatching such a tool with no `ctx` raises and says so, rather than handing
+  the tool a `None` context to read the user from.
+
+### Changed
+
+- **`AgentDeps.user` is now required.** **Upgrade note:** `AgentDeps()` and
+  `AgentDeps(ip_address=...)` now raise `TypeError`. An unauthenticated run says
+  `AgentDeps(user=None)`; a transport already passing `user=` is unaffected
+  (django-ag-ui's default deps factory and its `deps_factory` seam both are).
+  Pydantic-AI types `deps` as `AgentDepsT = None` and never validates it, so a
+  run with no acting user at all was silently constructible, and the default
+  here made `AgentDeps()` equally so. It does not fail loudly downstream: a spec
+  tool fails closed, but every `@tool` registry tool runs with no user context,
+  audit records the events with the fields it has, and the answer reads like any
+  other. One word makes it a decision instead of an omission.
+
+- **An authorization refusal is no longer converted into a tool failure.**
+  **Upgrade note:** a tool raising `PermissionDenied` (Django's, or DRF's when
+  DRF is installed) now ends the run again, as it did before the failure policy
+  existed. Set `ToolFailureConfig(reraise=())` to keep converting it. The policy
+  is on by default, and `PermissionDenied` is not one of pydantic-ai's
+  control-flow exceptions, so a denied spec call came back to the model as a
+  generic `ToolFailed` and the run carried on. That is an existence oracle: a
+  denied row is distinguishable from a missing one, `ToolFailed` spends no retry
+  budget, and `build_agent` sets no `UsageLimits`, so a model asked to "try ids
+  1000-1100 and say which behaved differently" can enumerate rows the acting
+  user cannot read, inside a single turn. Refusing to run is the answer to a
+  denied call, not a fault to route around.
+
+- **`ScopedConversationStore` refuses a scope name containing `:`.**
+  **Upgrade note:** an existing scope holding a colon now raises `ValueError`
+  at construction; rename it (and the stored keys) or choose another separator.
+  The partition *is* the storage-key prefix `scope:`, and neither half was
+  escaped, so a scope whose name extended another's — `admin` alongside
+  `admin:readonly` — collided: the readonly mount's thread keyed to
+  `admin:readonly:t1`, which `admin`'s own prefix filter matched. `list()`
+  returned it as `readonly:t1`, and `load` / `rename` / `delete` resolved
+  straight back to the other mount's row, under the wrong mount's model, tools
+  and guard policy. Thread ids are client-controlled, so the crossing worked in
+  both directions and was silent in both. Refused at construction rather than
+  escaped at the key, which would have rewritten every stored thread's key.
+  Names that merely share a prefix (`admin` / `administrators`) are unaffected:
+  the separator ends the scope.
+
 ### Fixed
+
+- **The destructive-tool gate missed a mutation whose toolset declared it in
+  MCP's vocabulary.** `ToolGuard` read `DESTRUCTIVE_METADATA_KEY` at the top
+  level of `ToolDefinition.metadata` only. A drf-services `ServiceSpec` exposed
+  through `SpecToolset` carries `{"annotations": {"readOnlyHint": False}}`
+  instead, so the *identical spec* was gated when it arrived over the drf-mcp
+  bridge — which maps that hint onto the key — and ungated when it was attached
+  in process. Presented as a transport swap, the swap removed the gate, and the
+  guard's own promise that one hook covers every tool wherever it came from was
+  false. It now reads the annotation too.
+
+- **The `x-destructive` schema stamp had no server-side reader.**
+  `build_input_schema` is a public export, documented for deriving a tool's
+  schema outside the registration flow, and it stamps `x-destructive` at the
+  schema root — but that key was only ever read by a browser, and a browser
+  never sees a tool that executes server-side. A project deriving a schema with
+  the package's own helper and attaching the tool through `toolsets=` therefore
+  got no gate from it. `ToolGuard` now reads the stamp as well, so all four
+  signals (registry flag, bridge metadata, MCP annotation, schema stamp) reach
+  the same hook. What the gate covers and what it does not is now stated
+  explicitly on `build_agent`, `ToolGuardConfig` and in the policy docs, because
+  a system prompt that promises a confirmation the server does not perform is
+  worse than no promise: the gate is still off unless a config enables it, and
+  the browser's own confirmation card reads a client-registered tool's schema,
+  so neither path substitutes for the other.
+
+- **A `RunContext` parameter was advertised as a required, untyped tool
+  argument.** The schema derivation skipped only `*args` / `**kwargs`, so a
+  pydantic-ai `ctx: RunContext[...]` first parameter came out as a property with
+  an empty schema *and* an entry in `required` — a phantom argument the model
+  would try to invent a value for in any schema handed to a client or another
+  model. It is now left out of the schema and bound from the dispatch caller
+  instead.
 
 - **The floor-resolution CI gate could resolve against a stale package index.**
   Its purpose is to answer "what would a consumer installing from scratch get" —

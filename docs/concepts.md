@@ -92,8 +92,23 @@ replaced closing over the request. The difference matters beyond tidiness:
 UI adapter assigns `deps.state = ...` directly. Deps are per-run and never
 shared, so the mutability is contained.
 
-Projects needing more per-run context subclass it — `user`, `ip_address` and
-`state` are the three fields the framework itself reads.
+- **A spec's progress reports have somewhere to go.** `SpecToolset` reads its
+  reporter off `ctx.deps.progress` exactly as it reads the user off
+  `ctx.deps.user`. Pass a callable and a long-running spec's `progress(...)`
+  calls reach it; leave it `None` and drf-services substitutes its no-op. Where
+  the reports *go* is a transport's decision, so nothing here constructs a sink.
+
+`user` has **no default**: an unauthenticated run says `user=None` rather than
+leaving it out. Pydantic-AI types `deps` as `AgentDepsT = None` and never
+validates it, so a run built without deps at all is otherwise silently
+constructible — spec tools fail closed there, but registry tools run with no
+user context and the answer reads like any other.
+
+Projects needing more per-run context subclass it — `user`, `ip_address`,
+`state` and `progress` are the four fields the framework itself reads. Build the
+subclass in your transport's `deps_factory` (django-ag-ui:
+`AGUIServer(deps_factory=...)`), which is where per-request construction
+belongs; `AgentConfig` is built once and reused.
 
 !!! note "Inbound state only"
 

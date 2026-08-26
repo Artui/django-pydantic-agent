@@ -97,3 +97,38 @@ async def test_an_unprefixed_row_is_left_alone(request_) -> None:
     assert [m.thread_id for m in await scoped.list(request=request_)] == []
     # ...and the id is untouched in the store.
     assert "legacy" in inner.rows
+
+
+async def test_a_scope_name_cannot_extend_another_scopes_name(request_) -> None:
+    """The reproduction, and the reason the separator is now reserved.
+
+    Partition two mounts as ``admin`` and ``admin:readonly``. The readonly
+    mount's thread ``t1`` keys to ``admin:readonly:t1``, and the admin mount's
+    ``list()`` filters by ``startswith("admin:")`` — which matches it. ``_unkey``
+    strips only ``admin:`` and hands the client ``readonly:t1``, which keys
+    straight back and loads the readonly mount's messages under the admin
+    mount's policy. ``rename`` and ``delete`` resolve there too, and thread ids
+    are client-controlled, so the crossing works in both directions.
+
+    The prefix *is* the partition, so an ambiguous prefix is an ambiguous
+    partition. Rejected at construction rather than escaped at the key, because
+    escaping would rewrite the keys of every thread already stored.
+    """
+    inner = _MemoryStore()
+    ScopedConversationStore(inner, scope="admin")
+
+    with pytest.raises(ValueError, match="scope"):
+        ScopedConversationStore(inner, scope="admin:readonly")
+
+
+async def test_the_partition_holds_for_a_scope_that_merely_shares_a_prefix(request_) -> None:
+    """``admin`` and ``administrators`` are still two scopes, not a hazard: the
+    separator ends the scope, so neither prefix matches the other's keys."""
+    inner = _MemoryStore()
+    admin = ScopedConversationStore(inner, scope="admin")
+    administrators = ScopedConversationStore(inner, scope="administrators")
+
+    await administrators.save(Conversation(thread_id="t1", messages=[]), request=request_)
+
+    assert [m.thread_id for m in await admin.list(request=request_)] == []
+    assert await admin.load("t1", request=request_) is None

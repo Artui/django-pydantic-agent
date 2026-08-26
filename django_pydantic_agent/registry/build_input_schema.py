@@ -13,6 +13,7 @@ from django_pydantic_agent.constants import (
     X_SUMMARY_KEY,
     ToolCategory,
 )
+from django_pydantic_agent.registry.utils import run_context_parameter
 
 
 def build_input_schema(
@@ -32,16 +33,22 @@ def build_input_schema(
     ``destructive`` / ``category`` / ``confirm`` / ``summary`` are stamped at the
     schema root as the matching ``x-*`` extension keys, which AG-UI passes
     through verbatim to the client.
+
+    A leading ``ctx: RunContext[...]`` parameter is **not** an argument and is
+    left out. Pydantic-AI fills it from the run — it is how a tool reaches the
+    acting user — so advertising it would ask the model to invent a value for
+    something it cannot supply.
     """
     # `eval_str=True` resolves string annotations while preserving them verbatim.
     # Unlike `typing.get_type_hints` it does NOT apply the implicit-`Optional`
     # wrapping Python 3.10 adds to a parameter defaulting to `None`, so the
     # derived schema is identical across Python versions.
     sig = inspect.signature(fn, eval_str=True)
+    context_parameter = run_context_parameter(sig)
     properties: dict[str, Any] = {}
     required: list[str] = []
     for name, param in sig.parameters.items():
-        if param.kind in (
+        if name == context_parameter or param.kind in (
             inspect.Parameter.VAR_POSITIONAL,
             inspect.Parameter.VAR_KEYWORD,
         ):

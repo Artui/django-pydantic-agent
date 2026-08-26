@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
@@ -41,10 +42,17 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     ``django_pydantic_agent.failure`` logger, and an ``AuditCapability`` in the
     same chain still records the failure against the tool that caused it. What
     changes is only who the failure stops.
+
+    **An authorization refusal is exempt** and ends the run as it would without
+    the policy — see ``ToolFailureConfig.reraise``, which is also how a project
+    exempts more, or nothing at all.
     """
 
     def __init__(self, config: ToolFailureConfig | None = None) -> None:
         self._config = config if config is not None else ToolFailureConfig()
+        self._reraise = (
+            self._config.reraise if self._config.reraise is not None else _denial_types()
+        )
 
     async def on_tool_execute_error(
         self,
@@ -55,6 +63,10 @@ class ToolFailurePolicy(AbstractCapability[Any]):
         args: Any,
         error: Exception,
     ) -> Any:
+        if isinstance(error, self._reraise):
+            # Not logged here: it is on its way to the transport intact, and a
+            # traceback saying "the run continues" would be a lie about this one.
+            raise error
         _logger.exception(
             "django-pydantic-agent: tool %r failed; the run continues with a failed result",
             tool_def.name,
@@ -71,6 +83,25 @@ class ToolFailurePolicy(AbstractCapability[Any]):
             f"The {tool_name} tool failed and returned no result. "
             "The failure has been recorded; do not retry the same call."
         )
+
+
+def _denial_types() -> tuple[type[BaseException], ...]:
+    """The default pass-through set: an authorization refusal, both flavours.
+
+    Django's own and DRF's are unrelated classes — neither inherits from the
+    other — and a Django project raises both, so covering one is covering half a
+    boundary. DRF is optional here (it arrives with the ``[spec-tools]`` and
+    ``[drf-mcp]`` extras, and drf-services' off-HTTP permission check raises its
+    ``PermissionDenied``), so its class is imported at call time and simply
+    absent from the set in a slim install.
+    """
+    denials: list[type[BaseException]] = [DjangoPermissionDenied]
+    try:
+        from rest_framework.exceptions import PermissionDenied
+    except ImportError:
+        return tuple(denials)
+    denials.append(PermissionDenied)
+    return tuple(denials)
 
 
 __all__ = ["ToolFailurePolicy"]

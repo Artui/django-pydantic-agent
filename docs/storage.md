@@ -110,6 +110,13 @@ internal = ScopedConversationStore(store, scope="internal")
 public = ScopedConversationStore(store, scope="public")
 ```
 
+**`:` is reserved in a scope name and one containing it is refused.** The
+partition *is* the key prefix `scope:`, so a scope name that extends another —
+`admin` and `admin:readonly` — makes the shorter scope's prefix match the
+longer one's threads: it lists them, and load, rename and delete resolve there
+too, silently and in both directions. Names that merely share a prefix
+(`admin` / `administrators`) are fine; the separator ends the scope.
+
 ## What ships
 
 | Implementation | Use it when |
