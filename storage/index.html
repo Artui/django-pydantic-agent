@@ -1172,6 +1172,12 @@ resumed there — under the <em>public</em> agent's model, tools and guard polic
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">internal</span> <span class="o">=</span> <span class="n">ScopedConversationStore</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;internal&quot;</span><span class="p">)</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">public</span> <span class="o">=</span> <span class="n">ScopedConversationStore</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">scope</span><span class="o">=</span><span class="s2">&quot;public&quot;</span><span class="p">)</span>
 </span></code></pre></div>
+<p><strong><code>:</code> is reserved in a scope name and one containing it is refused.</strong> The
+partition <em>is</em> the key prefix <code>scope:</code>, so a scope name that extends another —
+<code>admin</code> and <code>admin:readonly</code> — makes the shorter scope's prefix match the
+longer one's threads: it lists them, and load, rename and delete resolve there
+too, silently and in both directions. Names that merely share a prefix
+(<code>admin</code> / <code>administrators</code>) are fine; the separator ends the scope.</p>
 <h2 id="what-ships">What ships<a class="headerlink" href="#what-ships" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

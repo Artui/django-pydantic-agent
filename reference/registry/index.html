@@ -1562,12 +1562,16 @@ either sync or async callables can be dispatched.</p>
 
 
 <a href="#django_pydantic_agent.ToolRegistry.call" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">call</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">arguments</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">call</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">arguments</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Dispatch a sync call to the registered tool.</p>
+<p><code>arguments</code> is the model's payload and nothing else. A tool declaring a
+leading <code>ctx: RunContext[...]</code> gets it from <code>ctx</code> here, the way
+pydantic-ai would supply it from the run; passing one to a tool that
+takes none is harmless.</p>
 <p>Refuses coroutine functions to avoid silently returning an
 un-awaited coroutine. Use
 <a class="autorefs autorefs-internal" title="acall
@@ -1576,6 +1580,30 @@ un-awaited coroutine. Use
   
       async
   " href="#django_pydantic_agent.ToolRegistry.acall"><code>acall</code></a> for async tools.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="TypeError">TypeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>when the tool is async, or declares a <code>RunContext</code>
+parameter and no <code>ctx</code> was given.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -1594,12 +1622,14 @@ un-awaited coroutine. Use
   </span>
 
 <a href="#django_pydantic_agent.ToolRegistry.acall" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">acall</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">arguments</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">acall</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">arguments</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Dispatch an async call; transparently awaits sync callables.</p>
+<p><code>ctx</code> is bound exactly as in
+<a class="autorefs autorefs-internal" title="call" href="#django_pydantic_agent.ToolRegistry.call"><code>call</code></a>.</p>
 
 
     </div>
@@ -1959,6 +1989,10 @@ fragment, imposing no type constraint but staying wire-valid.</p>
 <p><code>destructive</code> / <code>category</code> / <code>confirm</code> / <code>summary</code> are stamped at the
 schema root as the matching <code>x-*</code> extension keys, which AG-UI passes
 through verbatim to the client.</p>
+<p>A leading <code>ctx: RunContext[...]</code> parameter is <strong>not</strong> an argument and is
+left out. Pydantic-AI fills it from the run — it is how a tool reaches the
+acting user — so advertising it would ask the model to invent a value for
+something it cannot supply.</p>
 
 
     </div>

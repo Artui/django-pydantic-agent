@@ -498,6 +498,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#what-is-gated-and-what-is-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is gated, and what is not
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -511,6 +522,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="What a raising tool costs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-denial-is-not-a-tool-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A denial is not a tool failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -874,6 +902,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#what-is-gated-and-what-is-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is gated, and what is not
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -887,6 +926,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="What a raising tool costs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-denial-is-not-a-tool-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A denial is not a tool failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -982,8 +1038,8 @@ surprises a project that hasn't opted in.</p>
 <p>When enabled, a tool is gated unless its name is in <code>exempt</code>, and it is gated
 when <strong>either</strong> it is destructive <strong>or</strong> its name is in <code>require_approval</code>.
 <code>exempt</code> wins over <code>require_approval</code>.</p>
-<p>Destructiveness is unified from three sources, so one hook covers every tool
-regardless of origin:</p>
+<p>Destructiveness is unified from every vocabulary a toolset declares it in, so
+one hook covers every tool regardless of origin:</p>
 <ul>
 <li><strong>Registry tools</strong> — <code>@tool(destructive=True)</code>. The flag lives on the spec and
   never reaches pydantic-ai as a bare callable, so the guard reads it from the
@@ -991,11 +1047,35 @@ regardless of origin:</p>
 <li><strong>drf-mcp bridged tools</strong> — the bridge maps each tool's <code>readOnlyHint</code>
   annotation onto <code>DESTRUCTIVE_METADATA_KEY</code>, which the guard reads from
   pydantic-ai's tool metadata.</li>
-<li><strong><code>require_approval</code></strong> — an explicit opt-in for anything the first two miss.</li>
+<li><strong>MCP tool annotations</strong> — <code>metadata["annotations"]["readOnlyHint"] is False</code>,
+  which is how a toolset speaking MCP's own vocabulary says it mutates. A
+  drf-services <code>ServiceSpec</code> exposed through <code>SpecToolset</code> is the case that
+  matters: without this the <em>same</em> spec was gated over the drf-mcp bridge and
+  ungated attached in process, so a transport swap removed the gate silently.</li>
+<li><strong>The <code>x-destructive</code> schema stamp</strong> at the root of <code>parameters_json_schema</code>,
+  which is what <code>build_input_schema</code> writes. A project deriving a schema with
+  that helper and attaching the tool through <code>toolsets=</code> gets the gate from it.</li>
+<li><strong><code>require_approval</code></strong> — an explicit opt-in for anything the rest miss.</li>
 </ul>
-<p>That is why <code>DESTRUCTIVE_METADATA_KEY</code> rides tool <em>metadata</em> rather than the
-<code>x-destructive</code> JSON-Schema stamp: the schema keys are for the client, this one
-is read server-side at <code>prepare_tools</code> time.</p>
+<p>A hint has to <em>say</em> the tool mutates. A missing <code>readOnlyHint</code>, an absent stamp,
+or metadata of some other shape entirely leaves the tool alone — silence is not
+a claim, and <code>require_approval</code> is the answer for a tool whose source declares
+nothing.</p>
+<p><code>DESTRUCTIVE_METADATA_KEY</code> still rides tool <em>metadata</em> rather than only the
+schema, because metadata is the channel a bridge controls and the schema is the
+tool author's; the guard reads both, and a client reads the schema alone.</p>
+<h3 id="what-is-gated-and-what-is-not">What is gated, and what is not<a class="headerlink" href="#what-is-gated-and-what-is-not" title="Permanent link">&para;</a></h3>
+<p>Worth stating plainly, because a system prompt that promises a confirmation the
+server does not perform is worse than no promise at all:</p>
+<ul>
+<li>With <strong>no <code>tool_guard</code></strong> — the stock configuration — every server-side tool
+  runs the moment the model calls it. There is no interrupt and no card.</li>
+<li>With <code>tool_guard</code> <strong>enabled</strong>, a tool is gated when the registry, its
+  metadata, its schema or <code>require_approval</code> says so, and not otherwise.</li>
+<li>The browser's own confirmation card is a <strong>separate</strong> path: it reads a
+  <em>client-registered</em> tool's <code>parameters</code>, so it never sees a tool that executes
+  server-side. Neither path substitutes for the other.</li>
+</ul>
 <h2 id="what-a-raising-tool-costs">What a raising tool costs<a class="headerlink" href="#what-a-raising-tool-costs" title="Permanent link">&para;</a></h2>
 <p>A tool that raises used to end the run. The transport emitted <code>RUN_ERROR</code>, the
 turn stopped, and everything the model had already produced went with it —
@@ -1030,6 +1110,20 @@ to the audit logger and to the <code>django_pydantic_agent.failure</code> logger
   A model can call a persistently broken tool again; bound that with run-level
   <code>UsageLimits</code> rather than expecting this to stop it.</li>
 </ul>
+<h3 id="a-denial-is-not-a-tool-failure">A denial is not a tool failure<a class="headerlink" href="#a-denial-is-not-a-tool-failure" title="Permanent link">&para;</a></h3>
+<p>An authorization refusal passes through untouched and ends the run, exactly as
+it would with the policy off. <code>django.core.exceptions.PermissionDenied</code> and —
+when DRF is installed — <code>rest_framework.exceptions.PermissionDenied</code> are both in
+the default set; a spec tool's permission check raises the latter.</p>
+<p>Converting one would leave the run alive with the model free to try the next
+row, and a failed result stays distinguishable from a <code>{"error": "not found"}</code>
+one. A sweep over ids therefore turns the permission boundary into an existence
+oracle over rows the acting user cannot read — inside a single turn, spending no
+retry budget, bounded by nothing <code>build_agent</code> sets.</p>
+<p>The set is a project decision:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">())</span>  <span class="c1"># convert everything (the old behaviour)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">(</span><span class="n">PermissionDenied</span><span class="p">,</span> <span class="ne">LookupError</span><span class="p">))</span>
+</span></code></pre></div>
 <h2 id="ordering">Ordering<a class="headerlink" href="#ordering" title="Permanent link">&para;</a></h2>
 <p>No capability here needs positioning. Each declares its place via
 <code>get_ordering()</code> — audit outermost, the guard orthogonal — and pydantic-ai's

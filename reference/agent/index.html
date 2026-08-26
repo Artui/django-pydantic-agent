@@ -813,6 +813,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.progress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        progress
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1276,6 +1287,17 @@
     <span class="md-ellipsis">
       
         state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.AgentDeps.progress" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        progress
       
     </span>
   </a>
@@ -1855,8 +1877,11 @@ closing over a request, which is what lets one agent serve many requests.
 <code>djangorestframework-pydantic-ai</code>'s <code>SpecToolset</code> already reads
 <code>ctx.deps.user</code> as its default user extractor, so a run given these deps
 binds the acting user with nothing passed at the call site.</p>
-<p>For more per-run context, subclass this and set <code>AgentConfig.deps_factory</code>;
-the fields below are the ones the framework itself reads.</p>
+<p>For more per-run context, subclass this and build it in your transport's
+<code>deps_factory</code> (<code>AGUIServer(deps_factory=...)</code> for django-ag-ui); the
+fields below are the ones the framework itself reads. The factory belongs to
+the transport rather than to <code>AgentConfig</code> because the deps are per-request
+and the config is not — an agent built once serves every run.</p>
 
 
 
@@ -1885,12 +1910,11 @@ the fields below are the ones the framework itself reads.</p>
 
 
   <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
       <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
   </span>
 
 <a href="#django_pydantic_agent.AgentDeps.user" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">user</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">user</span><span class="p">:</span> <span class="n">Any</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
@@ -1898,6 +1922,12 @@ the fields below are the ones the framework itself reads.</p>
         <p>The acting Django user (<code>request.user</code>), or <code>None</code> for an
 unauthenticated run. <code>Any</code> because it is a Django boundary: a <code>User</code>, an
 <code>AnonymousUser</code>, or a project's own model.</p>
+<p><strong>Required, with no default.</strong> Pydantic-AI types <code>deps</code> as
+<code>AgentDepsT = None</code> and never validates it, so nothing downstream would
+catch a run built without one. A registry tool does not fail closed the way a
+spec tool does: it runs with no user context, audit records it with the
+fields it has, and the answer reads like any other. Saying <code>user=None</code> is
+one word, and it is a decision rather than an omission.</p>
 
     </div>
 
@@ -1966,6 +1996,44 @@ validation, which the adapter runs against <code>type(deps.state)</code>.</p>
 
 </div>
 
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.AgentDeps.progress" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">progress</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.AgentDeps.progress" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">progress</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Where a spec's <code>progress(...)</code> calls go for this run, or <code>None</code>.</p>
+<p>A drf-services <code>ProgressReporter</code>: a callable
+<code>(progress, *, total, message, meta) -&gt; None</code>. <code>SpecToolset</code> reads this
+field by name and forwards it into the dispatch pool, so a service that
+declares a <code>progress</code> parameter reports to whatever the caller passed.
+Typed structurally rather than as the Protocol, which lives in an optional
+dependency.</p>
+<p><strong>Nothing here constructs one.</strong> Where a report should go is a transport's
+decision — an SSE frame, a task record, a log line — and a substrate that
+picked one would have chosen a transport it does not own. <code>None</code> is the
+honest default and costs nothing: drf-services substitutes its no-op, so a
+service declaring <code>progress</code> runs unchanged whether or not anyone is
+listening. A transport that wants the reports on the wire supplies the sink
+from its <code>deps_factory</code> and emits the events itself.</p>
+
+    </div>
+
+</div>
+
 
 
 
@@ -2012,6 +2080,16 @@ turned off, so a raising tool fails its own call rather than the whole run.
 Each declares its position through
 <code>get_ordering</code> and pydantic-ai sorts them, so the list needs no
 pre-ordering.</p>
+<p><strong>A destructive tool is not confirmed unless a config asks for it.</strong> The
+approval interrupt exists only when <code>config.tool_guard</code> is enabled, and
+even then it reaches a tool only if that tool's source declares the mutation
+— a registry <code>@tool(destructive=True)</code>, an MCP <code>readOnlyHint</code> of
+<code>False</code>, an <code>x-destructive</code> schema stamp, or an explicit
+<code>require_approval</code> name. With no <code>tool_guard</code>, every server-side tool
+here runs the moment the model calls it. The browser's own confirmation card
+is no substitute: it is driven by a client-registered tool's schema and never
+sees a tool that executes server-side. A transport describing this agent to
+the model should say which of the two it configured.</p>
 <p>The agent is typed <code>Agent[AgentDeps, ...]</code>, so every run must be given
 <a class="autorefs autorefs-internal" title="AgentDeps
 

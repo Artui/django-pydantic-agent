@@ -2181,6 +2181,16 @@ namespace would silently orphan the whole thread history of an existing
 single-endpoint project the moment it set one.</p>
 <p>The scope is invisible on the wire. Thread ids are echoed back to the client
 unchanged; only the storage key carries the prefix.</p>
+<p><strong><code>:</code> is reserved and a scope containing one is refused.</strong> The prefix is
+the whole partition, so an ambiguous prefix is an ambiguous partition: with
+scopes <code>admin</code> and <code>admin:readonly</code>, the readonly mount's thread keys to
+<code>admin:readonly:t1</code>, which the admin mount's own prefix filter matches. It
+would list that thread as <code>readonly:t1</code>, and load, rename and delete would
+all resolve there — silently, in both directions, since thread ids come from
+the client. Refused at construction rather than escaped at the key, because
+escaping would rewrite the storage key of every thread already saved.
+Scopes that merely share a prefix (<code>admin</code> / <code>administrators</code>) are
+unaffected: the separator ends the scope.</p>
 
 
 

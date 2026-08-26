@@ -932,7 +932,7 @@ reaches a client without inventing a side channel:</p>
 <tr>
 <td><code>destructive=True</code></td>
 <td><code>x-destructive</code></td>
-<td>This tool mutates. AG-UI has no native destructive-tool concept, so it is stamped at the schema root and read client-side to gate execution behind a confirmation.</td>
+<td>This tool mutates. AG-UI has no native destructive-tool concept, so it is stamped at the schema root and read client-side to gate execution behind a confirmation — and server-side by the <a href="../policy/">tool guard</a>, for a tool whose schema is the only place its author said so.</td>
 </tr>
 <tr>
 <td><code>category=</code></td>
@@ -955,11 +955,17 @@ reaches a client without inventing a side channel:</p>
 policy; <code>destructive</code> is the flag that drives the approval gate.</p>
 <p>There is a fifth key that is <em>not</em> a schema stamp: <code>DESTRUCTIVE_METADATA_KEY</code>
 (<code>"django_pydantic_agent.destructive"</code>) rides pydantic-ai's <code>ToolDefinition</code>
-metadata rather than the schema, because it has a different audience. The <code>x-*</code>
-keys reach the <em>client</em>; this one is read <strong>server-side</strong> at <code>prepare_tools</code>
-time by the <a href="../policy/">tool guard</a>, which needs destructiveness for tools whose
-flag doesn't come from the <code>@tool</code> registry at all — a bridged drf-mcp tool,
-whose <code>readOnlyHint</code> annotation the bridge maps onto this key.</p>
+metadata rather than the schema, because metadata is the channel a <em>bridge</em>
+controls where the schema belongs to the tool's author. It is read
+<strong>server-side</strong> at <code>prepare_tools</code> time by the <a href="../policy/">tool guard</a>, which
+needs destructiveness for tools whose flag doesn't come from the <code>@tool</code>
+registry at all — a bridged drf-mcp tool, whose <code>readOnlyHint</code> annotation the
+bridge maps onto this key.</p>
+<p>A registry tool's own <code>destructive=True</code> never travels either channel: it stays
+on the spec, and the guard reads it from the registry directly. What reaches the
+guard through the schema is the case where <code>build_input_schema</code> was used
+<a href="#deriving-a-schema-on-its-own">on its own</a> and the tool attached through
+<code>toolsets=</code>.</p>
 <h2 id="the-tool-catalog">The tool catalog<a class="headerlink" href="#the-tool-catalog" title="Permanent link">&para;</a></h2>
 <p>Server-side tools execute server-side, so their JSON Schema never reaches the
 browser — which means a web component can't read an <code>x-summary</code> off it. That is
@@ -994,6 +1000,12 @@ projects that want a tool's schema outside the registration flow:</p>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">schema</span> <span class="o">=</span> <span class="n">build_input_schema</span><span class="p">(</span><span class="n">find_order</span><span class="p">,</span> <span class="n">destructive</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">category</span><span class="o">=</span><span class="n">ToolCategory</span><span class="o">.</span><span class="n">UI_READ</span><span class="p">)</span>
 </span></code></pre></div>
+<p>A leading <code>ctx: RunContext[...]</code> parameter is <strong>not</strong> a tool argument and is
+left out of the schema: pydantic-ai fills it from the run, so advertising it
+would ask the model to invent a value for something it cannot supply. Dispatch
+follows the same rule — <code>registry.call(name, arguments, ctx=ctx)</code> binds it from
+the caller, and a tool that declares one and is dispatched without a <code>ctx</code>
+raises rather than being handed <code>None</code>.</p>
 <p>See the <a href="../reference/registry/">registry reference</a> for the full signatures.</p>
 
 

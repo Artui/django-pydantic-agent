@@ -1022,6 +1022,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig.reraise" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reraise
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#toolfailurepolicy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1480,6 +1491,17 @@
     <span class="md-ellipsis">
       
         include_detail
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_pydantic_agent.ToolFailureConfig.reraise" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reraise
       
     </span>
   </a>
@@ -2034,10 +2056,16 @@ with the error message included.</p>
 <p>Turns the <a class="autorefs autorefs-internal" title="ToolGuard" href="#django_pydantic_agent.ToolGuard"><code>ToolGuard</code></a>
 capability on and tunes which tools it flips to require human approval. Off
 by default, so the gate never surprises a project that has not opted in.</p>
-<p>When enabled, a tool is gated if it is destructive — a registry
-<code>@tool(destructive=True)</code>, or a drf-mcp tool whose <code>readOnlyHint</code> is
-<code>False</code> — or its name is in <code>require_approval</code>. <code>exempt</code> overrides
-both.</p>
+<p>When enabled, a tool is gated if it is destructive or its name is in
+<code>require_approval</code>; <code>exempt</code> overrides both. A tool counts as destructive
+when it is a registry <code>@tool(destructive=True)</code>, or when its definition
+says so — the drf-mcp bridge's metadata key, an MCP <code>readOnlyHint</code> of
+<code>False</code> (a drf-services <code>ServiceSpec</code> through <code>SpecToolset</code>, among
+others), or an <code>x-destructive</code> stamp at the root of its parameter schema.</p>
+<p><strong>Nothing else is gated.</strong> A tool from a source that declares none of those
+is invisible to the gate however dangerous it is, and <code>require_approval</code>
+is the only answer for it. Off by default, so on stock settings a
+server-side destructive tool runs with no approval interrupt at all.</p>
 
 
 
@@ -2170,8 +2198,8 @@ and this supplies the policy, flipping a plain <code>function</code> tool to
 <code>unapproved</code> at <code>prepare_tools</code> time when it is destructive. Server-side
 tools thereby get the confirmation gate the web component already applies to
 client-registered ones.</p>
-<p>Destructiveness is read from three sources, so one hook covers every tool the
-agent sees wherever it came from:</p>
+<p>Destructiveness is read from every vocabulary a toolset might declare it in,
+so one hook covers every tool the agent sees wherever it came from:</p>
 <ul>
 <li><strong>Registry</strong> <code>@tool(destructive=True)</code>, collected at construction: the
   flag lives on the spec and never reaches pydantic-ai, which sees a bare
@@ -2184,9 +2212,25 @@ agent sees wherever it came from:</p>
       module-attribute
   " href="../registry/#django_pydantic_agent.constants.DESTRUCTIVE_METADATA_KEY"><code>DESTRUCTIVE_METADATA_KEY</code></a> the
   bridge stamps into <code>ToolDefinition.metadata</code>.</li>
+<li><strong>MCP tool annotations</strong> — <code>metadata["annotations"]["readOnlyHint"] is
+  False</code>. A toolset that speaks MCP's own vocabulary rather than this
+  package's key declares a mutation this way, <code>SpecToolset</code> over a
+  drf-services <code>ServiceSpec</code> among them. Without this the <em>same</em> spec was
+  gated when it arrived over the drf-mcp bridge and ungated when it was
+  attached in process, so a transport swap silently removed the gate.</li>
+<li><strong>The <code>x-destructive</code> schema stamp</strong> at the root of
+  <code>parameters_json_schema</code>, which is what
+  <a class="autorefs autorefs-internal" title="build_input_schema" href="../registry/#django_pydantic_agent.build_input_schema"><code>build_input_schema</code></a> writes.
+  That key is documented as the client-side signal and had no server-side
+  reader; a project deriving a schema with the package's own helper and
+  attaching the tool through <code>toolsets=</code> got no gate from it.</li>
 <li><strong>Project overrides</strong>: <code>require_approval</code> force-gates a name, <code>exempt</code>
   un-gates one, and <code>exempt</code> wins.</li>
 </ul>
+<p>A hint has to <em>say</em> the tool mutates. A missing <code>readOnlyHint</code>, an absent
+stamp or metadata of another shape entirely leaves the tool alone — silence
+is not a claim, and <code>require_approval</code> is the answer for a tool whose
+source declares nothing.</p>
 <p>Only <code>kind="function"</code> tools are flipped — an <code>external</code> tool is already
 gated client-side, and an <code>output</code> tool is not executed.</p>
 <p>The guard touches only <code>prepare_tools</code>, so it is orthogonal to
@@ -2327,6 +2371,43 @@ the browser that renders its answer.</p>
 
 </div>
 
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="django_pydantic_agent.ToolFailureConfig.reraise" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">reraise</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#django_pydantic_agent.ToolFailureConfig.reraise" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">reraise</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">type</span><span class="p">[</span><span class="ne">BaseException</span><span class="p">],</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Exception types that pass through untouched, ending the run as they would
+without the policy.</p>
+<p><code>None</code> means the built-in set: an authorization refusal, in both the
+flavours a Django project raises it — <code>django.core.exceptions</code>' and, when
+DRF is installed, <code>rest_framework.exceptions</code>'. Pass a tuple to replace
+that set wholesale, or <code>()</code> to convert every exception.</p>
+<p><strong>Why a denial is not a tool failure.</strong> A converted denial leaves the run
+alive and the model free to call the same tool on the next row, while a
+failed result stays distinguishable from a "not found" one — so a sweep over
+ids turns a permission boundary into an existence oracle inside a single
+turn. A <code>ToolFailed</code> spends no retry budget, so nothing bounds the sweep
+but run-level <code>UsageLimits</code>. Refusing to run is the <em>answer</em> to a denied
+call, not a fault to route around.</p>
+
+    </div>
+
+</div>
+
 
 
 
@@ -2376,6 +2457,9 @@ retry budget, so bound a persistently broken tool with run-level
 <code>django_pydantic_agent.failure</code> logger, and an <code>AuditCapability</code> in the
 same chain still records the failure against the tool that caused it. What
 changes is only who the failure stops.</p>
+<p><strong>An authorization refusal is exempt</strong> and ends the run as it would without
+the policy — see <code>ToolFailureConfig.reraise</code>, which is also how a project
+exempts more, or nothing at all.</p>
 
 
 
