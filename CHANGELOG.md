@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`build_spec_capability` flattened a spec registry, dropping everything the
+  entry carries.** It called `resolve_spec_mapping` and handed `SpecCapability`
+  a `name -> spec` dict, so a `SpecRegistry`'s per-entry declarations never
+  reached the toolset — including drf-services 0.45's `AgentContract`, which is
+  where a project says what a caller with **no HTTP request** has to be told
+  (the URL kwargs, query params and field-audience overrides the URLconf and
+  query string give an HTTP caller for free).
+
+  A registry now passes through as a registry, narrowed with its own `subset`
+  when `exclude_names` bites. A plain mapping is unchanged.
+
+  **The failure was silent**, which is why it survived: the resulting toolset is
+  well-formed and merely missing declarations nobody asked it for. Nothing
+  raises, no tool is absent, and the loss only shows as an argument the model was
+  never offered — or a field it was shown and should not have been.
+
 ## [0.18.0] — 2026-08-26
 
 ### Added

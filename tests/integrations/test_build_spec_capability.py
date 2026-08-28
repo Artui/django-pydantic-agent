@@ -121,6 +121,85 @@ def test_exclude_names_apply_to_a_registry_too() -> None:
     assert set(capability.get_toolset()._specs) == {"ping"}
 
 
+def _capture_source(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Record what this builder actually hands to ``SpecCapability``."""
+    import rest_framework_pydantic_ai
+
+    captured: list[Any] = []
+
+    def _stub(source: Any, **kwargs: Any) -> Any:
+        captured.append(source)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(rest_framework_pydantic_ai, "SpecCapability", _stub)
+    return captured
+
+
+class TestARegistryIsNotFlattened:
+    """The entry carries more than the spec, and only the entry carries it.
+
+    A registry entry holds the per-entry declarations an agent transport reads
+    -- its tags, and the ``AgentContract`` saying what a caller with no HTTP
+    request has to be told. ``specs()`` returns ``name -> spec`` and drops all
+    of it, which is why this builder must pass the source through rather than
+    normalise it first. The failure is silent: the toolset is well-formed and
+    merely missing declarations nobody asked it for.
+    """
+
+    def test_the_registry_reaches_the_capability_as_a_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rest_framework_services import SpecRegistry
+
+        captured = _capture_source(monkeypatch)
+        registry = SpecRegistry()
+        registry.register(
+            "ping",
+            ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]),
+            tags=("read",),
+        )
+
+        build_spec_capability(registry)
+
+        # ``specs()`` is what tells a registry from a mapping -- the same test
+        # ``resolve_spec_mapping`` uses -- and the entry is what survives.
+        (source,) = captured
+        assert callable(getattr(source, "specs", None))
+        assert source.get("ping").tags == frozenset({"read"})
+
+    def test_narrowing_by_exclude_names_keeps_it_a_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rest_framework_services import SpecRegistry
+
+        captured = _capture_source(monkeypatch)
+        registry = SpecRegistry()
+        registry.register(
+            "ping",
+            ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]),
+            tags=("read",),
+        )
+        registry.register(
+            "dup", ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])
+        )
+
+        build_spec_capability(registry, exclude_names=frozenset({"dup"}))
+
+        (source,) = captured
+        assert set(source.specs()) == {"ping"}
+        assert source.get("ping").tags == frozenset({"read"})
+
+    def test_a_plain_mapping_is_still_a_plain_mapping(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_source(monkeypatch)
+        spec = ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])
+
+        build_spec_capability({"ping": spec, "dup": spec}, exclude_names=frozenset({"dup"}))
+
+        assert captured == [{"ping": spec}]
+
+
 async def test_a_specs_progress_reports_reach_the_runs_sink() -> None:
     """The other half of what rides ``ctx.deps``.
 
