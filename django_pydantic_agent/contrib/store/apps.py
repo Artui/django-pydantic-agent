@@ -9,8 +9,8 @@ class StoreConfig(AppConfig):
     Add ``"django_pydantic_agent.contrib.store"`` to ``INSTALLED_APPS``, run
     ``migrate``, then pass the matching store to your transport. The base package
     ships no model of its own, so a project that does not opt in gets no
-    migration. Backs ``DefaultConversationStore``, ``DefaultAttachmentStore`` and
-    ``DefaultStepStore``.
+    migration. Backs ``DefaultConversationStore``, ``DefaultAttachmentStore``,
+    ``DefaultStepStore`` and ``DefaultMemoryStore``.
     """
 
     name = "django_pydantic_agent.contrib.store"

@@ -21,7 +21,12 @@ import pytest
 
 DOCS = pathlib.Path(__file__).resolve().parents[3] / "docs" / "storage.md"
 
-STORES = ("DefaultConversationStore", "DefaultAttachmentStore", "DefaultStepStore")
+STORES = (
+    "DefaultConversationStore",
+    "DefaultAttachmentStore",
+    "DefaultStepStore",
+    "DefaultMemoryStore",
+)
 
 # An import statement inside a fenced Python block, over one line or several.
 _IMPORT = re.compile(
