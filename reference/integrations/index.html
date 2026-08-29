@@ -1133,6 +1133,12 @@ project migrating a large registry constructs <code>SpecCapability</code> itself
 passes it to <code>AgentConfig(capabilities=...)</code>. That path skips the
 tool-catalog registration this function participates in, so tool-call cards
 render unlabelled — a migration step, not a destination.</p>
+<p><strong>A registry is passed through as a registry</strong>, narrowed with its own
+<code>subset</code> when <code>exclude_names</code> bites. Flattening it to a mapping first
+would drop everything the entry carries beyond the spec -- including the
+<code>AgentContract</code> that says what a caller with no HTTP request has to be
+told -- and drop it <em>silently</em>, since the resulting toolset is well-formed
+and merely missing declarations nobody asked it for.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -1156,7 +1162,8 @@ render unlabelled — a migration step, not a destination.</p>
             <td>
               <div class="doc-md-description">
                 <p>A <code>name -&gt; ServiceSpec/SelectorSpec</code> mapping, or a spec registry
-to read one from.</p>
+to read one from. Prefer the registry: it is the same specs plus the
+per-entry declarations an agent transport reads.</p>
               </div>
             </td>
             <td>
