@@ -570,6 +570,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#per-user-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-user memory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-user memory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-scoping-modes-and-which-one-you-get" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two scoping modes, and which one you get
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#turn-the-tool-guard-on-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turn the tool guard on first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#namespace-is-the-user-agent_name-is-the-mount" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        namespace is the user, agent_name is the mount
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-store-adds-over-the-reference-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the store adds over the reference implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#app-authored-facts-do-not-belong-in-the-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App-authored facts do not belong in the store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#erasure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Erasure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-must-be-inspectable-before-it-is-switched-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory must be inspectable before it is switched on
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1045,6 +1139,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#per-user-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-user memory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-user memory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-scoping-modes-and-which-one-you-get" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two scoping modes, and which one you get
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#turn-the-tool-guard-on-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turn the tool guard on first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#namespace-is-the-user-agent_name-is-the-mount" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        namespace is the user, agent_name is the mount
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-store-adds-over-the-reference-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the store adds over the reference implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#app-authored-facts-do-not-belong-in-the-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App-authored facts do not belong in the store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#erasure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Erasure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-must-be-inspectable-before-it-is-switched-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory must be inspectable before it is switched on
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1219,15 +1407,18 @@ get no migration. To use the ready-made ones:</p>
 </span></code></pre></div>
 <p>Then <code>migrate</code>, and pass the matching store to your transport
 (<code>conversation_store=</code> / <code>attachment_store=</code> / <code>step_store=</code>). The app provides
-<code>DefaultConversationStore</code>, <code>DefaultAttachmentStore</code> and <code>DefaultStepStore</code>, and
-each is imported <strong>from its own module</strong>:</p>
+<code>DefaultConversationStore</code>, <code>DefaultAttachmentStore</code>, <code>DefaultStepStore</code> and
+<code>DefaultMemoryStore</code>, and each is imported <strong>from its own module</strong>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.contrib.store.default_attachment_store</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">DefaultAttachmentStore</span><span class="p">,</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="p">)</span>
 </span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.contrib.store.default_conversation_store</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">DefaultConversationStore</span><span class="p">,</span>
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">)</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.contrib.store.default_step_store</span><span class="w"> </span><span class="kn">import</span> <span class="n">DefaultStepStore</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.contrib.store.default_memory_store</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">DefaultMemoryStore</span><span class="p">,</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="p">)</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.contrib.store.default_step_store</span><span class="w"> </span><span class="kn">import</span> <span class="n">DefaultStepStore</span>
 </span></code></pre></div>
 <p>The shorter <code>from django_pydantic_agent.contrib.store import DefaultConversationStore</code>
 is the natural guess and it does not exist. It cannot: this is a Django <em>app</em>, so
@@ -1314,7 +1505,7 @@ cascade you can point at, or on a command you schedule. There is no TTL sweep.</
 admin — skips the cascade and leaves the attachments unreferenced. They are not
 stranded permanently; the prune command is exactly what collects them.</p>
 <h2 id="maintenance-commands">Maintenance commands<a class="headerlink" href="#maintenance-commands" title="Permanent link">&para;</a></h2>
-<p>The <code>contrib.store</code> app ships three, all of them opt-in and none of them
+<p>The <code>contrib.store</code> app ships four, all of them opt-in and none of them
 scheduled for you:</p>
 <table>
 <thead>
@@ -1336,9 +1527,13 @@ scheduled for you:</p>
 <td><code>agent_store_strip_inline_bytes</code></td>
 <td>Rewrite stored conversations to drop inlined base64 file content.</td>
 </tr>
+<tr>
+<td><code>agent_store_purge_memory</code></td>
+<td>Erase every stored memory file for one owner.</td>
+</tr>
 </tbody>
 </table>
-<p>All three take <code>--dry-run</code>.</p>
+<p>All four take <code>--dry-run</code>.</p>
 <p><strong><code>--older-than</code> is why the prune command is safe to run.</strong> References alone
 cannot tell an upload abandoned last month from one sitting in a composer right
 now — both have zero. The threshold is the floor on how long an upload must
@@ -1378,6 +1573,168 @@ recent runs first sorts where it renders; a store that reversed the contract
 would hand that idiom the oldest run instead, silently, and only where more than
 one run exists.</p>
 <p>Full signatures in the <a href="../reference/persistence/">persistence reference</a>.</p>
+<h2 id="per-user-memory">Per-user memory<a class="headerlink" href="#per-user-memory" title="Permanent link">&para;</a></h2>
+<p><code>pydantic-ai-harness</code> ships a complete memory capability — four tools
+(<code>write_memory</code>, <code>read_memory</code>, <code>delete_memory</code>, <code>search_memory</code>), a
+<code>MemoryStore</code> protocol, bounded injection, compare-and-set versioning and
+idempotency receipts. <strong>This package does not reimplement any of it.</strong> It ships
+one thing the harness cannot: a Django-backed store, and the scoping that makes
+it multi-tenant.</p>
+<p><code>DefaultMemoryStore</code> is that store, and the direction of the contract is the same
+as <code>DefaultStepStore</code>'s: it <strong>structurally satisfies harness's <code>MemoryStore</code>
+protocol</strong>, which is upstream's and is not redeclared here. It needs the
+<code>[harness]</code> extra.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.memory</span><span class="w"> </span><span class="kn">import</span> <span class="n">Memory</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">memory_namespace_for_user</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_pydantic_agent.contrib.store.default_memory_store</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">DefaultMemoryStore</span><span class="p">,</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">)</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">capability</span> <span class="o">=</span> <span class="n">Memory</span><span class="p">(</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">DefaultMemoryStore</span><span class="p">(),</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">namespace</span><span class="o">=</span><span class="k">lambda</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">memory_namespace_for_user</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">deps</span><span class="o">.</span><span class="n">user</span><span class="p">),</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="p">)</span>
+</span></code></pre></div>
+<p>Hand it to your transport the way you would any other capability —
+<code>AGUIServer(capabilities=[capability])</code> for django-ag-ui. There is no settings
+key and no new configuration surface: <code>AgentConfig.capabilities</code> already reaches
+<code>Agent(capabilities=...)</code>.</p>
+<p><strong>The resolver reads <code>ctx.deps</code>, not a request, and that is not incidental.</strong> A
+capability list is resolved <strong>once</strong>, at mount time, where no request exists — so
+nothing request-shaped can be closed over in it. Per-user scoping rides the <em>run</em>
+instead: pydantic-ai clones every capability per run, and <code>Memory</code> re-resolves
+its namespace in the clone, so one agent built once serves every caller. The
+transport sets <code>AgentDeps.user</code> from the authenticated request, so it is
+server-resolved and not something a client can choose.</p>
+<h3 id="two-scoping-modes-and-which-one-you-get">Two scoping modes, and which one you get<a class="headerlink" href="#two-scoping-modes-and-which-one-you-get" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Constructed as</th>
+<th>Owner is</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DefaultMemoryStore()</code></td>
+<td>the leading path segment — the namespace the capability resolved</td>
+<td>the usual case: a mount-time <code>capabilities=</code> list</td>
+</tr>
+<tr>
+<td><code>DefaultMemoryStore(request)</code></td>
+<td>resolved server-side from the request; the path's namespace is not consulted at all</td>
+<td>you build the store per request — a custom view</td>
+</tr>
+</tbody>
+</table>
+<p>The request-bound mode is strictly stronger: it partitions rows independently of
+the path, so a resolver reading anything user-controlled still cannot cross
+scopes (a <code>/</code> inside a resolved namespace is <em>accepted</em> by the harness and simply
+opens further segments). Reach for it if you have a request to hand. Otherwise
+pair the namespace-scoped mode with <code>memory_namespace_for_user</code>, which derives
+the segment from a user the server resolved, and the namespace is a boundary the
+client cannot choose either.</p>
+<p><code>allow_anonymous</code> applies only to the request-bound mode. Without a request there
+is no anonymity to detect, and the resolver decides what an anonymous caller is
+called — <code>memory_namespace_for_user</code> returns one shared <code>anon</code> namespace, since
+with no request there is no session to key a per-visitor bucket on. Transports
+that refuse anonymous callers by default (django-ag-ui does) never reach it.</p>
+<h3 id="turn-the-tool-guard-on-first">Turn the tool guard on first<a class="headerlink" href="#turn-the-tool-guard-on-first" title="Permanent link">&para;</a></h3>
+<p>Memory may be allowed to steer what the model <strong>says</strong>. It must not be allowed to
+decide what the model <strong>does</strong> — and memory is <em>durable</em>, model-written, and
+replayed into every later run, so a note that reads as an instruction keeps
+working long after whoever planted it has gone.</p>
+<p><code>ToolGuard</code> is what holds that line: it reads the <code>x-destructive</code> stamp
+server-side, so a memory-planted "call <code>refund_order</code> first" still hits the
+approval interrupt. With no <code>tool_guard</code>, <code>build_agent</code>'s own docstring is blunt
+that "every server-side tool here runs the moment the model calls it".</p>
+<p><strong>Enable <code>TOOL_GUARD</code> before you enable memory.</strong> A mount with memory on and the
+guard off is a durable, user-writable path to unattended destructive calls. Each
+setting is defensible alone; they are only wrong together.</p>
+<h3 id="namespace-is-the-user-agent_name-is-the-mount"><code>namespace</code> is the user, <code>agent_name</code> is the mount<a class="headerlink" href="#namespace-is-the-user-agent_name-is-the-mount" title="Permanent link">&para;</a></h3>
+<p>The harness composes the scope key as <code>f"{namespace}/{agent_name}"</code>, so two
+mounts sharing one store are partitioned by construction — <code>Memory(store,
+agent_name="internal")</code> and <code>Memory(store, agent_name="public")</code> — and no
+<code>ScopedMemoryStore</code> wrapper is needed the way it is for conversations and steps.</p>
+<p>Use one of the two shipped resolvers for the user half — <code>memory_namespace_for_user(ctx.deps.user)</code>
+at mount time, or <code>memory_namespace(request)</code> when you hold a request — rather
+than reaching for the owner id the other stores partition on. That id is
+<code>anon:&lt;session_key&gt;</code> for an anonymous request, and a colon is outside the
+alphabet the harness accepts for a path segment, so <code>Memory</code> raises
+<code>invalid memory path</code> — from namespace resolution, which sits <em>outside</em> the store
+read that <code>injection_errors</code> guards, so upstream's <code>"ignore"</code> default does not
+catch it and the whole run 500s.</p>
+<p>Both resolvers always return a valid segment: a segment-safe primary key is
+carried through readably behind a <code>u-</code> prefix, and anything else — an email
+primary key, a natural key with a slash — is replaced by a digest of it rather
+than sanitised, because sanitising maps <code>tenant/42</code> and <code>tenant-42</code> onto one
+namespace.</p>
+<h3 id="what-the-store-adds-over-the-reference-implementations">What the store adds over the reference implementations<a class="headerlink" href="#what-the-store-adds-over-the-reference-implementations" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Owner-partitioned rows</strong></td>
+<td>The harness's stores are single-tenant; the scope lives only in the path, and the path comes from a resolver the host wrote.</td>
+</tr>
+<tr>
+<td><strong>Fence-tag neutralisation on write</strong></td>
+<td>Injected memory is wrapped in <code>&lt;memory&gt;</code> markers, and upstream says plainly this "is not a hard prompt-injection boundary". A stored note containing the closing tag ends the block early, and everything after it reads as the user's own turn — durably, on every later run. Every write here escapes the angle brackets of both tags.</td>
+</tr>
+<tr>
+<td><strong>Per-owner ceilings</strong></td>
+<td><code>max_memory_size</code> bounds one file and the injection budget bounds what is <em>read</em>; nothing upstream caps how many files a namespace accumulates or how large they grow in total. <code>max_files</code> and <code>max_total_chars</code> do.</td>
+</tr>
+<tr>
+<td><strong>Anonymous degradation</strong></td>
+<td>The capability's hooks fire mid-run, so refusing by raising would abort it. Writes no-op and reads return empty unless the store is built with <code>allow_anonymous=True</code>.</td>
+</tr>
+<tr>
+<td><strong><code>purge(owner_id)</code></strong></td>
+<td>Erasure, which the protocol cannot express.</td>
+</tr>
+</tbody>
+</table>
+<p>Neutralisation happens on <code>write</code> rather than <code>read</code> on purpose: it makes the
+stored bytes safe for <em>every</em> consumer — the injection, <code>read_memory</code>,
+<code>search_memory</code>, an app-side read — and it keeps <code>write_memory</code>'s <code>old_text</code>
+replacement working, because the model edits against the same escaped text it was
+shown. It rewrites only the literal tag forms, never the word <code>memory</code>, which
+belongs in ordinary notes.</p>
+<h3 id="app-authored-facts-do-not-belong-in-the-store">App-authored facts do not belong in the store<a class="headerlink" href="#app-authored-facts-do-not-belong-in-the-store" title="Permanent link">&para;</a></h3>
+<p>The store has no provenance column, so a trusted fact written there becomes
+indistinguishable from a model-written one at read time — and it is quoted back
+inside the same <code>&lt;memory&gt;</code> framing that tells the model this is unverified
+background. A fact the operator vouches for belongs in the operator channel:
+your transport's instructions hook, or <code>AgentDeps</code> for something a tool should
+read. The missing provenance column is not a gap to fill; it is a boundary
+telling you which facts belong in it.</p>
+<h3 id="erasure">Erasure<a class="headerlink" href="#erasure" title="Permanent link">&para;</a></h3>
+<p>Memory is durable personal data written <em>about</em> a user, so an erasure request has
+to be able to reach it. The <code>MemoryStore</code> protocol has no bulk or prefix delete —
+composing <code>list_paths</code> with <code>delete</code> needs each path's current version, giving an
+unbounded read-then-delete loop a concurrent <code>write_memory</code> can lose to — so the
+store carries a non-protocol <code>purge(owner_id)</code> that is one statement, plus a
+command:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_purge_memory<span class="w"> </span><span class="m">42</span><span class="w"> </span>--dry-run
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>python<span class="w"> </span>manage.py<span class="w"> </span>agent_store_purge_memory<span class="w"> </span><span class="m">42</span>
+</span></code></pre></div>
+<p>It is deliberately <strong>not</strong> wired to a <code>post_delete</code> signal on your user model.
+Whether deleting an account erases its memory is a product policy; a library's
+job here is to make the operation possible.</p>
+<h3 id="memory-must-be-inspectable-before-it-is-switched-on">Memory must be inspectable before it is switched on<a class="headerlink" href="#memory-must-be-inspectable-before-it-is-switched-on" title="Permanent link">&para;</a></h3>
+<p>A model quietly accumulating durable notes about someone, replayed into every
+future session with no surface listing them, is what makes this feature feel
+spooky rather than tailored. The minimum honest surface is <strong>list, read and
+delete</strong>, and the protocol provides all three (<code>list_paths</code>, <code>read</code>, <code>delete</code>),
+so a host can build one. Do that before turning memory on for real users.</p>
 
 
 
