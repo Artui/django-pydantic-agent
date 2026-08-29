@@ -14,7 +14,6 @@ from pydantic_ai_harness.memory import (
     MemoryStore,
 )
 from pydantic_ai_harness.memory._capability import _MEMORY_DATA_PREFIX, _MEMORY_DATA_SUFFIX
-from pydantic_ai_harness.memory._toolset import render_memory_prompt
 
 from django_pydantic_agent.contrib.store.default_memory_store import DefaultMemoryStore
 from django_pydantic_agent.contrib.store.models import StoredMemory, StoredMemoryOperation
@@ -59,23 +58,18 @@ def test_the_store_satisfies_the_harness_memory_store_protocol() -> None:
 
 
 def _inject(content: str) -> str:
-    """The block the harness would put in the prompt for ``content``.
+    """``content`` inside the fence the harness wraps injected memory in.
 
-    Built from upstream's own renderer and marker constants rather than a
-    hand-written fence, so the assertion is about the text a model would really
-    receive and cannot quietly agree with a wrong idea of the wire.
+    Built from upstream's own marker constants, and deliberately **not** from its
+    renderer: the renderer's signature moved within this package's declared
+    harness floor range (0.13 called the heading ``agent_name``), and a test that
+    reaches through a private signature fails on version skew rather than on the
+    behaviour it is about. What the block is made of is not the claim here —
+    ``tests/integrations/test_harness_memory.py`` drives the real capability and
+    asserts against the block it actually produces, so the wire itself is pinned
+    where it can be pinned honestly.
     """
-    body = render_memory_prompt(
-        content,
-        [],
-        heading="",
-        guidance="",
-        max_lines=200,
-        max_tokens=2000,
-        main_truncated=False,
-        files_truncated=False,
-    )
-    return f"{_MEMORY_DATA_PREFIX}{body}{_MEMORY_DATA_SUFFIX}"
+    return f"{_MEMORY_DATA_PREFIX}{content}{_MEMORY_DATA_SUFFIX}"
 
 
 def test_the_raw_harness_fence_can_be_closed_from_inside() -> None:
