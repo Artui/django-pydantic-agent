@@ -19,6 +19,9 @@ from django_pydantic_agent.persistence.django_session_conversation_store import 
     DjangoSessionConversationStore,
 )
 from django_pydantic_agent.persistence.memory_namespace import memory_namespace
+from django_pydantic_agent.persistence.memory_namespace_for_user import (
+    memory_namespace_for_user,
+)
 from django_pydantic_agent.persistence.model_attachment_store import ModelAttachmentStore
 from django_pydantic_agent.persistence.model_conversation_store import ModelConversationStore
 from django_pydantic_agent.persistence.null_attachment_store import NullAttachmentStore
@@ -87,5 +90,6 @@ __all__ = [
     "build_input_schema",
     "build_tool_catalog",
     "memory_namespace",
+    "memory_namespace_for_user",
     "tool",
 ]

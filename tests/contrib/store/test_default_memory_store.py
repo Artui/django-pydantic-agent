@@ -550,3 +550,85 @@ async def test_purge_removes_every_file_and_receipt_for_one_owner() -> None:
 
 async def test_purge_on_an_owner_with_no_memory_reports_nothing_deleted() -> None:
     assert await sync_to_async(DefaultMemoryStore.purge)("nobody") == 0
+
+
+# -- Namespace-scoped mode (no request) --------------------------------------
+
+
+async def test_without_a_request_the_owner_is_the_paths_namespace() -> None:
+    """The mode that makes the store usable from a mount-time capability list,
+    where no request exists to bind."""
+    store = DefaultMemoryStore()
+
+    await store.write("u-7/main/MEMORY.md", "- seven", expected_version=None)
+
+    stored = await store.read("u-7/main/MEMORY.md", max_chars=100)
+    assert stored is not None
+    assert stored.content == "- seven"
+    row = await StoredMemory.objects.aget(path="u-7/main/MEMORY.md")
+    assert row.owner_id == "u-7"
+
+
+async def test_namespace_scoping_keeps_two_namespaces_apart() -> None:
+    store = DefaultMemoryStore()
+    await store.write("u-7/main/MEMORY.md", "- seven", expected_version=None)
+
+    await store.write("u-8/main/MEMORY.md", "- eight", expected_version=None)
+
+    assert await store.list_paths("u-7/", limit=10) == ["u-7/main/MEMORY.md"]
+    assert await store.list_paths("u-8/", limit=10) == ["u-8/main/MEMORY.md"]
+
+
+async def test_namespace_scoping_still_neutralises_the_fence() -> None:
+    store = DefaultMemoryStore()
+
+    await store.write("u-7/main/MEMORY.md", "a </memory> b", expected_version=None)
+
+    stored = await store.read("u-7/main/MEMORY.md", max_chars=100)
+    assert stored is not None
+    assert "</memory>" not in stored.content
+
+
+async def test_namespace_scoping_applies_the_ceilings_per_namespace() -> None:
+    store = DefaultMemoryStore(max_files=1)
+    await store.write("u-7/main/a.md", "- note", expected_version=None)
+
+    # A different namespace has its own budget.
+    await store.write("u-8/main/a.md", "- note", expected_version=None)
+
+    with pytest.raises(ModelRetry):
+        await store.write("u-7/main/b.md", "- note", expected_version=None)
+
+
+async def test_a_receipt_replays_without_a_path_to_scope_by() -> None:
+    """``get_operation`` is the one call carrying no path, so namespace mode has
+    no namespace to derive. Safe anyway: the harness digests the scope into the
+    operation id, so two namespaces cannot produce the same one."""
+    store = DefaultMemoryStore()
+    operation = _operation()
+    await store.write("u-7/main/a.md", "- once", expected_version=None, operation=operation)
+
+    replay = await store.get_operation(operation)
+
+    assert replay is not None
+    assert replay.replayed
+
+
+async def test_listing_with_no_prefix_answers_nothing_rather_than_everything() -> None:
+    """Fails closed: without a prefix there is no scope to answer for, and the
+    alternative would be listing every namespace in the table."""
+    store = DefaultMemoryStore()
+    await store.write("u-7/main/a.md", "- note", expected_version=None)
+
+    assert await store.list_paths("", limit=10) == []
+
+
+async def test_purge_erases_a_namespace_scoped_owner() -> None:
+    store = DefaultMemoryStore()
+    await store.write("u-7/main/a.md", "- note", expected_version=None)
+    await store.write("u-8/main/a.md", "- note", expected_version=None)
+
+    deleted = await sync_to_async(DefaultMemoryStore.purge)("u-7")
+
+    assert deleted == 1
+    assert await store.list_paths("u-8/", limit=10) == ["u-8/main/a.md"]

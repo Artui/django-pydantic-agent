@@ -347,14 +347,14 @@ protocol**, which is upstream's and is not redeclared here. It needs the
 ```python
 from pydantic_ai_harness.memory import Memory
 
-from django_pydantic_agent import memory_namespace
+from django_pydantic_agent import memory_namespace_for_user
 from django_pydantic_agent.contrib.store.default_memory_store import (
     DefaultMemoryStore,
 )
 
 capability = Memory(
-    DefaultMemoryStore(request),
-    namespace=lambda ctx: memory_namespace(request),
+    DefaultMemoryStore(),
+    namespace=lambda ctx: memory_namespace_for_user(ctx.deps.user),
 )
 ```
 
@@ -362,6 +362,35 @@ Hand it to your transport the way you would any other capability —
 `AGUIServer(capabilities=[capability])` for django-ag-ui. There is no settings
 key and no new configuration surface: `AgentConfig.capabilities` already reaches
 `Agent(capabilities=...)`.
+
+**The resolver reads `ctx.deps`, not a request, and that is not incidental.** A
+capability list is resolved **once**, at mount time, where no request exists — so
+nothing request-shaped can be closed over in it. Per-user scoping rides the *run*
+instead: pydantic-ai clones every capability per run, and `Memory` re-resolves
+its namespace in the clone, so one agent built once serves every caller. The
+transport sets `AgentDeps.user` from the authenticated request, so it is
+server-resolved and not something a client can choose.
+
+### Two scoping modes, and which one you get
+
+| Constructed as | Owner is | Use when |
+| --- | --- | --- |
+| `DefaultMemoryStore()` | the leading path segment — the namespace the capability resolved | the usual case: a mount-time `capabilities=` list |
+| `DefaultMemoryStore(request)` | resolved server-side from the request; the path's namespace is not consulted at all | you build the store per request — a custom view |
+
+The request-bound mode is strictly stronger: it partitions rows independently of
+the path, so a resolver reading anything user-controlled still cannot cross
+scopes (a `/` inside a resolved namespace is *accepted* by the harness and simply
+opens further segments). Reach for it if you have a request to hand. Otherwise
+pair the namespace-scoped mode with `memory_namespace_for_user`, which derives
+the segment from a user the server resolved, and the namespace is a boundary the
+client cannot choose either.
+
+`allow_anonymous` applies only to the request-bound mode. Without a request there
+is no anonymity to detect, and the resolver decides what an anonymous caller is
+called — `memory_namespace_for_user` returns one shared `anon` namespace, since
+with no request there is no session to key a per-visitor bucket on. Transports
+that refuse anonymous callers by default (django-ag-ui does) never reach it.
 
 ### Turn the tool guard on first
 
@@ -386,22 +415,20 @@ mounts sharing one store are partitioned by construction — `Memory(store,
 agent_name="internal")` and `Memory(store, agent_name="public")` — and no
 `ScopedMemoryStore` wrapper is needed the way it is for conversations and steps.
 
-Use `memory_namespace(request)` for the user half rather than reaching for the
-owner id the other stores partition on. That id is `anon:<session_key>` for an
-anonymous request, and a colon is outside the alphabet the harness accepts for a
-path segment, so `Memory` raises `invalid memory path` — from namespace
-resolution, which sits *outside* the store read that `injection_errors` guards,
-so upstream's `"ignore"` default does not catch it and the whole run 500s.
-`memory_namespace` always returns a valid segment: a segment-safe primary key is
+Use one of the two shipped resolvers for the user half — `memory_namespace_for_user(ctx.deps.user)`
+at mount time, or `memory_namespace(request)` when you hold a request — rather
+than reaching for the owner id the other stores partition on. That id is
+`anon:<session_key>` for an anonymous request, and a colon is outside the
+alphabet the harness accepts for a path segment, so `Memory` raises
+`invalid memory path` — from namespace resolution, which sits *outside* the store
+read that `injection_errors` guards, so upstream's `"ignore"` default does not
+catch it and the whole run 500s.
+
+Both resolvers always return a valid segment: a segment-safe primary key is
 carried through readably behind a `u-` prefix, and anything else — an email
 primary key, a natural key with a slash — is replaced by a digest of it rather
 than sanitised, because sanitising maps `tenant/42` and `tenant-42` onto one
 namespace.
-
-The namespace is not asked to be the security boundary. `DefaultMemoryStore`
-filters every query on the owner it resolves server-side, so a namespace that is
-wrong, guessed, or contains a `/` that opens further path segments still cannot
-reach another owner's rows.
 
 ### What the store adds over the reference implementations
 

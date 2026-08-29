@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -103,3 +105,35 @@ __all__ = [
     "owner_id_for",
     "resolve_owner_id",
 ]
+
+
+# The shape ``pydantic-ai-harness`` validates every memory path segment against
+# (``memory._store._VALID_SEGMENT_RE``), restated rather than imported: the
+# harness is an optional extra, and a namespace has to be resolvable in a project
+# that never installs it. The memory namespace tests check the result against the
+# real ``validate_store_path`` when the extra is present.
+_SAFE_SEGMENT_RE = re.compile(r"[A-Za-z0-9_.-]{1,200}")
+
+# Long enough that two distinct identifiers colliding is not a threat model,
+# short enough to leave room under the 200-character segment limit for a prefix.
+_NAMESPACE_HASH_CHARS = 40
+
+
+def safe_namespace_segment(prefix: str, identifier: str) -> str:
+    """``prefix`` + ``identifier``, or + a digest of it when that is not a valid segment.
+
+    Shared by the two memory namespace resolvers, which differ only in where they
+    read the identifier from. The prefix is inside the check rather than bolted on
+    afterwards, because whether the result fits the 200-character limit depends on
+    the prefix too.
+
+    **Digesting rather than sanitising is the point.** Stripping the offending
+    characters maps ``tenant/42`` and ``tenant-42`` onto one namespace, and two
+    users sharing a namespace is exactly what a per-user scope exists to prevent.
+    """
+    candidate = f"{prefix}{identifier}"
+    # ``..`` is rejected by the harness independently of the character class, so a
+    # segment built from ``a..b`` matches the regex and is still refused.
+    if _SAFE_SEGMENT_RE.fullmatch(candidate) and ".." not in candidate:
+        return candidate
+    return f"{prefix}{hashlib.sha256(identifier.encode()).hexdigest()[:_NAMESPACE_HASH_CHARS]}"

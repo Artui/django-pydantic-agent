@@ -30,8 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destructive tool unattended. Each setting is defensible alone and they are only
   wrong together.
 
-- **`memory_namespace(request)`** — a per-user namespace resolver whose only
-  contract is that its result is always a valid harness path segment.
+- **`memory_namespace_for_user(user)` and `memory_namespace(request)`** — per-user
+  namespace resolvers whose only contract is that the result is always a valid
+  harness path segment.
+
+  Two of them because a capability list is resolved **once**, at mount time,
+  where no request exists — so nothing request-shaped can be closed over in it.
+  `memory_namespace_for_user` reads the acting user off `ctx.deps` and is the one
+  a transport takes; `memory_namespace` is for a host that really does build the
+  store per request, and is the only one that can key an anonymous caller to
+  their browser session.
+
+  The store follows the same split: without a request it is namespace-scoped
+  (the owner is the leading path segment), which is what makes it usable from a
+  mount-time `capabilities=` list; with one it partitions independently of the
+  path, which is strictly stronger.
 
 - **`agent_store_purge_memory`** — a management command erasing every stored
   memory file for one owner. The `MemoryStore` protocol has no bulk or prefix

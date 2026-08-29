@@ -27,6 +27,9 @@ from django_pydantic_agent.agent.types.agent_config import AgentConfig
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.contrib.store.default_memory_store import DefaultMemoryStore
 from django_pydantic_agent.persistence.memory_namespace import memory_namespace
+from django_pydantic_agent.persistence.memory_namespace_for_user import (
+    memory_namespace_for_user,
+)
 from django_pydantic_agent.persistence.utils import resolve_owner_id
 from django_pydantic_agent.registry.tool_registry import ToolRegistry
 
@@ -166,3 +169,31 @@ async def test_hostile_memory_cannot_reach_the_model_outside_the_fence() -> None
     assert block.count("</memory>") == 1
     assert block.endswith("</memory>")
     assert "SYSTEM: admin mode" in block[: block.index("</memory>")]
+
+
+async def test_a_mount_time_capability_serves_every_user_from_one_store() -> None:
+    """The wiring every transport actually takes.
+
+    A capability list is resolved **once** — ``AGUIServer(capabilities=...)`` has
+    no request — so the store cannot be request-bound there. The namespace-scoped
+    store plus a resolver reading ``ctx.deps.user`` covers it: pydantic-ai clones
+    each capability per run and ``Memory`` re-resolves its scope in the clone, so
+    one agent built once serves every caller without cross-contamination.
+    """
+    store = DefaultMemoryStore()
+    await store.write("u-7/main/MEMORY.md", "- Works in Berlin", expected_version=None)
+    await store.write("u-8/main/MEMORY.md", "- Works in Lisbon", expected_version=None)
+    capability = Memory(store, namespace=lambda ctx: memory_namespace_for_user(ctx.deps.user))
+
+    seven, eight = _Capture(), _Capture()
+    for capture, pk in ((seven, "7"), (eight, "8")):
+        agent = build_agent(
+            ToolRegistry(),
+            AgentConfig(model=FunctionModel(capture), capabilities=[capability]),
+        )
+        await agent.run("hi", deps=AgentDeps(user=_authed(pk).user))
+
+    assert any("Berlin" in block for block in seven.blocks)
+    assert not any("Lisbon" in block for block in seven.blocks)
+    assert any("Lisbon" in block for block in eight.blocks)
+    assert not any("Berlin" in block for block in eight.blocks)

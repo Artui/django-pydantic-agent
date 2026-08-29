@@ -62,6 +62,10 @@ models.
 
 ::: django_pydantic_agent.memory_namespace
 
+### `memory_namespace_for_user`
+
+::: django_pydantic_agent.memory_namespace_for_user
+
 ## Errors
 
 ### `AnonymousOperationError`

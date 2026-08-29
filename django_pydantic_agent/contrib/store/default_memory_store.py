@@ -93,15 +93,35 @@ class DefaultMemoryStore:
 
     def __init__(
         self,
-        request: HttpRequest,
+        request: HttpRequest | None = None,
         *,
         allow_anonymous: bool = False,
         max_files: int = _DEFAULT_MAX_FILES,
         max_total_chars: int = _DEFAULT_MAX_TOTAL_CHARS,
     ) -> None:
-        """Pass ``allow_anonymous`` explicitly: this substrate reads no Django
+        """``request`` is optional, and which of the two modes you get depends on it.
+
+        **Without one (the usual case), the store is namespace-scoped**: the owner
+        is the leading segment of each path, which is the namespace the capability
+        resolved. That is what lets it be constructed at *mount time*, where every
+        transport takes its capability list and no request exists —
+        ``AGUIServer(capabilities=[Memory(DefaultMemoryStore(), ...)])``. Pair it
+        with
+        [`memory_namespace_for_user`][django_pydantic_agent.memory_namespace_for_user],
+        which derives that segment from the server-resolved ``ctx.deps.user``, and
+        the namespace is a boundary the client cannot choose.
+
+        **With one, the owner is resolved server-side from the request** and the
+        path's namespace is not trusted at all, so a resolver reading anything
+        user-controlled still cannot reach another owner's rows. Only available to
+        a host that builds the store per request — a custom view, or a transport
+        seam that hands one over.
+
+        Pass ``allow_anonymous`` explicitly: this substrate reads no Django
         settings, and the value should match the conversation store's, so two
-        endpoints sharing a persistence strategy agree on it."""
+        endpoints sharing a persistence strategy agree on it. It applies only in
+        the request-bound mode; without a request there is no anonymity to detect,
+        and the namespace resolver decides what an anonymous caller is called."""
         self._request = request
         self._allow_anonymous: bool = allow_anonymous
         self._max_files: int = max_files
@@ -170,15 +190,24 @@ class DefaultMemoryStore:
 
     # -- Sync row operations (owner resolved off the event loop) --------------
 
-    def _owner(self) -> str | None:
-        """The resolved owner id, or ``None`` when an anonymous request is refused."""
+    def _owner(self, path: str) -> str | None:
+        """The owner every query for ``path`` filters on, or ``None`` to degrade.
+
+        Namespace-scoped without a request: the leading path segment is the scope
+        the capability resolved, and partitioning on it is what makes the store
+        usable from a mount-time capability list. With a request, the owner is
+        resolved from it instead and the path is not consulted -- strictly
+        stronger, because then even a wrong namespace cannot cross scopes.
+        """
+        if self._request is None:
+            return path.split("/", 1)[0]
         try:
             return resolve_owner_id(self._request, allow_anonymous=self._allow_anonymous)
         except AnonymousOperationError:
             return None
 
     def _read(self, path: str, max_chars: int) -> MemoryFile | None:
-        owner = self._owner()
+        owner = self._owner(path)
         if owner is None:
             return None
         row = StoredMemory.objects.filter(owner_id=owner, path=path).first()
@@ -192,22 +221,34 @@ class DefaultMemoryStore:
         )
 
     def _get_operation(self, operation: MemoryOperation) -> MemoryMutation | None:
-        owner = self._owner()
+        """A receipt lookup, which is the one call that carries no path.
+
+        So there is no namespace to scope by, and in namespace mode the owner
+        cannot be derived. Looking a receipt up by its id alone is nonetheless
+        safe: the harness derives the id as a digest of ``(scope, run_id,
+        tool_call_id)``, so the scope is already inside it and two owners cannot
+        produce the same one. A request-bound store still filters by owner as
+        well, because it can.
+        """
+        if self._request is None:
+            return self._receipt(None, operation)
+        owner = self._owner("")
         if owner is None:
             return None
         return self._receipt(owner, operation)
 
     @staticmethod
-    def _receipt(owner: str, operation: MemoryOperation) -> MemoryMutation | None:
+    def _receipt(owner: str | None, operation: MemoryOperation) -> MemoryMutation | None:
         """A prior result for ``operation``, or ``None`` if it has not run here.
 
         A known id whose fingerprint does not match is a reused id, not a replay:
         returning the old result would answer a different question than the one
         asked, so the protocol refuses instead.
         """
-        row = StoredMemoryOperation.objects.filter(
-            owner_id=owner, operation_id=operation.id
-        ).first()
+        rows = StoredMemoryOperation.objects.filter(operation_id=operation.id)
+        if owner is not None:
+            rows = rows.filter(owner_id=owner)
+        row = rows.first()
         if row is None:
             return None
         if row.fingerprint != operation.fingerprint:
@@ -223,7 +264,7 @@ class DefaultMemoryStore:
         expected_version: str | None,
         operation: MemoryOperation | None,
     ) -> MemoryMutation:
-        owner = self._owner()
+        owner = self._owner(path)
         if owner is None:
             return _unpersisted_mutation()
         with transaction.atomic():
@@ -264,7 +305,7 @@ class DefaultMemoryStore:
         expected_version: str | None,
         operation: MemoryOperation | None,
     ) -> MemoryMutation:
-        owner = self._owner()
+        owner = self._owner(path)
         if owner is None:
             return MemoryMutation(version=None, replayed=False, existed=False)
         with transaction.atomic():
@@ -283,7 +324,12 @@ class DefaultMemoryStore:
             return mutation
 
     def _list_paths(self, prefix: str, limit: int) -> list[str]:
-        owner = self._owner()
+        # The prefix stands in for the path here, so in namespace mode an *empty*
+        # prefix resolves to an empty owner and matches nothing. That is the right
+        # way round: without a prefix there is no scope to answer for, and the
+        # alternative would be listing every namespace in the table. The harness
+        # always lists within a scope, so it never asks.
+        owner = self._owner(prefix)
         if owner is None:
             return []
         rows = StoredMemory.objects.filter(owner_id=owner, path__startswith=prefix)
