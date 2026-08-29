@@ -68,7 +68,7 @@ google = ["pydantic-ai-slim[google]>=2.16,<3"]
 drf-mcp = ["djangorestframework-mcp-server>=0.30"]
 # Expose drf-services specs directly as agent tools via djangorestframework-
 # pydantic-ai's SpecCapability — no MCP server in the path.
-spec-tools = ["djangorestframework-pydantic-ai>=0.16"]
+spec-tools = ["djangorestframework-pydantic-ai>=0.20"]
 # pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
 # CodeMode batching, compaction, step persistence, sub-agents.
 harness = ["pydantic-ai-harness[code-mode]>=0.13"]
@@ -101,7 +101,7 @@ dev = [
     # makes the project unsatisfiable against its own extra.
     "djangorestframework-mcp-server>=0.30",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.
-    "djangorestframework-pydantic-ai>=0.16",
+    "djangorestframework-pydantic-ai>=0.20",
     # The [harness] extra's backing package, so the harness capabilities run in dev.
     "pydantic-ai-harness[code-mode]>=0.13",
     # Provider libs so the api_key / provider model-building path is exercised

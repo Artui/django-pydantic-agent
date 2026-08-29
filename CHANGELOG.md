@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Floor raised to `djangorestframework-pydantic-ai>=0.20`.** The registry
+  passthrough below is only worth anything if the package on the other side
+  *reads* a registry, and PAI learned to in 0.20.0. Below that it flattens the
+  entry to `name -> spec` again, so handing one over changes nothing — silently,
+  which is the failure this floor exists to prevent.
+
+  Versions below 0.20 are also unusable against `drf-services` 0.48.0, which
+  removed the audience symbols they import.
+
+
 ### Fixed
 
 - **`build_spec_capability` flattened a spec registry, dropping everything the
