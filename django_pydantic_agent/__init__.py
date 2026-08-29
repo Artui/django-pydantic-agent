@@ -18,6 +18,7 @@ from django_pydantic_agent.persistence.anonymous_operation_error import Anonymou
 from django_pydantic_agent.persistence.django_session_conversation_store import (
     DjangoSessionConversationStore,
 )
+from django_pydantic_agent.persistence.memory_namespace import memory_namespace
 from django_pydantic_agent.persistence.model_attachment_store import ModelAttachmentStore
 from django_pydantic_agent.persistence.model_conversation_store import ModelConversationStore
 from django_pydantic_agent.persistence.null_attachment_store import NullAttachmentStore
@@ -85,5 +86,6 @@ __all__ = [
     "build_agent",
     "build_input_schema",
     "build_tool_catalog",
+    "memory_namespace",
     "tool",
 ]

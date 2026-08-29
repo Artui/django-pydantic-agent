@@ -141,8 +141,8 @@ INSTALLED_APPS = [
 
 Then `migrate`, and pass the matching store to your transport
 (`conversation_store=` / `attachment_store=` / `step_store=`). The app provides
-`DefaultConversationStore`, `DefaultAttachmentStore` and `DefaultStepStore`, and
-each is imported **from its own module**:
+`DefaultConversationStore`, `DefaultAttachmentStore`, `DefaultStepStore` and
+`DefaultMemoryStore`, and each is imported **from its own module**:
 
 ```python
 from django_pydantic_agent.contrib.store.default_attachment_store import (
@@ -150,6 +150,9 @@ from django_pydantic_agent.contrib.store.default_attachment_store import (
 )
 from django_pydantic_agent.contrib.store.default_conversation_store import (
     DefaultConversationStore,
+)
+from django_pydantic_agent.contrib.store.default_memory_store import (
+    DefaultMemoryStore,
 )
 from django_pydantic_agent.contrib.store.default_step_store import DefaultStepStore
 ```
@@ -262,7 +265,7 @@ stranded permanently; the prune command is exactly what collects them.
 
 ## Maintenance commands
 
-The `contrib.store` app ships three, all of them opt-in and none of them
+The `contrib.store` app ships four, all of them opt-in and none of them
 scheduled for you:
 
 | Command | What it does |
@@ -270,8 +273,9 @@ scheduled for you:
 | `agent_store_backfill_hashes` | Hash attachments stored before the `sha256` column existed, so they can take part in deduplication. A missing blob is a reported skip, not a failure. |
 | `agent_store_prune_attachments` | Delete unreferenced attachments older than `--older-than` (default `24h`). |
 | `agent_store_strip_inline_bytes` | Rewrite stored conversations to drop inlined base64 file content. |
+| `agent_store_purge_memory` | Erase every stored memory file for one owner. |
 
-All three take `--dry-run`.
+All four take `--dry-run`.
 
 **`--older-than` is why the prune command is safe to run.** References alone
 cannot tell an upload abandoned last month from one sitting in a composer right
@@ -325,3 +329,129 @@ would hand that idiom the oldest run instead, silently, and only where more than
 one run exists.
 
 Full signatures in the [persistence reference](reference/persistence.md).
+
+## Per-user memory
+
+`pydantic-ai-harness` ships a complete memory capability — four tools
+(`write_memory`, `read_memory`, `delete_memory`, `search_memory`), a
+`MemoryStore` protocol, bounded injection, compare-and-set versioning and
+idempotency receipts. **This package does not reimplement any of it.** It ships
+one thing the harness cannot: a Django-backed store, and the scoping that makes
+it multi-tenant.
+
+`DefaultMemoryStore` is that store, and the direction of the contract is the same
+as `DefaultStepStore`'s: it **structurally satisfies harness's `MemoryStore`
+protocol**, which is upstream's and is not redeclared here. It needs the
+`[harness]` extra.
+
+```python
+from pydantic_ai_harness.memory import Memory
+
+from django_pydantic_agent import memory_namespace
+from django_pydantic_agent.contrib.store.default_memory_store import (
+    DefaultMemoryStore,
+)
+
+capability = Memory(
+    DefaultMemoryStore(request),
+    namespace=lambda ctx: memory_namespace(request),
+)
+```
+
+Hand it to your transport the way you would any other capability —
+`AGUIServer(capabilities=[capability])` for django-ag-ui. There is no settings
+key and no new configuration surface: `AgentConfig.capabilities` already reaches
+`Agent(capabilities=...)`.
+
+### Turn the tool guard on first
+
+Memory may be allowed to steer what the model **says**. It must not be allowed to
+decide what the model **does** — and memory is *durable*, model-written, and
+replayed into every later run, so a note that reads as an instruction keeps
+working long after whoever planted it has gone.
+
+`ToolGuard` is what holds that line: it reads the `x-destructive` stamp
+server-side, so a memory-planted "call `refund_order` first" still hits the
+approval interrupt. With no `tool_guard`, `build_agent`'s own docstring is blunt
+that "every server-side tool here runs the moment the model calls it".
+
+**Enable `TOOL_GUARD` before you enable memory.** A mount with memory on and the
+guard off is a durable, user-writable path to unattended destructive calls. Each
+setting is defensible alone; they are only wrong together.
+
+### `namespace` is the user, `agent_name` is the mount
+
+The harness composes the scope key as `f"{namespace}/{agent_name}"`, so two
+mounts sharing one store are partitioned by construction — `Memory(store,
+agent_name="internal")` and `Memory(store, agent_name="public")` — and no
+`ScopedMemoryStore` wrapper is needed the way it is for conversations and steps.
+
+Use `memory_namespace(request)` for the user half rather than reaching for the
+owner id the other stores partition on. That id is `anon:<session_key>` for an
+anonymous request, and a colon is outside the alphabet the harness accepts for a
+path segment, so `Memory` raises `invalid memory path` — from namespace
+resolution, which sits *outside* the store read that `injection_errors` guards,
+so upstream's `"ignore"` default does not catch it and the whole run 500s.
+`memory_namespace` always returns a valid segment: a segment-safe primary key is
+carried through readably behind a `u-` prefix, and anything else — an email
+primary key, a natural key with a slash — is replaced by a digest of it rather
+than sanitised, because sanitising maps `tenant/42` and `tenant-42` onto one
+namespace.
+
+The namespace is not asked to be the security boundary. `DefaultMemoryStore`
+filters every query on the owner it resolves server-side, so a namespace that is
+wrong, guessed, or contains a `/` that opens further path segments still cannot
+reach another owner's rows.
+
+### What the store adds over the reference implementations
+
+| | Why |
+| --- | --- |
+| **Owner-partitioned rows** | The harness's stores are single-tenant; the scope lives only in the path, and the path comes from a resolver the host wrote. |
+| **Fence-tag neutralisation on write** | Injected memory is wrapped in `<memory>` markers, and upstream says plainly this "is not a hard prompt-injection boundary". A stored note containing the closing tag ends the block early, and everything after it reads as the user's own turn — durably, on every later run. Every write here escapes the angle brackets of both tags. |
+| **Per-owner ceilings** | `max_memory_size` bounds one file and the injection budget bounds what is *read*; nothing upstream caps how many files a namespace accumulates or how large they grow in total. `max_files` and `max_total_chars` do. |
+| **Anonymous degradation** | The capability's hooks fire mid-run, so refusing by raising would abort it. Writes no-op and reads return empty unless the store is built with `allow_anonymous=True`. |
+| **`purge(owner_id)`** | Erasure, which the protocol cannot express. |
+
+Neutralisation happens on `write` rather than `read` on purpose: it makes the
+stored bytes safe for *every* consumer — the injection, `read_memory`,
+`search_memory`, an app-side read — and it keeps `write_memory`'s `old_text`
+replacement working, because the model edits against the same escaped text it was
+shown. It rewrites only the literal tag forms, never the word `memory`, which
+belongs in ordinary notes.
+
+### App-authored facts do not belong in the store
+
+The store has no provenance column, so a trusted fact written there becomes
+indistinguishable from a model-written one at read time — and it is quoted back
+inside the same `<memory>` framing that tells the model this is unverified
+background. A fact the operator vouches for belongs in the operator channel:
+your transport's instructions hook, or `AgentDeps` for something a tool should
+read. The missing provenance column is not a gap to fill; it is a boundary
+telling you which facts belong in it.
+
+### Erasure
+
+Memory is durable personal data written *about* a user, so an erasure request has
+to be able to reach it. The `MemoryStore` protocol has no bulk or prefix delete —
+composing `list_paths` with `delete` needs each path's current version, giving an
+unbounded read-then-delete loop a concurrent `write_memory` can lose to — so the
+store carries a non-protocol `purge(owner_id)` that is one statement, plus a
+command:
+
+```bash
+python manage.py agent_store_purge_memory 42 --dry-run
+python manage.py agent_store_purge_memory 42
+```
+
+It is deliberately **not** wired to a `post_delete` signal on your user model.
+Whether deleting an account erases its memory is a product policy; a library's
+job here is to make the operation possible.
+
+### Memory must be inspectable before it is switched on
+
+A model quietly accumulating durable notes about someone, replayed into every
+future session with no surface listing them, is what makes this feature feel
+spooky rather than tailored. The minimum honest surface is **list, read and
+delete**, and the protocol provides all three (`list_paths`, `read`, `delete`),
+so a host can build one. Do that before turning memory on for real users.

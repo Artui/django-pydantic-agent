@@ -56,6 +56,12 @@ models.
 
 ::: django_pydantic_agent.ModelAttachmentStore
 
+## Memory
+
+### `memory_namespace`
+
+::: django_pydantic_agent.memory_namespace
+
 ## Errors
 
 ### `AnonymousOperationError`
@@ -73,6 +79,8 @@ that don't opt in get no migration.
 ::: django_pydantic_agent.contrib.store.default_attachment_store.DefaultAttachmentStore
 
 ::: django_pydantic_agent.contrib.store.default_step_store.DefaultStepStore
+
+::: django_pydantic_agent.contrib.store.default_memory_store.DefaultMemoryStore
 
 ### Attachment lifecycle
 

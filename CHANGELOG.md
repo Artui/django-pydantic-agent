@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`DefaultMemoryStore`** — a durable, owner-scoped reference store for
+  `pydantic-ai-harness`'s memory capability, in the opt-in `contrib.store` app
+  under the `[harness]` extra. Like `DefaultStepStore`, it **structurally
+  satisfies upstream's protocol** (`MemoryStore`) rather than declaring one of
+  this package's own: there is no second implementation to abstract over, and the
+  harness protocol is the one the capability calls.
+
+  The capability itself is adopted unchanged. `AgentConfig.capabilities` already
+  reaches `Agent(capabilities=...)`, so `Memory(store, namespace=...)` composes
+  with `build_agent` with no seam here — the four tools, the guidance and the
+  bounded injection all arrive on their own. What the store adds is what upstream
+  cannot: rows partitioned by the owner resolved server-side (its own stores are
+  single-tenant, with the scope living only in the path), per-owner file-count and
+  total-byte ceilings, and a non-protocol `purge(owner_id)`.
+
+  **Turn `TOOL_GUARD` on before turning memory on.** Memory is durable,
+  model-written, and replayed into every later run, so a note that reads as an
+  instruction keeps working indefinitely; the guard is what stops it reaching a
+  destructive tool unattended. Each setting is defensible alone and they are only
+  wrong together.
+
+- **`memory_namespace(request)`** — a per-user namespace resolver whose only
+  contract is that its result is always a valid harness path segment.
+
+- **`agent_store_purge_memory`** — a management command erasing every stored
+  memory file for one owner. The `MemoryStore` protocol has no bulk or prefix
+  delete, and composing `list_paths` with `delete` needs each path's current
+  version, giving an unbounded read-then-delete loop a concurrent `write_memory`
+  can lose to. Memory is durable personal data written *about* a user, so erasure
+  has to be reachable in one statement.
+
+  Deliberately not wired to a `post_delete` signal on the user model: whether
+  deleting an account erases its memory is a product policy.
+
+### Fixed
+
+- **Stored memory could close the `<memory>` fence it is injected inside.**
+  Upstream wraps injected memory in `<memory>` markers and says plainly in its own
+  README that this "is not a hard prompt-injection boundary". Concretely: a stored
+  note containing the closing tag ends the block early, and everything after it
+  arrives as a user-role part indistinguishable from the user's own turn —
+  durably, replayed on every later run, with nothing in the loop ever re-asking
+  whether it belongs there.
+
+  Every write now escapes the angle brackets of both tag forms
+  (case-insensitively, and tolerant of internal whitespace, because the reader
+  being protected is a language model rather than an XML parser).
+
+  On `write` rather than `read` on purpose: it makes the stored bytes safe for
+  every consumer — the injection, `read_memory`, `search_memory`, an app-side read
+  — and `write_memory`'s `old_text` replacement still matches, the model having
+  been shown the same escaped text. Only the literal tag forms are rewritten,
+  never the word `memory`: this package's untrusted-context channel neutralises
+  its marker by rewriting the *word*, which works only because that marker is a
+  hyphenated compound chosen so that mangling it still reads as prose. `memory` is
+  an ordinary English word that belongs in ordinary notes.
+
+- **An anonymous request aborted the whole run.** The owner id the conversation,
+  attachment and step stores all partition on is `anon:<session_key>`, and a colon
+  is outside the alphabet the harness accepts for a path segment — so scoping
+  memory the obvious way turned every anonymous request into a 500.
+
+  `injection_errors="ignore"` does not cover it, which is why it is not a
+  configuration mistake: that setting wraps only the store read, while namespace
+  resolution runs in `for_run` outside it, and upstream documents resolver
+  failures as always propagating.
+
+  `memory_namespace` always returns a valid segment, and the store degrades
+  instead of raising — writes no-op, reads return empty — unless built with
+  `allow_anonymous=True`, mirroring the decision `DefaultStepStore` already
+  recorded. Raising would abort a run mid-flight, which is the failure that
+  decision exists to avoid.
+
+### Changed
+
+- Two docstrings named drf-services' `AgentContract`, which 0.48.0 renamed to
+  `OfflineContract`. Prose only; nothing imported it.
+
 ## [0.19.0] — 2026-08-29
 
 ### Changed

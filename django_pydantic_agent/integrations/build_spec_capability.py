@@ -46,7 +46,7 @@ def build_spec_capability(
     **A registry is passed through as a registry**, narrowed with its own
     ``subset`` when ``exclude_names`` bites. Flattening it to a mapping first
     would drop everything the entry carries beyond the spec -- including the
-    ``AgentContract`` that says what a caller with no HTTP request has to be
+    ``OfflineContract`` that says what a caller with no HTTP request has to be
     told -- and drop it *silently*, since the resulting toolset is well-formed
     and merely missing declarations nobody asked it for.
 

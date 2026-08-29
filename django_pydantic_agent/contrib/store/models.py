@@ -269,3 +269,76 @@ class StoredToolEffect(models.Model):
 
     def __str__(self) -> str:
         return f"{self.run_id}:{self.tool_call_id}:{self.status}"
+
+
+class StoredMemory(models.Model):
+    """One durable memory file, one row per ``(owner_id, path)``.
+
+    ``path`` is the harness's own scope-qualified key —
+    ``<namespace>/<agent_name>/<file>.md`` — stored verbatim so ``list_paths``
+    can answer a prefix query the way the reference stores do. ``owner_id`` is
+    the *separately resolved* owner and every query filters by it: it is the
+    security boundary, and it is deliberately not derived from ``path``, so a
+    namespace resolver that returns something surprising cannot reach another
+    owner's rows.
+
+    ``version`` is the protocol's opaque compare-and-set token, replaced with a
+    fresh value on every write. A random token rather than a counter because a
+    counter restarts after a delete, which would let a stale version from before
+    the delete satisfy a later compare-and-set. ``operation_id`` records which
+    idempotent mutation last wrote the row, mirroring the reference stores.
+
+    Used by ``DefaultMemoryStore``.
+    """
+
+    owner_id = models.CharField(max_length=255, blank=True, default="")
+    path = models.CharField(max_length=500)
+    content = models.TextField(blank=True, default="")
+    version = models.CharField(max_length=32)
+    operation_id = models.CharField(max_length=255, null=True, blank=True, default=None)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner_id", "path"],
+                name="django_pydantic_agent_memory_owner_path_unique",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.path
+
+
+class StoredMemoryOperation(models.Model):
+    """An idempotency receipt for one memory mutation.
+
+    The harness gives every ``write_memory`` / ``delete_memory`` call a stable
+    ``id`` and a ``fingerprint`` of its arguments, then asks the store whether it
+    has seen that id before. Replaying the recorded result is what stops a
+    retried tool call appending the same note twice; a matching id with a
+    *different* fingerprint is a reused id, which the protocol says to refuse.
+
+    ``version`` is nullable because a delete's recorded result carries none.
+    Partitioned by ``owner_id`` like every other row, so one owner's receipts can
+    neither be read nor replayed by another.
+    """
+
+    owner_id = models.CharField(max_length=255, blank=True, default="")
+    operation_id = models.CharField(max_length=255)
+    fingerprint = models.CharField(max_length=255)
+    version = models.CharField(max_length=32, null=True, blank=True, default=None)
+    existed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner_id", "operation_id"],
+                name="django_pydantic_agent_memory_owner_operation_unique",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.operation_id

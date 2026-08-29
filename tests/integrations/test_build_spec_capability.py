@@ -139,7 +139,7 @@ class TestARegistryIsNotFlattened:
     """The entry carries more than the spec, and only the entry carries it.
 
     A registry entry holds the per-entry declarations an agent transport reads
-    -- its tags, and the ``AgentContract`` saying what a caller with no HTTP
+    -- its tags, and the ``OfflineContract`` saying what a caller with no HTTP
     request has to be told. ``specs()`` returns ``name -> spec`` and drops all
     of it, which is why this builder must pass the source through rather than
     normalise it first. The failure is silent: the toolset is well-formed and
