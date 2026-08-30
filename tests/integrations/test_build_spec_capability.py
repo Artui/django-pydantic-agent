@@ -5,11 +5,29 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
 from rest_framework.permissions import AllowAny
 from rest_framework_services import ServiceSpec
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
+
+
+def _ctx(deps: AgentDeps) -> RunContext[AgentDeps]:
+    """A real ``RunContext``, not a stand-in shaped like one.
+
+    These tests used a ``SimpleNamespace`` carrying only ``deps``, which is every
+    field the code under test read at the time. It broke the moment
+    djangorestframework-pydantic-ai started stamping run correlation on its log
+    lines and reached for ``run_id`` / ``conversation_id`` / ``run_step`` /
+    ``tool_call_id`` -- fields a real context has always had. A double describing
+    less than the real producer agrees with the caller right up until the caller
+    reads one more field, so this builds the genuine article and lets pydantic-ai
+    own its own defaults.
+    """
+    return RunContext(deps=deps, model=TestModel(), usage=RunUsage())
 
 
 def _ok(user: Any) -> dict[str, Any]:
@@ -73,7 +91,7 @@ async def test_binds_the_acting_user_from_the_run_deps() -> None:
     )
 
     toolset = capability.get_toolset()
-    ctx = SimpleNamespace(deps=AgentDeps(user=user))
+    ctx = _ctx(AgentDeps(user=user))
     assert await toolset.call_tool("ping", {}, ctx, None) == {"ok": True}
     assert seen["user"] is user
 
@@ -94,8 +112,8 @@ async def test_one_capability_serves_two_users() -> None:
     toolset = capability.get_toolset()
 
     alice, bob = SimpleNamespace(name="alice"), SimpleNamespace(name="bob")
-    await toolset.call_tool("whoami", {}, SimpleNamespace(deps=AgentDeps(user=alice)), None)
-    await toolset.call_tool("whoami", {}, SimpleNamespace(deps=AgentDeps(user=bob)), None)
+    await toolset.call_tool("whoami", {}, _ctx(AgentDeps(user=alice)), None)
+    await toolset.call_tool("whoami", {}, _ctx(AgentDeps(user=bob)), None)
 
     assert seen == [alice, bob]
 
@@ -227,7 +245,7 @@ async def test_a_specs_progress_reports_reach_the_runs_sink() -> None:
             )
         }
     )
-    ctx = SimpleNamespace(deps=AgentDeps(user=SimpleNamespace(name="alice"), progress=sink))
+    ctx = _ctx(AgentDeps(user=SimpleNamespace(name="alice"), progress=sink))
 
     await capability.get_toolset().call_tool("import_rows", {}, ctx, None)
 

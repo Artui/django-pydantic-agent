@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The spec-capability tests stood a `SimpleNamespace` in for a `RunContext`,
+  and it described less than the real thing.** It carried `deps` and nothing
+  else — every field the code under test read at the time. It broke the moment
+  djangorestframework-pydantic-ai began stamping run correlation on its log lines
+  and reached for `run_id` / `conversation_id` / `run_step` / `tool_call_id`,
+  fields a genuine context has always had. The doubles are now real
+  `RunContext`s, so pydantic-ai owns its own defaults and the shape cannot drift
+  from what a consumer reads. Found by upgrading the siblings and running the
+  suite, not by any single package's CI.
+
+### Changed
+
+- **Both spec-facing extras floored at the releases carrying
+  `drf-services>=0.49`** — `[drf-mcp]` at `>=0.37`, `[spec-tools]` at `>=0.24`.
+  0.49 bounds the schema recursion that a self-referential serializer used to
+  crash, and `build_spec_capability` reaches it: a `SpecCapability`'s tool
+  definitions are schemas, so the crash landed at construction. Nothing here
+  declares `drf-services` directly, so the extras carry the constraint.
+
 ## [0.20.0] — 2026-08-29
 
 ### Added
