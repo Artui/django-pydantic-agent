@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-08-30
+
 ### Fixed
 
 - **The spec-capability tests stood a `SimpleNamespace` in for a `RunContext`,
@@ -1243,7 +1245,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.17.0...v0.18.0
