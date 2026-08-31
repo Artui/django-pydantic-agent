@@ -4,6 +4,8 @@ from django_pydantic_agent.contrib.store.models import (
     ConversationAttachment,
     StoredAttachment,
     StoredConversation,
+    StoredMemory,
+    StoredMemoryOperation,
     StoredRun,
     StoredSnapshot,
     StoredStepEvent,
@@ -50,3 +52,11 @@ def test_snapshot_str_is_run_and_step() -> None:
 def test_tool_effect_str_is_run_call_status() -> None:
     effect = StoredToolEffect(run_id="run-1", tool_call_id="c1", status="started")
     assert str(effect) == "run-1:c1:started"
+
+
+def test_memory_str_is_the_path() -> None:
+    assert str(StoredMemory(path="u-7/main/MEMORY.md")) == "u-7/main/MEMORY.md"
+
+
+def test_memory_operation_str_is_the_operation_id() -> None:
+    assert str(StoredMemoryOperation(operation_id="op-1")) == "op-1"

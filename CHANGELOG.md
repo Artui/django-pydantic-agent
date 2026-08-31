@@ -7,6 +7,156 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-08-30
+
+### Fixed
+
+- **The spec-capability tests stood a `SimpleNamespace` in for a `RunContext`,
+  and it described less than the real thing.** It carried `deps` and nothing
+  else — every field the code under test read at the time. It broke the moment
+  djangorestframework-pydantic-ai began stamping run correlation on its log lines
+  and reached for `run_id` / `conversation_id` / `run_step` / `tool_call_id`,
+  fields a genuine context has always had. The doubles are now real
+  `RunContext`s, so pydantic-ai owns its own defaults and the shape cannot drift
+  from what a consumer reads. Found by upgrading the siblings and running the
+  suite, not by any single package's CI.
+
+### Changed
+
+- **Both spec-facing extras floored at the releases carrying
+  `drf-services>=0.49`** — `[drf-mcp]` at `>=0.37`, `[spec-tools]` at `>=0.24`.
+  0.49 bounds the schema recursion that a self-referential serializer used to
+  crash, and `build_spec_capability` reaches it: a `SpecCapability`'s tool
+  definitions are schemas, so the crash landed at construction. Nothing here
+  declares `drf-services` directly, so the extras carry the constraint.
+
+## [0.20.0] — 2026-08-29
+
+### Added
+
+- **`DefaultMemoryStore`** — a durable, owner-scoped reference store for
+  `pydantic-ai-harness`'s memory capability, in the opt-in `contrib.store` app
+  under the `[harness]` extra. Like `DefaultStepStore`, it **structurally
+  satisfies upstream's protocol** (`MemoryStore`) rather than declaring one of
+  this package's own: there is no second implementation to abstract over, and the
+  harness protocol is the one the capability calls.
+
+  The capability itself is adopted unchanged. `AgentConfig.capabilities` already
+  reaches `Agent(capabilities=...)`, so `Memory(store, namespace=...)` composes
+  with `build_agent` with no seam here — the four tools, the guidance and the
+  bounded injection all arrive on their own. What the store adds is what upstream
+  cannot: rows partitioned by the owner resolved server-side (its own stores are
+  single-tenant, with the scope living only in the path), per-owner file-count and
+  total-byte ceilings, and a non-protocol `purge(owner_id)`.
+
+  **Turn `TOOL_GUARD` on before turning memory on.** Memory is durable,
+  model-written, and replayed into every later run, so a note that reads as an
+  instruction keeps working indefinitely; the guard is what stops it reaching a
+  destructive tool unattended. Each setting is defensible alone and they are only
+  wrong together.
+
+- **`memory_namespace_for_user(user)` and `memory_namespace(request)`** — per-user
+  namespace resolvers whose only contract is that the result is always a valid
+  harness path segment.
+
+  Two of them because a capability list is resolved **once**, at mount time,
+  where no request exists — so nothing request-shaped can be closed over in it.
+  `memory_namespace_for_user` reads the acting user off `ctx.deps` and is the one
+  a transport takes; `memory_namespace` is for a host that really does build the
+  store per request, and is the only one that can key an anonymous caller to
+  their browser session.
+
+  The store follows the same split: without a request it is namespace-scoped
+  (the owner is the leading path segment), which is what makes it usable from a
+  mount-time `capabilities=` list; with one it partitions independently of the
+  path, which is strictly stronger.
+
+- **`agent_store_purge_memory`** — a management command erasing every stored
+  memory file for one owner. The `MemoryStore` protocol has no bulk or prefix
+  delete, and composing `list_paths` with `delete` needs each path's current
+  version, giving an unbounded read-then-delete loop a concurrent `write_memory`
+  can lose to. Memory is durable personal data written *about* a user, so erasure
+  has to be reachable in one statement.
+
+  Deliberately not wired to a `post_delete` signal on the user model: whether
+  deleting an account erases its memory is a product policy.
+
+### Fixed
+
+- **Stored memory could close the `<memory>` fence it is injected inside.**
+  Upstream wraps injected memory in `<memory>` markers and says plainly in its own
+  README that this "is not a hard prompt-injection boundary". Concretely: a stored
+  note containing the closing tag ends the block early, and everything after it
+  arrives as a user-role part indistinguishable from the user's own turn —
+  durably, replayed on every later run, with nothing in the loop ever re-asking
+  whether it belongs there.
+
+  Every write now escapes the angle brackets of both tag forms
+  (case-insensitively, and tolerant of internal whitespace, because the reader
+  being protected is a language model rather than an XML parser).
+
+  On `write` rather than `read` on purpose: it makes the stored bytes safe for
+  every consumer — the injection, `read_memory`, `search_memory`, an app-side read
+  — and `write_memory`'s `old_text` replacement still matches, the model having
+  been shown the same escaped text. Only the literal tag forms are rewritten,
+  never the word `memory`: this package's untrusted-context channel neutralises
+  its marker by rewriting the *word*, which works only because that marker is a
+  hyphenated compound chosen so that mangling it still reads as prose. `memory` is
+  an ordinary English word that belongs in ordinary notes.
+
+- **An anonymous request aborted the whole run.** The owner id the conversation,
+  attachment and step stores all partition on is `anon:<session_key>`, and a colon
+  is outside the alphabet the harness accepts for a path segment — so scoping
+  memory the obvious way turned every anonymous request into a 500.
+
+  `injection_errors="ignore"` does not cover it, which is why it is not a
+  configuration mistake: that setting wraps only the store read, while namespace
+  resolution runs in `for_run` outside it, and upstream documents resolver
+  failures as always propagating.
+
+  `memory_namespace` always returns a valid segment, and the store degrades
+  instead of raising — writes no-op, reads return empty — unless built with
+  `allow_anonymous=True`, mirroring the decision `DefaultStepStore` already
+  recorded. Raising would abort a run mid-flight, which is the failure that
+  decision exists to avoid.
+
+### Changed
+
+- Two docstrings named drf-services' `AgentContract`, which 0.48.0 renamed to
+  `OfflineContract`. Prose only; nothing imported it.
+
+## [0.19.0] — 2026-08-29
+
+### Changed
+
+- **Floor raised to `djangorestframework-pydantic-ai>=0.20`.** The registry
+  passthrough below is only worth anything if the package on the other side
+  *reads* a registry, and PAI learned to in 0.20.0. Below that it flattens the
+  entry to `name -> spec` again, so handing one over changes nothing — silently,
+  which is the failure this floor exists to prevent.
+
+  Versions below 0.20 are also unusable against `drf-services` 0.48.0, which
+  removed the audience symbols they import.
+
+
+### Fixed
+
+- **`build_spec_capability` flattened a spec registry, dropping everything the
+  entry carries.** It called `resolve_spec_mapping` and handed `SpecCapability`
+  a `name -> spec` dict, so a `SpecRegistry`'s per-entry declarations never
+  reached the toolset — including drf-services 0.45's `AgentContract`, which is
+  where a project says what a caller with **no HTTP request** has to be told
+  (the URL kwargs, query params and field-audience overrides the URLconf and
+  query string give an HTTP caller for free).
+
+  A registry now passes through as a registry, narrowed with its own `subset`
+  when `exclude_names` bites. A plain mapping is unchanged.
+
+  **The failure was silent**, which is why it survived: the resulting toolset is
+  well-formed and merely missing declarations nobody asked it for. Nothing
+  raises, no tool is absent, and the loss only shows as an argument the model was
+  never offered — or a field it was shown and should not have been.
+
 ## [0.18.0] — 2026-08-26
 
 ### Added
@@ -1095,7 +1245,10 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.15.2...v0.16.0

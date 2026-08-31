@@ -43,9 +43,17 @@ def build_spec_capability(
     tool-catalog registration this function participates in, so tool-call cards
     render unlabelled — a migration step, not a destination.
 
+    **A registry is passed through as a registry**, narrowed with its own
+    ``subset`` when ``exclude_names`` bites. Flattening it to a mapping first
+    would drop everything the entry carries beyond the spec -- including the
+    ``OfflineContract`` that says what a caller with no HTTP request has to be
+    told -- and drop it *silently*, since the resulting toolset is well-formed
+    and merely missing declarations nobody asked it for.
+
     Args:
         specs: A ``name -> ServiceSpec/SelectorSpec`` mapping, or a spec registry
-            to read one from.
+            to read one from. Prefer the registry: it is the same specs plus the
+            per-entry declarations an agent transport reads.
         exclude_names: Names a higher-precedence source (the ``@tool`` registry,
             the drf-mcp bridge) already claimed. They are dropped so that source
             wins the collision, since pydantic-ai raises ``UserError`` for a
@@ -54,8 +62,14 @@ def build_spec_capability(
     from rest_framework_pydantic_ai import SpecCapability
 
     resolved = resolve_spec_mapping(specs)
-    selected = {name: spec for name, spec in resolved.items() if name not in exclude_names}
-    return SpecCapability(selected)
+    selected = [name for name in resolved if name not in exclude_names]
+    # ``subset`` is read off the object rather than declared on ``SpecSource``:
+    # the protocol's one method is what tells a registry from a mapping, and a
+    # source that only knows how to hand back specs is still a valid source.
+    subset = getattr(specs, "subset", None)
+    if subset is not None:
+        return SpecCapability(subset(*selected))
+    return SpecCapability({name: resolved[name] for name in selected})
 
 
 __all__ = ["build_spec_capability"]

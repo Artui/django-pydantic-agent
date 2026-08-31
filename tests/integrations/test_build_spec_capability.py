@@ -5,11 +5,29 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
 from rest_framework.permissions import AllowAny
 from rest_framework_services import ServiceSpec
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
+
+
+def _ctx(deps: AgentDeps) -> RunContext[AgentDeps]:
+    """A real ``RunContext``, not a stand-in shaped like one.
+
+    These tests used a ``SimpleNamespace`` carrying only ``deps``, which is every
+    field the code under test read at the time. It broke the moment
+    djangorestframework-pydantic-ai started stamping run correlation on its log
+    lines and reached for ``run_id`` / ``conversation_id`` / ``run_step`` /
+    ``tool_call_id`` -- fields a real context has always had. A double describing
+    less than the real producer agrees with the caller right up until the caller
+    reads one more field, so this builds the genuine article and lets pydantic-ai
+    own its own defaults.
+    """
+    return RunContext(deps=deps, model=TestModel(), usage=RunUsage())
 
 
 def _ok(user: Any) -> dict[str, Any]:
@@ -73,7 +91,7 @@ async def test_binds_the_acting_user_from_the_run_deps() -> None:
     )
 
     toolset = capability.get_toolset()
-    ctx = SimpleNamespace(deps=AgentDeps(user=user))
+    ctx = _ctx(AgentDeps(user=user))
     assert await toolset.call_tool("ping", {}, ctx, None) == {"ok": True}
     assert seen["user"] is user
 
@@ -94,8 +112,8 @@ async def test_one_capability_serves_two_users() -> None:
     toolset = capability.get_toolset()
 
     alice, bob = SimpleNamespace(name="alice"), SimpleNamespace(name="bob")
-    await toolset.call_tool("whoami", {}, SimpleNamespace(deps=AgentDeps(user=alice)), None)
-    await toolset.call_tool("whoami", {}, SimpleNamespace(deps=AgentDeps(user=bob)), None)
+    await toolset.call_tool("whoami", {}, _ctx(AgentDeps(user=alice)), None)
+    await toolset.call_tool("whoami", {}, _ctx(AgentDeps(user=bob)), None)
 
     assert seen == [alice, bob]
 
@@ -119,6 +137,85 @@ def test_exclude_names_apply_to_a_registry_too() -> None:
 
     capability = build_spec_capability(registry, exclude_names=frozenset({"dup"}))
     assert set(capability.get_toolset()._specs) == {"ping"}
+
+
+def _capture_source(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Record what this builder actually hands to ``SpecCapability``."""
+    import rest_framework_pydantic_ai
+
+    captured: list[Any] = []
+
+    def _stub(source: Any, **kwargs: Any) -> Any:
+        captured.append(source)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(rest_framework_pydantic_ai, "SpecCapability", _stub)
+    return captured
+
+
+class TestARegistryIsNotFlattened:
+    """The entry carries more than the spec, and only the entry carries it.
+
+    A registry entry holds the per-entry declarations an agent transport reads
+    -- its tags, and the ``OfflineContract`` saying what a caller with no HTTP
+    request has to be told. ``specs()`` returns ``name -> spec`` and drops all
+    of it, which is why this builder must pass the source through rather than
+    normalise it first. The failure is silent: the toolset is well-formed and
+    merely missing declarations nobody asked it for.
+    """
+
+    def test_the_registry_reaches_the_capability_as_a_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rest_framework_services import SpecRegistry
+
+        captured = _capture_source(monkeypatch)
+        registry = SpecRegistry()
+        registry.register(
+            "ping",
+            ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]),
+            tags=("read",),
+        )
+
+        build_spec_capability(registry)
+
+        # ``specs()`` is what tells a registry from a mapping -- the same test
+        # ``resolve_spec_mapping`` uses -- and the entry is what survives.
+        (source,) = captured
+        assert callable(getattr(source, "specs", None))
+        assert source.get("ping").tags == frozenset({"read"})
+
+    def test_narrowing_by_exclude_names_keeps_it_a_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rest_framework_services import SpecRegistry
+
+        captured = _capture_source(monkeypatch)
+        registry = SpecRegistry()
+        registry.register(
+            "ping",
+            ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny]),
+            tags=("read",),
+        )
+        registry.register(
+            "dup", ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])
+        )
+
+        build_spec_capability(registry, exclude_names=frozenset({"dup"}))
+
+        (source,) = captured
+        assert set(source.specs()) == {"ping"}
+        assert source.get("ping").tags == frozenset({"read"})
+
+    def test_a_plain_mapping_is_still_a_plain_mapping(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _capture_source(monkeypatch)
+        spec = ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])
+
+        build_spec_capability({"ping": spec, "dup": spec}, exclude_names=frozenset({"dup"}))
+
+        assert captured == [{"ping": spec}]
 
 
 async def test_a_specs_progress_reports_reach_the_runs_sink() -> None:
@@ -148,7 +245,7 @@ async def test_a_specs_progress_reports_reach_the_runs_sink() -> None:
             )
         }
     )
-    ctx = SimpleNamespace(deps=AgentDeps(user=SimpleNamespace(name="alice"), progress=sink))
+    ctx = _ctx(AgentDeps(user=SimpleNamespace(name="alice"), progress=sink))
 
     await capability.get_toolset().call_tool("import_rows", {}, ctx, None)
 
