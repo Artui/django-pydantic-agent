@@ -392,6 +392,27 @@ handler and check for `None`, which is what the contract always said.
 
 ## [0.15.1] — 2026-08-13
 
+### Fixed
+
+- **The reST literal-block marker no longer reaches the page.** Sphinx reads a
+  trailing `::` as "an indented literal block follows" and prints one colon;
+  Markdown has no such rule, so the second colon rendered verbatim (`Example::`).
+  The indented block was already coming out as a highlighted code block either
+  way, so this drops the stray character and nothing else.
+
+- **Docstring cross-references now render as links instead of raw markup.** The
+  docstrings carried Sphinx roles — ``:class:`~django_pydantic_agent.AttachmentStore` ``
+  — but the docs build is mkdocstrings, which renders docstring bodies as
+  Markdown and has no such syntax. Every one of them reached the published page
+  verbatim, `:class:` prefix and Sphinx's abbreviating `~` included. They are now
+  mkdocstrings autorefs links (`` [`AttachmentStore`][django_pydantic_agent.AttachmentStore] ``),
+  so the reference cross-links instead of printing its own markup.
+
+  References to symbols the reference does not render — contrib models, private
+  methods, internal helpers — and to third-party symbols became plain code spans
+  rather than dead links; no inventory for external packages is configured, so a
+  link to one could not resolve.
+
 ### Documentation
 
 - **The storage page now shows how to import the reference stores.** It named
@@ -412,29 +433,6 @@ handler and check for `None`, which is what the contract always said.
   Held to that spelling by a test that **reads the page and runs what it shows**,
   rather than importing the modules the test already knows about: a test that imports
   the right thing passes just as happily while the docs teach the wrong thing.
-
-### Fixed
-
-- **The reST literal-block marker no longer reaches the page.** Sphinx reads a
-  trailing `::` as "an indented literal block follows" and prints one colon;
-  Markdown has no such rule, so the second colon rendered verbatim (`Example::`).
-  The indented block was already coming out as a highlighted code block either
-  way, so this drops the stray character and nothing else.
-
-### Fixed
-
-- **Docstring cross-references now render as links instead of raw markup.** The
-  docstrings carried Sphinx roles — ``:class:`~django_pydantic_agent.AttachmentStore` ``
-  — but the docs build is mkdocstrings, which renders docstring bodies as
-  Markdown and has no such syntax. Every one of them reached the published page
-  verbatim, `:class:` prefix and Sphinx's abbreviating `~` included. They are now
-  mkdocstrings autorefs links (`` [`AttachmentStore`][django_pydantic_agent.AttachmentStore] ``),
-  so the reference cross-links instead of printing its own markup.
-
-  References to symbols the reference does not render — contrib models, private
-  methods, internal helpers — and to third-party symbols became plain code spans
-  rather than dead links; no inventory for external packages is configured, so a
-  link to one could not resolve.
 
 ## [0.15.0] — 2026-08-12
 
@@ -499,6 +497,23 @@ handler and check for `None`, which is what the contract always said.
   the new relation is reconciled from. `--dry-run` reports the bytes it would
   reclaim. The attachment itself is untouched; the model still reaches it by id.
 
+- **`AttachmentInlineConfig`, and an `inline=` keyword on
+  `build_attachment_toolset`.** `media_types` is the set of content types whose
+  bytes are attached rather than described; `max_bytes` (default 4 MiB, checked
+  against the bytes the store returns rather than the declared
+  `AttachmentRef.size`) is where a file is described instead. `inline=None`
+  keeps the defaults, so an existing call site needs no edit.
+
+  The cap sits far below any upload limit you would set, for the per-request
+  reason above: the file goes to the provider on every model request left in the
+  run. Raise it knowing what it costs per request.
+
+  **The escape hatch is constructor-only for now**, because this substrate
+  reads no Django settings by design. A future release of the transports will
+  surface it through their own settings namespaces — that needs this package
+  released first, so until then a project overriding it passes an
+  `AttachmentInlineConfig` at the call site.
+
 ### Changed
 
 - **Deleting an attachment no longer deletes its bytes unconditionally.** With
@@ -551,25 +566,6 @@ handler and check for `None`, which is what the contract always said.
   reading the attachment again, server-side, not from bytes replayed out of the
   stored thread. To turn inlining off entirely, pass
   `AttachmentInlineConfig(media_types=frozenset())`.
-
-### Added
-
-- **`AttachmentInlineConfig`, and an `inline=` keyword on
-  `build_attachment_toolset`.** `media_types` is the set of content types whose
-  bytes are attached rather than described; `max_bytes` (default 4 MiB, checked
-  against the bytes the store returns rather than the declared
-  `AttachmentRef.size`) is where a file is described instead. `inline=None`
-  keeps the defaults, so an existing call site needs no edit.
-
-  The cap sits far below any upload limit you would set, for the per-request
-  reason above: the file goes to the provider on every model request left in the
-  run. Raise it knowing what it costs per request.
-
-  **The escape hatch is constructor-only for now**, because this substrate
-  reads no Django settings by design. A future release of the transports will
-  surface it through their own settings namespaces — that needs this package
-  released first, so until then a project overriding it passes an
-  `AttachmentInlineConfig` at the call site.
 
 ## [0.14.0] — 2026-08-11
 
