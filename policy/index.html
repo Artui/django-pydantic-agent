@@ -1116,10 +1116,19 @@ it would with the policy off. <code>django.core.exceptions.PermissionDenied</cod
 when DRF is installed — <code>rest_framework.exceptions.PermissionDenied</code> are both in
 the default set; a spec tool's permission check raises the latter.</p>
 <p>Converting one would leave the run alive with the model free to try the next
-row, and a failed result stays distinguishable from a <code>{"error": "not found"}</code>
-one. A sweep over ids therefore turns the permission boundary into an existence
-oracle over rows the acting user cannot read — inside a single turn, spending no
-retry budget, bounded by nothing <code>build_agent</code> sets.</p>
+row, and a converted denial stays distinguishable from a missing row. A sweep
+over ids therefore turns the permission boundary into an existence oracle over
+rows the acting user cannot read — inside a single turn, spending no retry
+budget, bounded by nothing <code>build_agent</code> sets.</p>
+<p>That sentence used to read "distinguishable from a <code>{"error": "not found"}</code>
+one", which described how <code>djangorestframework-pydantic-ai</code> reported a missing
+row before it began raising <code>ToolFailed</code> for one. The shape changed and the
+argument did not, but the reason is worth stating because the change looks like
+it closed the hole and did not. A missing row and a converted denial now share
+an <code>outcome</code> — both are <code>failed</code> — so the two are no longer told apart by the
+result's <em>shape</em>. They are still told apart by its <em>words</em>: one says the row is
+not there and the other says the tool failed. An oracle needs one bit, and a
+message is a place to find one.</p>
 <p>The set is a project decision:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">())</span>  <span class="c1"># convert everything (the old behaviour)</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">(</span><span class="n">PermissionDenied</span><span class="p">,</span> <span class="ne">LookupError</span><span class="p">))</span>
