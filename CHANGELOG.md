@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The security argument for passing an authorization refusal through is
+  restated against the shapes that exist now.** It cited a missing row arriving
+  as `{"error": "not found"}`, which is how `djangorestframework-pydantic-ai`
+  reported one before it began raising `ToolFailed`. A missing row and a
+  converted denial now share an `outcome` -- both are `failed` -- so the change
+  looks like it closed the existence oracle and did not: the two are still told
+  apart by the words in the result, and an oracle needs one bit. Nothing about
+  the default `reraise` set changes; the reasoning for it is what needed saying
+  correctly.
+
 ## [0.21.0] — 2026-08-30
 
 ### Fixed

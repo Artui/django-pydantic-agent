@@ -168,10 +168,20 @@ when DRF is installed — `rest_framework.exceptions.PermissionDenied` are both 
 the default set; a spec tool's permission check raises the latter.
 
 Converting one would leave the run alive with the model free to try the next
-row, and a failed result stays distinguishable from a `{"error": "not found"}`
-one. A sweep over ids therefore turns the permission boundary into an existence
-oracle over rows the acting user cannot read — inside a single turn, spending no
-retry budget, bounded by nothing `build_agent` sets.
+row, and a converted denial stays distinguishable from a missing row. A sweep
+over ids therefore turns the permission boundary into an existence oracle over
+rows the acting user cannot read — inside a single turn, spending no retry
+budget, bounded by nothing `build_agent` sets.
+
+That sentence used to read "distinguishable from a `{"error": "not found"}`
+one", which described how `djangorestframework-pydantic-ai` reported a missing
+row before it began raising `ToolFailed` for one. The shape changed and the
+argument did not, but the reason is worth stating because the change looks like
+it closed the hole and did not. A missing row and a converted denial now share
+an `outcome` — both are `failed` — so the two are no longer told apart by the
+result's *shape*. They are still told apart by its *words*: one says the row is
+not there and the other says the tool failed. An oracle needs one bit, and a
+message is a place to find one.
 
 The set is a project decision:
 
