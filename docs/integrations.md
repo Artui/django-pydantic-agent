@@ -99,10 +99,32 @@ model gets to recover:
 - malformed argument shape (JSON-RPC `-32602`) and tool-level
   `validation_error` results → `ModelRetry`, so the model retries with the field
   errors instead of the run dying;
-- other tool-level failures (`service_error` / `not_found`) → returned as the
-  tool's content, model-readable;
+- a tool-level `input_required` result (a service asking for more input, which
+  an in-process caller cannot be asked for mid-call) → `ModelRetry` naming the
+  arguments to add on the next call;
+- every other tool-level failure (`service_error`, `not_found`, a timeout, an
+  oversized result) → `ToolFailed`, so the model reads the sentence and adapts,
+  no retry budget is spent, and the call is recorded `outcome="failed"` for
+  anything streaming the run;
 - genuine protocol faults (unknown tool, auth, rate limits) → a hard
   `RuntimeError` that aborts the run.
+
+A refusal keeps what names it. `ToolFailed` carries a single string, so when
+drf-mcp serves an affordance refusal's `code` (drf-mcp 0.45+), or the chain step
+that failed, it rides as a suffix on the sentence:
+
+```text
+The books are closed. (code: books_closed)
+The books are closed. (code: books_closed, step: void)
+```
+
+The first line is word for word what `[spec-tools]` produces for the same
+refusal raised in process, so a spec reads the same to the model whichever way
+it is exposed, and the code matches the one a row's `affordances` answer
+advertised. The suffix is written for the model and for a person reading the
+tool call; a program that needs the code reads it from drf-mcp's result, or on
+the `[spec-tools]` route off the exception through `translate_exception`, rather
+than parsing it out of the sentence.
 
 Bridged tools also carry destructiveness into the [tool guard](policy.md): the
 bridge maps each tool's `readOnlyHint` annotation onto `DESTRUCTIVE_METADATA_KEY`.

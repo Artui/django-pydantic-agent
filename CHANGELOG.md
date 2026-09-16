@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`DRFMCPToolset` raises `ToolFailed` for a tool-level failure instead of
+  returning it.** A `service_error`, `not_found`, timeout or oversized result
+  from drf-mcp came back as `{"error": {...}}`, the tool's value, which
+  pydantic-ai records as `outcome="success"`. Through `django-ag-ui` or
+  `django-admin-agent` configured with `drf_mcp_server=`, a refused call therefore
+  reached the browser as a completed one, told apart from a real result only by
+  its wording. The model now receives the server's sentence as a failed call that
+  spends no retry budget, which is how `djangorestframework-pydantic-ai` has
+  reported the same failures in process since 0.25. `validation_error` still
+  raises `ModelRetry`, and protocol faults still raise `RuntimeError`.
+
+- **A refusal keeps its code, and a chain failure its step.** `ToolFailed`
+  carries one string, so the `code` drf-mcp serves for an affordance refusal and
+  a chain tool's `failedStep`, both readable keys while the error was returned,
+  ride as a suffix: `The books are closed. (code: books_closed, step: void)`. The
+  `[spec-tools]` route words the same refusal identically, and a test holds the
+  two routes to each other.
+
+- **An `input_required` result raises `ModelRetry`** naming the arguments to add,
+  as the `[spec-tools]` route does for the same `AdditionalInputRequired`, instead
+  of returning the request as the tool's value.
+
 ## [0.22.0] — 2026-09-16
 
 ### Changed
