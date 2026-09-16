@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-09-16
+
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.44`
+  (was `>=0.37`).** `DRFMCPToolset` lists and calls a server's tools in-process,
+  and below 0.44 two things went wrong once those tools' specs declared
+  drf-services affordances: a chain tool ran a step whose service's own
+  affordances refuse it and reported success, and the `outputSchema` passed to
+  the model as `return_schema` left out the `affordances` object each rendered
+  item carries. 0.44 floors `djangorestframework-services` at 0.52 in turn.
+
+- **The `[spec-tools]` extra is floored at `djangorestframework-pydantic-ai>=0.28`
+  (was `>=0.24`).** Below it, a tool `build_spec_capability` builds advertised a
+  `return_schema` without the `affordances` object drf-services renders into each
+  item of a spec declaring them, so the model read a key the schema said did not
+  exist. 0.28 floors `djangorestframework-services` at 0.51 in turn.
+
+  Both dev-group pins move with their extras, and `uv.lock` now resolves
+  `djangorestframework-services` 0.52.0, `djangorestframework-mcp-server` 0.44.0
+  and `djangorestframework-pydantic-ai` 0.28.0.
+
 ## [0.21.1] — 2026-09-05
 
 ### Fixed
@@ -1255,7 +1277,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.19.0...v0.20.0
