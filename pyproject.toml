@@ -65,29 +65,42 @@ openai = ["pydantic-ai-slim[openai]>=2.16,<3"]
 google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
 # toolset (the agent calls DRF tools without a network hop).
-# Floored at 0.44, where the tools this bridge lists and calls caught up with
-# drf-services' affordances. Below it a chain tool ran a step whose service's own
-# affordances refuse it, and reported success, and the ``outputSchema`` the bridge
-# hands the model as ``return_schema`` left out the ``affordances`` object
-# drf-services renders into each item of a spec declaring them. 0.44 floors
-# drf-services at 0.52 in turn. Nothing here declares drf-services directly, so
-# the extra is where the constraint can be stated.
+# Floored at 0.45, the release that serves a refusal's ``code`` in a tool's error
+# result, which this bridge carries into the ``ToolFailed`` text. Below it the
+# suffix is never written, and the model reads a refusal worded differently from
+# the one the ``[spec-tools]`` route gives for the same rule. 0.45 also resolves a
+# chain's RETRIEVE step to its row before the object-level permission judges it:
+# below it a selector returning a queryset skipped that check, and a chain tool
+# rendered without an output serializer answered with the text of the row the
+# rule refuses. 0.45 floors drf-services at 0.52.1 in turn. Nothing here declares
+# drf-services directly, so the extra is where the constraint can be stated.
 #
-# 0.37 was the previous floor, the first release carrying drf-services>=0.49
+# 0.44 was the previous floor, where the tools this bridge lists and calls caught
+# up with drf-services' affordances: below it a chain tool ran a step whose
+# service's own affordances refuse it, and the ``outputSchema`` handed to the
+# model as ``return_schema`` left out the ``affordances`` object. Subsumed.
+#
+# 0.37 was the floor before that, the first release carrying drf-services>=0.49
 # after a serializer that nests itself crashed the catalog walk. That constraint
 # still holds and is subsumed.
-drf-mcp = ["djangorestframework-mcp-server>=0.44"]
+drf-mcp = ["djangorestframework-mcp-server>=0.45"]
 # Expose drf-services specs directly as agent tools via djangorestframework-
 # pydantic-ai's SpecCapability — no MCP server in the path.
-# Floored at 0.28, where a spec tool's ``return_schema`` declares the
-# ``affordances`` object drf-services renders into each item of a spec declaring
-# them. Below it the model was handed items carrying a key the schema said did
-# not exist. 0.28 floors drf-services at 0.51 in turn.
+# Floored at 0.29, where a call an ``Affordance`` refuses fails with the rule's
+# code after its reason, the wording the ``[drf-mcp]`` bridge writes for the same
+# refusal; below it the code is dropped. 0.29 also returns ``None`` where a tool
+# finds nothing, rather than a row of empty fields, and refuses a ``many=True``
+# service spec when the toolset is built, so ``build_spec_capability`` raises
+# ``ImproperlyConfigured`` for one instead of offering a tool no call can
+# satisfy. 0.29 floors drf-services at 0.52.1 in turn.
 #
-# 0.24 was the previous floor, for the recursion crash above one level down:
+# 0.28 was the previous floor, where a spec tool's ``return_schema`` declares the
+# ``affordances`` object drf-services renders into each item. Subsumed.
+#
+# 0.24 was the floor before that, for the recursion crash above one level down:
 # build_spec_capability constructs a SpecCapability, whose tool definitions are
 # schemas, so the crash landed at construction rather than at a call. Subsumed.
-spec-tools = ["djangorestframework-pydantic-ai>=0.28"]
+spec-tools = ["djangorestframework-pydantic-ai>=0.29"]
 # pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
 # CodeMode batching, compaction, step persistence, sub-agents.
 harness = ["pydantic-ai-harness[code-mode]>=0.13"]
@@ -118,9 +131,9 @@ dev = [
     # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
     # Must move in lockstep with the extra — a dev group pinning the old band
     # makes the project unsatisfiable against its own extra.
-    "djangorestframework-mcp-server>=0.44",
+    "djangorestframework-mcp-server>=0.45",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.
-    "djangorestframework-pydantic-ai>=0.28",
+    "djangorestframework-pydantic-ai>=0.29",
     # The [harness] extra's backing package, so the harness capabilities run in dev.
     "pydantic-ai-harness[code-mode]>=0.13",
     # Provider libs so the api_key / provider model-building path is exercised

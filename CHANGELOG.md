@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.45`
+  (was `>=0.44`).** 0.45 serves a refusal's `code` in a tool's error result,
+  which is what the `(code: ...)` suffix below carries; below it the suffix is
+  never written. It also resolves a chain tool's `RETRIEVE` step to its row
+  before the object-level permission judges it. Below 0.45 a selector returning a
+  queryset skipped that check, and a chain step rendered without an output
+  serializer answered with the text of the row the rule refuses. 0.45 floors
+  `djangorestframework-services` at 0.52.1 in turn, and registering a
+  `many=True` service spec on the server now raises `ImproperlyConfigured`
+  rather than listing a tool no call could satisfy.
+
+- **The `[spec-tools]` extra is floored at `djangorestframework-pydantic-ai>=0.29`
+  (was `>=0.28`).** 0.29 writes a refusal's code the way the `[drf-mcp]` bridge
+  now does, so the two routes word the same refusal identically, and returns
+  `None` where a tool finds nothing rather than a row of empty fields. It also
+  refuses a `many=True` service spec when the toolset is built, so
+  `build_spec_capability` raises `ImproperlyConfigured` naming such a spec, where
+  it used to offer a tool whose every call asked the model to retry. Leave the
+  spec out of the specs or registry passed in (a registry narrows with
+  `by_tag`), or declare the list as a named field of its input serializer.
+
 - **`DRFMCPToolset` raises `ToolFailed` for a tool-level failure instead of
   returning it.** A `service_error`, `not_found`, timeout or oversized result
   from drf-mcp came back as `{"error": {...}}`, the tool's value, which
