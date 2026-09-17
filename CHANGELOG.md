@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-09-17
+
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.45`
+  (was `>=0.44`).** 0.45 serves a refusal's `code` in a tool's error result,
+  which is what the `(code: ...)` suffix below carries; below it the suffix is
+  never written. It also resolves a chain tool's `RETRIEVE` step to its row
+  before the object-level permission judges it. Below 0.45 a selector returning a
+  queryset skipped that check, and a chain step rendered without an output
+  serializer answered with the text of the row the rule refuses. 0.45 floors
+  `djangorestframework-services` at 0.52.1 in turn, and registering a
+  `many=True` service spec on the server now raises `ImproperlyConfigured`
+  rather than listing a tool no call could satisfy.
+
+- **The `[spec-tools]` extra is floored at `djangorestframework-pydantic-ai>=0.29`
+  (was `>=0.28`).** 0.29 writes a refusal's code the way the `[drf-mcp]` bridge
+  now does, so the two routes word the same refusal identically, and returns
+  `None` where a tool finds nothing rather than a row of empty fields. It also
+  refuses a `many=True` service spec when the toolset is built, so
+  `build_spec_capability` raises `ImproperlyConfigured` naming such a spec, where
+  it used to offer a tool whose every call asked the model to retry. Leave the
+  spec out of the specs or registry passed in (a registry narrows with
+  `by_tag`), or declare the list as a named field of its input serializer.
+
+- **`DRFMCPToolset` raises `ToolFailed` for a tool-level failure instead of
+  returning it.** A `service_error`, `not_found`, timeout or oversized result
+  from drf-mcp came back as `{"error": {...}}`, the tool's value, which
+  pydantic-ai records as `outcome="success"`. Through `django-ag-ui` or
+  `django-admin-agent` configured with `drf_mcp_server=`, a refused call therefore
+  reached the browser as a completed one, told apart from a real result only by
+  its wording. The model now receives the server's sentence as a failed call that
+  spends no retry budget, which is how `djangorestframework-pydantic-ai` has
+  reported the same failures in process since 0.25. `validation_error` still
+  raises `ModelRetry`, and protocol faults still raise `RuntimeError`.
+
+- **A refusal keeps its code, and a chain failure its step.** `ToolFailed`
+  carries one string, so the `code` drf-mcp serves for an affordance refusal and
+  a chain tool's `failedStep`, both readable keys while the error was returned,
+  ride as a suffix: `The books are closed. (code: books_closed, step: void)`. The
+  `[spec-tools]` route words the same refusal identically, and a test holds the
+  two routes to each other.
+
+- **An `input_required` result raises `ModelRetry`** naming the arguments to add,
+  as the `[spec-tools]` route does for the same `AdditionalInputRequired`, instead
+  of returning the request as the tool's value.
+
 ## [0.22.0] — 2026-09-16
 
 ### Changed
@@ -1277,7 +1324,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.20.0...v0.21.0

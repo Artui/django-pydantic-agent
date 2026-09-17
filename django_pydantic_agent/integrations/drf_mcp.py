@@ -11,7 +11,7 @@ from typing import Any
 
 from asgiref.sync import sync_to_async
 from django.http import HttpRequest
-from pydantic_ai import ModelRetry
+from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
@@ -39,13 +39,19 @@ class DRFMCPToolset(AbstractToolset[Any]):
 
     Failures split three ways, along MCP's protocol-vs-tool boundary:
 
-    - JSON-RPC ``-32602`` and tool-level ``validation_error`` results raise
-      ``pydantic_ai.ModelRetry``, so the model retries with the field
-      errors instead of the run dying;
-    - other tool-level failures (``service_error`` / ``not_found``) are returned
-      as the tool's content, for the model to read;
+    - JSON-RPC ``-32602`` and tool-level ``validation_error`` and
+      ``input_required`` results raise ``pydantic_ai.ModelRetry``, so the model
+      calls again with the field errors fixed or the missing input supplied,
+      instead of the run dying;
+    - every other tool-level failure (``service_error``, ``not_found``, a
+      timeout, an oversized result) raises ``pydantic_ai.ToolFailed``, so the
+      model reads the sentence and the call is recorded ``outcome="failed"``;
     - protocol faults (auth, rate limits, an internal error) raise
       ``RuntimeError`` and abort the run.
+
+    The mapping is the one ``djangorestframework-pydantic-ai`` applies to the same
+    exceptions raised in process, and a refusal reads identically through both:
+    ``The books are closed. (code: books_closed)``.
 
     Args:
         server: The drf-mcp ``MCPServer`` whose registry is bridged.
@@ -174,13 +180,30 @@ class DRFMCPToolset(AbstractToolset[Any]):
             raise RuntimeError(f"drf-mcp tool {name!r} failed: {result.message}")
         if result.get("isError"):
             error = _parse_tool_error(result)
-            if error.get("type") == "validation_error":
+            error_type: Any = error.get("type")
+            if error_type == "validation_error":
                 # Kept on separate lines: Python 3.11's tracer attributes a
                 # multi-line ``raise X(...)`` to the argument line, leaving the
                 # ``raise`` line uncovered and tripping the 100% gate.
                 message = error.get("message", "invalid arguments")
                 raise ModelRetry(_retry_message(message, error.get("detail")))
-            return {"error": error}
+            if error_type == "input_required":
+                # drf-mcp degrades a service's request for more input to this
+                # result when the caller cannot be asked mid-call, which an
+                # in-process caller never can. "Call me again with these" is the
+                # retry channel's own meaning, and it is what the spec-tools
+                # route raises for the same exception.
+                prompt = _missing_input_prompt(error)
+                raise ModelRetry(prompt)
+            # **Raised, not returned.** This returned ``{"error": error}`` as the
+            # tool's value, which pydantic-ai marks ``outcome="success"``: every
+            # refusal, missing row and timeout reached a transport streaming the
+            # run as a completed call, told apart from a real result only by the
+            # payload's wording. ``ToolFailed`` hands the model the same sentence,
+            # spends no retry budget and prepends no correction instructions, and
+            # marks the return ``outcome="failed"``.
+            failure = _failure_message(error)
+            raise ToolFailed(failure)
         return result.get("structuredContent", result.get("content"))
 
     def _advertised_names(self, name: str) -> list[str] | None:
@@ -211,6 +234,54 @@ def _parse_tool_error(result: dict[str, Any]) -> dict[str, Any]:
     except (ValueError, KeyError, TypeError):
         return {"type": "unknown", "message": str(text) or "tool error"}
     return error if isinstance(error, dict) else {"type": "unknown", "message": str(error)}
+
+
+# The error keys that name a failure, in suffix order, with the label each is
+# written under. ``code`` is a refusal's stable name (drf-mcp 0.45+ sends it for
+# an ``ActionUnavailable``); ``failedStep`` is the chain step that failed.
+_FAILURE_LABELS: tuple[tuple[str, str], ...] = (("code", "code"), ("failedStep", "step"))
+
+
+def _failure_message(error: dict[str, Any]) -> str:
+    """Compose the ``ToolFailed`` text: the server's sentence, then what names it.
+
+    While the error came back as a returned dict, ``code`` and ``failedStep`` were
+    keys the model could read. ``ToolFailed`` carries a string and nothing else,
+    so they ride as a suffix rather than being dropped. The ``(code: ...)`` form
+    is the one ``djangorestframework-pydantic-ai`` writes for the same refusal
+    raised in process, so a model reads one wording whichever route a tool
+    arrived by, and can match it to the ``code`` a row's ``affordances`` answer
+    advertised. It is written for the model and for a person reading the tool
+    call; a program wanting the code reads it where drf-mcp serves it, not out of
+    this sentence.
+    """
+    message: str = str(error.get("message") or "tool error")
+    labels: list[str] = [
+        f"{label}: {error[key]}" for key, label in _FAILURE_LABELS if error.get(key)
+    ]
+    if not labels:
+        return message
+    return f"{message} ({', '.join(labels)})"
+
+
+def _missing_input_prompt(error: dict[str, Any]) -> str:
+    """Compose the ``ModelRetry`` text for ``input_required``: the service's
+    message, plus the names it wants the answer back under.
+
+    Worded as ``djangorestframework-pydantic-ai`` words the same request, for its
+    reason: ``requestedInput`` is a JSON-Schema *properties* mapping keyed by
+    input name, the model is about to call the same tool again, and that tool's
+    parameter schema already describes each argument. The names are what to add;
+    a second, differently shaped description in prose is how a model ends up
+    inventing a nested object.
+    """
+    message: str = str(error.get("message") or "additional input required")
+    requested: Any = error.get("requestedInput")
+    # Absent when the service named no schema; drf-mcp sends a mapping otherwise.
+    if not requested:
+        return message
+    names: str = ", ".join(f"`{name}`" for name in requested)
+    return f"{message} Call this tool again, additionally supplying: {names}."
 
 
 def _retry_message(message: str, detail: Any, *, available: list[str] | None = None) -> str:

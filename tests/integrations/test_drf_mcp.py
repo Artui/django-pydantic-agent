@@ -4,14 +4,18 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
 from django.test import RequestFactory
-from pydantic_ai import Agent, ModelRetry
+from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
 from rest_framework_mcp import JsonRpcError, JsonRpcErrorCode
 
+from django_pydantic_agent.agent.types.agent_deps import AgentDeps
+from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
 from django_pydantic_agent.integrations.drf_mcp import DRFMCPToolset
-from tests.integrations.drf_server import server
+from tests.integrations.drf_server import REFUSED_SPEC, server
 
 
 def _request() -> HttpRequest:
@@ -208,12 +212,153 @@ async def test_service_validation_error_result_raises_model_retry() -> None:
         await toolset.call_tool("invalid", {"a": 1, "b": 2}, None, None)
 
 
-async def test_service_error_result_returns_model_readable_content() -> None:
-    # A business-rule denial is content the model can read and act on — not
-    # an exception that kills the chat.
+async def test_service_error_result_raises_tool_failed() -> None:
+    # A business-rule denial is a sentence the model reads and adapts to, and a
+    # failed call to everything streaming the run. It was returned as the tool's
+    # value, which pydantic-ai records as a success.
     toolset = DRFMCPToolset(server, _request())
-    result = await toolset.call_tool("denied", {"a": 1, "b": 2}, None, None)
-    assert result == {"error": {"type": "service_error", "message": "denied by policy"}}
+    with pytest.raises(ToolFailed) as excinfo:
+        await toolset.call_tool("denied", {"a": 1, "b": 2}, None, None)
+    # Nothing names a plain ``ServiceError``, so no suffix is invented for one.
+    assert excinfo.value.message == "denied by policy"
+
+
+async def test_a_refusal_carries_its_code() -> None:
+    # drf-mcp serves an ``ActionUnavailable``'s code beside the sentence; the
+    # bridge keeps it in the only channel ``ToolFailed`` has, in the form the
+    # spec-tools route writes.
+    toolset = DRFMCPToolset(server, _request())
+    with pytest.raises(ToolFailed) as excinfo:
+        await toolset.call_tool("refused", {}, None, None)
+    assert excinfo.value.message == "The books are closed. (code: books_closed)"
+
+
+async def test_a_chain_refusal_names_the_code_and_the_step() -> None:
+    toolset = DRFMCPToolset(server, _request())
+    with pytest.raises(ToolFailed) as excinfo:
+        await toolset.call_tool("refused_chain", {}, None, None)
+    assert excinfo.value.message == "The books are closed. (code: books_closed, step: void)"
+
+
+async def test_a_refusal_reads_the_same_through_both_bridges() -> None:
+    """The same refused spec, called in process and over the drf-mcp bridge.
+
+    A consumer can expose one spec either way, and the model is taught one
+    wording for a refusal. Asserted against the other package's real output
+    rather than a copy of its format, so a change on either side fails here.
+    """
+    capability = build_spec_capability({"refused": REFUSED_SPEC})
+    ctx = RunContext(deps=AgentDeps(user=AnonymousUser()), model=TestModel(), usage=RunUsage())
+    with pytest.raises(ToolFailed) as in_process:
+        await capability.get_toolset().call_tool("refused", {}, ctx, None)
+    with pytest.raises(ToolFailed) as bridged:
+        await DRFMCPToolset(server, _request()).call_tool("refused", {}, None, None)
+    assert bridged.value.message == in_process.value.message
+
+
+@pytest.mark.django_db
+async def test_agent_run_records_a_refusal_as_a_failed_call() -> None:
+    # The regression one hop out: a transport streaming the run reads
+    # ``outcome``, and a refusal returned as a value arrived as ``"success"``.
+    toolset = DRFMCPToolset(server, _request())
+    agent = Agent(TestModel(call_tools=["refused"]), toolsets=[toolset])
+    result = await agent.run("close the books")
+    returns = [
+        part
+        for message in result.all_messages()
+        for part in getattr(message, "parts", [])
+        if isinstance(part, ToolReturnPart) and part.tool_name == "refused"
+    ]
+    assert [(part.outcome, part.content) for part in returns] == [
+        ("failed", "The books are closed. (code: books_closed)")
+    ]
+
+
+async def test_input_required_result_raises_model_retry() -> None:
+    # A request for more input is "call again with these", the retry channel's
+    # meaning, named the way the spec-tools route names it.
+    toolset = DRFMCPToolset(server, _request())
+    with pytest.raises(ModelRetry) as excinfo:
+        await toolset.call_tool("needs_input", {}, None, None)
+    assert excinfo.value.message == (
+        "Say why the books are being closed. Call this tool again, additionally supplying: `reason`."
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (
+            {"type": "input_required", "message": "Say why.", "requestedInput": {"a": {}, "b": {}}},
+            "Say why. Call this tool again, additionally supplying: `a`, `b`.",
+        ),
+        # No schema to name: the message alone, not an empty list of names.
+        ({"type": "input_required", "message": "Say why."}, "Say why."),
+        ({"type": "input_required", "message": "Say why.", "requestedInput": {}}, "Say why."),
+    ],
+)
+async def test_input_required_payload_raises_model_retry(
+    monkeypatch: pytest.MonkeyPatch, error: dict[str, object], expected: str
+) -> None:
+    # Payload-level twin of the test above, for the Python 3.11 tracer reason.
+    _serve_error(monkeypatch, error)
+    toolset = DRFMCPToolset(server, _request())
+    with pytest.raises(ModelRetry) as excinfo:
+        await toolset.call_tool("add", {"a": 1, "b": 2}, None, None)
+    assert excinfo.value.message == expected
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (
+            {"type": "not_found", "message": "add: no matching instance found"},
+            "add: no matching instance found",
+        ),
+        (
+            {"type": "service_error", "message": "Closed.", "code": "books_closed"},
+            "Closed. (code: books_closed)",
+        ),
+        (
+            {"type": "service_error", "message": "Closed.", "failedStep": "void"},
+            "Closed. (step: void)",
+        ),
+        (
+            {
+                "type": "service_error",
+                "message": "Closed.",
+                "code": "books_closed",
+                "failedStep": "void",
+            },
+            "Closed. (code: books_closed, step: void)",
+        ),
+        # A payload with no message still fails the call with something to say.
+        ({"type": "timeout"}, "tool error"),
+    ],
+)
+async def test_other_error_payloads_raise_tool_failed(
+    monkeypatch: pytest.MonkeyPatch, error: dict[str, object], expected: str
+) -> None:
+    # Payload-level twin of the integration tests above, for the same tracer
+    # reason, and the one place each suffix combination is pinned.
+    _serve_error(monkeypatch, error)
+    toolset = DRFMCPToolset(server, _request())
+    with pytest.raises(ToolFailed) as excinfo:
+        await toolset.call_tool("add", {"a": 1, "b": 2}, None, None)
+    assert excinfo.value.message == expected
+
+
+def _serve_error(monkeypatch: pytest.MonkeyPatch, error: dict[str, object]) -> None:
+    """Make ``acall_tool`` answer with ``error``, encoded as drf-mcp encodes one."""
+    import json as json_module
+
+    async def fake_call(
+        name: str, arguments: object = None, **_kwargs: object
+    ) -> dict[str, object]:
+        text = json_module.dumps({"error": error})
+        return {"isError": True, "content": [{"type": "text", "text": text}]}
+
+    monkeypatch.setattr(server, "acall_tool", fake_call)
 
 
 async def test_validation_error_payload_raises_model_retry(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -243,8 +388,9 @@ async def test_unparseable_error_content_falls_back(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(server, "acall_tool", fake_call)
     toolset = DRFMCPToolset(server, _request())
-    result = await toolset.call_tool("add", {"a": 1, "b": 2}, None, None)
-    assert result == {"error": {"type": "unknown", "message": "not json"}}
+    with pytest.raises(ToolFailed) as excinfo:
+        await toolset.call_tool("add", {"a": 1, "b": 2}, None, None)
+    assert excinfo.value.message == "not json"
 
 
 async def test_non_dict_error_payload_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,8 +401,9 @@ async def test_non_dict_error_payload_falls_back(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(server, "acall_tool", fake_call)
     toolset = DRFMCPToolset(server, _request())
-    result = await toolset.call_tool("add", {"a": 1, "b": 2}, None, None)
-    assert result == {"error": {"type": "unknown", "message": "boom"}}
+    with pytest.raises(ToolFailed) as excinfo:
+        await toolset.call_tool("add", {"a": 1, "b": 2}, None, None)
+    assert excinfo.value.message == "boom"
 
 
 async def test_excluded_names_are_skipped_registry_wins() -> None:
