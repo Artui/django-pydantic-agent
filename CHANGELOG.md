@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-09-17
+
 ### Changed
 
 - **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.45`
@@ -1322,7 +1324,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.20.0...v0.21.0
