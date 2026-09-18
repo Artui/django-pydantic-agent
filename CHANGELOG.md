@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-09-18
+
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.46`
+  (was `>=0.45`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.30` (was `>=0.29`), and these two floors
+  move together.** Both releases turn a refusal into support: a `ServiceSpec`
+  declaring `many=True` is now a tool that takes its list under one named
+  argument, `items` unless the spec names another, where each sibling used to
+  refuse it. Raising one floor without the other is what the pairing prevents,
+  because it leaves the same spec a working tool on one route and an
+  `ImproperlyConfigured` on the other, worded as a defect in the spec rather
+  than in the versions installed.
+
+- **The guidance in 0.23.0 for a `many=True` spec is withdrawn.** That entry
+  said to leave such a spec out of the specs or registry passed in, or to
+  declare its list as a named field of an input serializer. Neither is necessary
+  now, and a spec reshaped that way keeps working -- it is a different tool, one
+  whose arguments carry the list among others, rather than the bulk tool the
+  spec now produces on its own.
+
+- **Both extras floor `djangorestframework-services` at 0.53.0 in turn, and that
+  floor is hard.** Every service dispatch on either route passes
+  `many_as_argument`, which first exists there, so below it a tool call raises
+  `TypeError` rather than failing to resolve. Nothing here declares
+  drf-services directly, which is why the constraint is stated on the extras
+  that carry it.
+
+- **A `many=True` chain step keeps its list.** Through the `[drf-mcp]` bridge,
+  such a step's output re-fetch collapsed the list to one row, and a chain
+  inheriting a bulk first step's `input_serializer` advertised one item as the
+  whole chain's arguments and handed the service that item as its data. 0.46
+  stops the first and refuses the second with `ImproperlyConfigured` naming the
+  chain and the step.
+
 ## [0.23.0] — 2026-09-17
 
 ### Changed
@@ -1324,7 +1360,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.21.0...v0.21.1
