@@ -91,6 +91,34 @@ transport would — including a selector tool's filter / ordering / pagination
 arguments and its `additionalProperties` policy, not just the input serializer's
 fields.
 
+### A tool that cannot run now
+
+A service's `affordances` can say when the operation is possible at all: a
+condition written as a callable reads only the user and the request, never the
+call's arguments, so while it is unmet every call is refused. drf-mcp leaves
+such a tool out of `tools/list`, and whether one is unmet can change mid-run.
+So the bridge lists definitions **once** per request, every tool the user may
+see included, and on **every step**:
+
+- offers only the tools drf-mcp would list right now, asking it through
+  `MCPServer.aunavailable_tools` (drf-mcp 0.48+), so a tool that becomes
+  available mid-run is offered from the next step without listing again;
+- names each tool it left out in the toolset's instructions, with the reason
+  its condition gives, so a model asked for one says why rather than guessing
+  or denying the operation exists:
+
+```text
+- These operations exist but cannot be performed right now, so they are not among your tools. If the user asks for one, say it is unavailable at the moment and give the reason listed for it, rather than guessing why:
+  - `close_books`: The books are closed.
+```
+
+That is word for word what `[spec-tools]` says for the same spec, so the model
+is taught one sentence whichever way a spec is exposed. A server declaring no
+such condition adds nothing to the instructions and no thread hop per step.
+Nothing here is an authorization decision: the call enforces every condition,
+so a tool whose condition flips between the step offering it and the call is
+refused with its code, as below.
+
 ### Error semantics
 
 The bridge follows MCP's protocol-vs-tool boundary, which decides whether the

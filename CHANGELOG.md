@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`DRFMCPToolset` follows tool availability every step instead of once per
+  run.** drf-mcp leaves a tool out of `tools/list` while an operation-scope
+  affordance refuses it, and the bridge listed once per request, so a tool whose
+  condition flipped mid-run stayed offered after it closed (inviting a refusal)
+  or stayed hidden after it opened. It now lists every tool the user may see
+  once, with `include_unavailable=True`, and asks drf-mcp's
+  `aunavailable_tools` each step, offering only what a fresh listing would.
+  A name `exclude_names` claimed is never reported, since the registry's tool of
+  that name is the one offered.
+
+### Added
+
+- **`DRFMCPToolset.get_instructions` names each tool left out this step, with
+  its reason.** A model sees neither a withheld tool nor any sign it exists, so a
+  user asking for one got a guess. The wording is `[spec-tools]`' own, asserted
+  against that package's real output, so a spec reads the same to the model
+  whichever way it is exposed. `None` when nothing is left out.
+
 ## [0.24.0] — 2026-09-18
 
 ### Changed

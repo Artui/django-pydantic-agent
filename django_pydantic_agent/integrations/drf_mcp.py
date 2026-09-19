@@ -25,6 +25,17 @@ from django_pydantic_agent.constants import DESTRUCTIVE_METADATA_KEY
 # transport has.
 _TOOL_ARGS_VALIDATOR = SchemaValidator(schema=core_schema.any_schema())
 
+# The heading of the per-step list of tools an unmet operation condition left
+# out, worded as ``djangorestframework-pydantic-ai`` words it for the spec-tools
+# route. A consumer can expose one spec either way, and the model is taught one
+# sentence for a missing operation; a test asserts it against that package's
+# real output, so a change on either side fails there rather than drifting.
+_UNAVAILABLE_INSTRUCTION = (
+    "- These operations exist but cannot be performed right now, so they are not among your "
+    "tools. If the user asks for one, say it is unavailable at the moment and give the reason "
+    "listed for it, rather than guessing why:"
+)
+
 
 class DRFMCPToolset(AbstractToolset[Any]):
     """Exposes a drf-mcp ``MCPServer``'s tools as a Pydantic-AI toolset.
@@ -36,6 +47,16 @@ class DRFMCPToolset(AbstractToolset[Any]):
     exactly — without the network hop. Tool definitions carry the default
     ``kind="function"``, the in-process kind the run loop calls itself; an
     ``external`` tool would instead be deferred to the client and never run.
+
+    **Definitions once, availability every step.** drf-mcp leaves a tool out of
+    ``tools/list`` while an operation-scope affordance refuses it, and whether one
+    does can change mid-run -- an admin closes the books. So the definitions are
+    listed once, with every tool the user may see, and each step asks drf-mcp
+    which of them a fresh listing would leave out (``aunavailable_tools``,
+    drf-mcp 0.48+): those are not offered that step, and the instructions name
+    each with its ``reason``, so a model asked for one can say why rather than
+    guess or deny the operation exists. A server declaring no such condition
+    answers that without leaving the event loop.
 
     Failures split three ways, along MCP's protocol-vs-tool boundary:
 
@@ -80,7 +101,9 @@ class DRFMCPToolset(AbstractToolset[Any]):
         self._max_retries = max_retries
         # Loaded lazily in ``get_tools``: drf-mcp's ``tools/list`` may touch the
         # DB for per-user listing permissions, which Django forbids on the async
-        # event loop this is constructed in.
+        # event loop this is constructed in. Every tool the user may see, the
+        # unavailable ones included, so one that becomes available mid-run has a
+        # definition to offer.
         self._tool_defs: list[ToolDefinition] | None = None
 
     @property
@@ -88,9 +111,18 @@ class DRFMCPToolset(AbstractToolset[Any]):
         return "drf-mcp"
 
     async def get_tools(self, ctx: Any) -> dict[str, ToolsetTool[Any]]:
-        """Load tool defs from drf-mcp's ``tools/list`` once, then wrap them."""
+        """The tools this step may call: every definition, less the unavailable.
+
+        Definitions come from drf-mcp's ``tools/list`` once per toolset, which is
+        once per request. Availability is asked again here every step, because
+        pydantic-ai calls this once per step and a condition may flip between
+        two: offering a tool drf-mcp would leave out only invites a refusal, and
+        withholding one that became available hides an operation the model could
+        now perform. The call enforces every condition whatever was offered.
+        """
         if self._tool_defs is None:
             self._tool_defs = await sync_to_async(self._load_tool_defs)()
+        unavailable = await self._unavailable_tools()
         return {
             tool_def.name: ToolsetTool(
                 toolset=self,
@@ -99,19 +131,62 @@ class DRFMCPToolset(AbstractToolset[Any]):
                 args_validator=_TOOL_ARGS_VALIDATOR,
             )
             for tool_def in self._tool_defs
+            if tool_def.name not in unavailable
+        }
+
+    async def get_instructions(self, ctx: Any) -> str | None:
+        """Name each tool left out this step, with the reason its condition gives.
+
+        ``get_tools`` withholds such a tool, so without this the model sees
+        neither it nor any sign it exists, and a user asking for it gets a guess
+        where a sentence was available. ``None`` when nothing is left out, which
+        is every step for a server declaring no operation condition.
+
+        Asked separately from ``get_tools``, as the spec-tools route asks: the
+        run context carries no key that could safely scope one answer to one
+        step, and asking twice costs a second evaluation of conditions that read
+        only seeds. A condition flipping between the two reads can leave one
+        step's tools and instructions disagreeing about a tool; the call's own
+        enforcement is authoritative either way.
+        """
+        unavailable = await self._unavailable_tools()
+        if not unavailable:
+            return None
+        return _unavailable_instruction(unavailable)
+
+    async def _unavailable_tools(self) -> dict[str, Any]:
+        """Each tool drf-mcp would leave out of a listing now, with the condition.
+
+        In drf-mcp's registry order, so a step always reads the same way. A name
+        ``exclude_names`` claimed is dropped: the registry's tool of that name is
+        the one offered, and telling the model it cannot run would be about a
+        tool it never sees.
+        """
+        unavailable: dict[str, Any] = await self._server.aunavailable_tools(
+            user=self._request.user, request=self._request
+        )
+        return {
+            name: affordance
+            for name, affordance in unavailable.items()
+            if name not in self._exclude_names
         }
 
     def _load_tool_defs(self) -> list[ToolDefinition]:
         """Page through drf-mcp's ``tools/list``, mapping each tool to a def.
 
         The merged ``inputSchema`` is used verbatim, so nothing the model could
-        send over HTTP is silently dropped in process.
+        send over HTTP is silently dropped in process. ``include_unavailable``
+        lists the tools an unmet condition would leave out too, since this list
+        outlives the step it is taken in; ``get_tools`` filters them per step.
         """
         defs: list[ToolDefinition] = []
         cursor: str | None = None
         while True:
             payload = self._server.list_tools(
-                cursor, user=self._request.user, request=self._request
+                cursor,
+                user=self._request.user,
+                request=self._request,
+                include_unavailable=True,
             )
             if isinstance(payload, JsonRpcError):
                 raise RuntimeError(f"drf-mcp tools/list failed: {payload.message}")
@@ -218,6 +293,18 @@ class DRFMCPToolset(AbstractToolset[Any]):
             return None
         names: list[str] = [d.name for d in self._tool_defs]
         return None if name in names else names
+
+
+def _unavailable_instruction(unavailable: dict[str, Any]) -> str:
+    """The heading, then one line per tool left out: its name and its ``reason``.
+
+    The ``code`` is left out, as the spec-tools route leaves it out: it is for
+    programs and for tying a refusal to a row's ``affordances``, and a model
+    relaying this to a person has no use for it.
+    """
+    lines = [_UNAVAILABLE_INSTRUCTION]
+    lines.extend(f"  - `{name}`: {affordance.reason}" for name, affordance in unavailable.items())
+    return "\n".join(lines)
 
 
 def _parse_tool_error(result: dict[str, Any]) -> dict[str, Any]:
