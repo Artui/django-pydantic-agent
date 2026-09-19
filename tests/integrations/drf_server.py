@@ -43,15 +43,21 @@ def ask_for_a_reason() -> dict[str, Any]:
     )
 
 
-# An affordance whose condition never holds, so every call is refused before the
-# service runs. Shared with the spec-tools route's tests, which assert the same
-# refusal reads identically through both bridges.
+# Whether the books are open, which the affordance below reads. Closed unless a
+# test opens them, so every call is refused before the service runs. A test can
+# still open them to take a listing: drf-mcp 0.47 and PAI 0.31 leave a tool out
+# of the list while its operation condition is unmet, so an agent that meets
+# this refusal is one holding a listing taken before the books closed.
+BOOKS = {"open": False}
+
+# Shared with the spec-tools route's tests, which assert the same refusal reads
+# identically through both bridges.
 REFUSED_SPEC: ServiceSpec[Any, Any, Any] = ServiceSpec(
     permission_classes=[AllowAny],
     service=close_the_books,
     atomic=False,
     affordances=[
-        Affordance(code="books_closed", reason="The books are closed.", when=lambda: False)
+        Affordance(code="books_closed", reason="The books are closed.", when=lambda: BOOKS["open"])
     ],
 )
 
