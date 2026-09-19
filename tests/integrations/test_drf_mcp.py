@@ -15,7 +15,7 @@ from rest_framework_mcp import JsonRpcError, JsonRpcErrorCode
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
 from django_pydantic_agent.integrations.drf_mcp import DRFMCPToolset
-from tests.integrations.drf_server import REFUSED_SPEC, server
+from tests.integrations.drf_server import BOOKS, REFUSED_SPEC, server
 
 
 def _request() -> HttpRequest:
@@ -257,10 +257,19 @@ async def test_a_refusal_reads_the_same_through_both_bridges() -> None:
 
 
 @pytest.mark.django_db
-async def test_agent_run_records_a_refusal_as_a_failed_call() -> None:
+async def test_agent_run_records_a_refusal_as_a_failed_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The regression one hop out: a transport streaming the run reads
     # ``outcome``, and a refusal returned as a value arrived as ``"success"``.
+    # drf-mcp leaves the tool out of ``tools/list`` while the books are closed,
+    # so a run meets the refusal only by calling from a listing taken while they
+    # were open. The bridge lists once per run, so taking that listing first and
+    # then closing the books is the case where a condition flips mid-run.
     toolset = DRFMCPToolset(server, _request())
+    monkeypatch.setitem(BOOKS, "open", True)
+    assert "refused" in await toolset.get_tools(None)  # type: ignore[arg-type]
+    monkeypatch.setitem(BOOKS, "open", False)
     agent = Agent(TestModel(call_tools=["refused"]), toolsets=[toolset])
     result = await agent.run("close the books")
     returns = [
