@@ -50,7 +50,7 @@ class DRFMCPToolset(AbstractToolset[Any]):
 
     **Definitions once, availability every step.** drf-mcp leaves a tool out of
     ``tools/list`` while an operation-scope affordance refuses it, and whether one
-    does can change mid-run -- an admin closes the books. So the definitions are
+    does can change mid-run — an admin closes the books. So the definitions are
     listed once, with every tool the user may see, and each step asks drf-mcp
     which of them a fresh listing would leave out (``aunavailable_tools``,
     drf-mcp 0.48+): those are not offered that step, and the instructions name

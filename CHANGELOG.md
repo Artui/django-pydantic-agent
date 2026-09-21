@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against that package's real output, so a spec reads the same to the model
   whichever way it is exposed. `None` when nothing is left out.
 
+### Fixed
+
+- **The `[drf-mcp]` error-semantics docs said an unknown tool name aborts the
+  run.** It has been a `ModelRetry` since the bridge followed drf-mcp 0.24 in
+  serving an unknown tool on `-32602`, indistinguishable from malformed
+  arguments, and a test has held that ever since — so the one sentence a reader
+  would check before letting a model guess a name was the one that was wrong.
+
 ## [0.24.0] — 2026-09-18
 
 ### Changed

@@ -124,9 +124,11 @@ refused with its code, as below.
 The bridge follows MCP's protocol-vs-tool boundary, which decides whether the
 model gets to recover:
 
-- malformed argument shape (JSON-RPC `-32602`) and tool-level
-  `validation_error` results → `ModelRetry`, so the model retries with the field
-  errors instead of the run dying;
+- a fault in the request the model produced — a malformed argument shape or an
+  unknown tool name, which drf-mcp 0.24+ serves on the same JSON-RPC `-32602` --
+  and tool-level `validation_error` results → `ModelRetry`, so the model retries
+  with the field errors fixed, or with a real name (the retry lists the tools
+  this toolset advertises), instead of the run dying;
 - a tool-level `input_required` result (a service asking for more input, which
   an in-process caller cannot be asked for mid-call) → `ModelRetry` naming the
   arguments to add on the next call;
@@ -134,8 +136,9 @@ model gets to recover:
   oversized result) → `ToolFailed`, so the model reads the sentence and adapts,
   no retry budget is spent, and the call is recorded `outcome="failed"` for
   anything streaming the run;
-- genuine protocol faults (unknown tool, auth, rate limits) → a hard
-  `RuntimeError` that aborts the run.
+- genuine protocol faults (auth, rate limits, an internal error) → a hard
+  `RuntimeError` that aborts the run: nothing the model can rewrite its way out
+  of.
 
 A refusal keeps what names it. `ToolFailed` carries a single string, so when
 drf-mcp serves an affordance refusal's `code` (drf-mcp 0.45+), or the chain step
