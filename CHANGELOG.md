@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.48`
+  (was `>=0.46`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.31` (was `>=0.30`), and these two floors
+  move together.** drf-mcp 0.48 is where a server answers, in process, which
+  tools a listing leaves out and why, and where `list_tools` takes
+  `include_unavailable=True`; the bridge below needs both, and below that
+  release neither exists. PAI 0.31 is where the other route names each missing
+  operation with its reason, which is the wording the bridge now writes and this
+  package's tests assert against that package's real output. Raising one without
+  the other is what the pairing prevents: a model told why an operation is
+  missing on one route and left guessing on the other.
+- **`DRFMCPToolset` follows tool availability every step instead of once per
+  run.** drf-mcp leaves a tool out of `tools/list` while an operation-scope
+  affordance refuses it, and the bridge listed once per request, so a tool whose
+  condition flipped mid-run stayed offered after it closed (inviting a refusal)
+  or stayed hidden after it opened. It now lists every tool the user may see
+  once, with `include_unavailable=True`, and asks drf-mcp's
+  `aunavailable_tools` each step, offering only what a fresh listing would.
+  A name `exclude_names` claimed is never reported, since the registry's tool of
+  that name is the one offered.
+
+### Added
+
+- **`DRFMCPToolset.get_instructions` names each tool left out this step, with
+  its reason.** A model sees neither a withheld tool nor any sign it exists, so a
+  user asking for one got a guess. The wording is `[spec-tools]`' own, asserted
+  against that package's real output, so a spec reads the same to the model
+  whichever way it is exposed. `None` when nothing is left out.
+
+### Fixed
+
+- **The `[drf-mcp]` error-semantics docs said an unknown tool name aborts the
+  run.** It has been a `ModelRetry` since the bridge followed drf-mcp 0.24 in
+  serving an unknown tool on `-32602`, indistinguishable from malformed
+  arguments, and a test has held that ever since — so the one sentence a reader
+  would check before letting a model guess a name was the one that was wrong.
+
 ## [0.24.0] — 2026-09-18
 
 ### Changed

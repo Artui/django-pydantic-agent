@@ -44,10 +44,10 @@ def ask_for_a_reason() -> dict[str, Any]:
 
 
 # Whether the books are open, which the affordance below reads. Closed unless a
-# test opens them, so every call is refused before the service runs. A test can
-# still open them to take a listing: drf-mcp 0.47 and PAI 0.31 leave a tool out
-# of the list while its operation condition is unmet, so an agent that meets
-# this refusal is one holding a listing taken before the books closed.
+# test opens them, so every call is refused before the service runs. Both
+# bridges leave a tool out of a step's tools while its operation condition is
+# unmet, so an agent meets this refusal only when the books close between a
+# step offering the tool and its call, which is what a test opening them models.
 BOOKS = {"open": False}
 
 # Shared with the spec-tools route's tests, which assert the same refusal reads

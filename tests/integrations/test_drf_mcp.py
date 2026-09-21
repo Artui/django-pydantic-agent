@@ -6,7 +6,7 @@ from django.http import HttpRequest
 from django.test import RequestFactory
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
@@ -262,15 +262,17 @@ async def test_agent_run_records_a_refusal_as_a_failed_call(
 ) -> None:
     # The regression one hop out: a transport streaming the run reads
     # ``outcome``, and a refusal returned as a value arrived as ``"success"``.
-    # drf-mcp leaves the tool out of ``tools/list`` while the books are closed,
-    # so a run meets the refusal only by calling from a listing taken while they
-    # were open. The bridge lists once per run, so taking that listing first and
-    # then closing the books is the case where a condition flips mid-run.
-    toolset = DRFMCPToolset(server, _request())
+    # The bridge offers a tool only while its condition is met, so a run meets
+    # the refusal when the condition flips between offering the tool and the
+    # call: here the books close while the model is choosing.
+    def model_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        if any(part.part_kind == "tool-return" for part in messages[-1].parts):
+            return ModelResponse(parts=[TextPart("done")])
+        monkeypatch.setitem(BOOKS, "open", False)
+        return ModelResponse(parts=[ToolCallPart(tool_name="refused", args={})])
+
     monkeypatch.setitem(BOOKS, "open", True)
-    assert "refused" in await toolset.get_tools(None)  # type: ignore[arg-type]
-    monkeypatch.setitem(BOOKS, "open", False)
-    agent = Agent(TestModel(call_tools=["refused"]), toolsets=[toolset])
+    agent = Agent(FunctionModel(model_fn), toolsets=[DRFMCPToolset(server, _request())])
     result = await agent.run("close the books")
     returns = [
         part
@@ -281,6 +283,112 @@ async def test_agent_run_records_a_refusal_as_a_failed_call(
     assert [(part.outcome, part.content) for part in returns] == [
         ("failed", "The books are closed. (code: books_closed)")
     ]
+
+
+# ---------- availability, per step ----------
+
+_MISSING = [
+    "- These operations exist but cannot be performed right now, so they are not among your "
+    "tools. If the user asks for one, say it is unavailable at the moment and give the reason "
+    "listed for it, rather than guessing why:",
+    "  - `refused`: The books are closed.",
+    "  - `refused_chain`: The books are closed.",
+]
+
+
+async def test_a_tool_whose_condition_is_unmet_is_not_offered() -> None:
+    # Closed books refuse every call of both tools, whatever the arguments, so
+    # offering them only invites that refusal.
+    tools = await DRFMCPToolset(server, _request()).get_tools(None)  # type: ignore[arg-type]
+    assert "add" in tools
+    assert not {"refused", "refused_chain"} & set(tools)
+
+
+async def test_a_tool_that_becomes_available_is_offered_without_listing_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Listed once, unavailable tools included, so the definition is there when
+    # the books open; only availability is asked again.
+    listings: list[object] = []
+    list_tools = server.list_tools
+
+    def counting_list(*args: object, **kwargs: object) -> object:
+        listings.append(kwargs.get("include_unavailable"))
+        return list_tools(*args, **kwargs)
+
+    monkeypatch.setattr(server, "list_tools", counting_list)
+    toolset = DRFMCPToolset(server, _request())
+    closed = await toolset.get_tools(None)  # type: ignore[arg-type]
+    monkeypatch.setitem(BOOKS, "open", True)
+    opened = await toolset.get_tools(None)  # type: ignore[arg-type]
+    assert "refused" not in closed
+    assert opened["refused"].tool_def.name == "refused"
+    assert listings == [True]
+
+
+async def test_instructions_name_each_missing_tool_with_its_reason() -> None:
+    instructions = await DRFMCPToolset(server, _request()).get_instructions(None)
+    assert instructions is not None
+    assert instructions.splitlines() == _MISSING
+
+
+async def test_no_instructions_when_nothing_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(BOOKS, "open", True)
+    assert await DRFMCPToolset(server, _request()).get_instructions(None) is None
+
+
+async def test_a_name_the_registry_claimed_is_never_explained() -> None:
+    # The registry's tool of that name is the one offered, so saying it cannot
+    # run would be about a tool the model never sees.
+    toolset = DRFMCPToolset(server, _request(), exclude_names=frozenset({"refused"}))
+    instructions = await toolset.get_instructions(None)
+    assert instructions is not None
+    assert instructions.splitlines() == [_MISSING[0], _MISSING[2]]
+
+
+async def test_a_missing_tool_reads_the_same_through_both_bridges() -> None:
+    """The same unavailable spec, offered in process and over the drf-mcp bridge.
+
+    Asserted against the other package's real instructions rather than a copy of
+    its wording, so a change on either side fails here. The spec-tools route
+    puts its conventions first and the missing tools last; the bridge has no
+    conventions of its own, so its whole block is that last part.
+    """
+    capability = build_spec_capability({"refused": REFUSED_SPEC})
+    ctx = RunContext(deps=AgentDeps(user=AnonymousUser()), model=TestModel(), usage=RunUsage())
+    in_process = await capability.get_toolset().get_instructions(ctx)
+    bridged = await DRFMCPToolset(server, _request()).get_instructions(None)
+    assert in_process is not None
+    assert bridged is not None
+    heading, refused, _chain = bridged.splitlines()
+    assert in_process.endswith(f"\n{heading}\n{refused}")
+
+
+@pytest.mark.django_db
+async def test_each_step_offers_and_explains_what_is_available_then(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Driven through a real run, so what is asserted is what pydantic-ai handed
+    # the model: the books close after the first step, and the second step
+    # neither offers the tool nor leaves the model guessing why.
+    seen: list[tuple[bool, str | None]] = []
+
+    def model_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        offered = "refused" in {tool.name for tool in info.function_tools}
+        seen.append((offered, info.instructions))
+        if len(seen) == 1:
+            monkeypatch.setitem(BOOKS, "open", False)
+            return ModelResponse(parts=[ToolCallPart(tool_name="add", args={"a": 1, "b": 2})])
+        return ModelResponse(parts=[TextPart("done")])
+
+    monkeypatch.setitem(BOOKS, "open", True)
+    agent = Agent(FunctionModel(model_fn), toolsets=[DRFMCPToolset(server, _request())])
+    await agent.run("close the books")
+    (first_offered, first_said), (second_offered, second_said) = seen
+    assert (first_offered, first_said) == (True, None)
+    assert second_offered is False
+    assert second_said is not None
+    assert "\n".join(_MISSING) in second_said
 
 
 async def test_input_required_result_raises_model_retry() -> None:
