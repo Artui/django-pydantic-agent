@@ -515,6 +515,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-tool-that-cannot-run-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A tool that cannot run now
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#error-semantics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -903,6 +914,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-tool-that-cannot-run-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A tool that cannot run now
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#error-semantics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1093,13 +1115,39 @@ locally, so the bridge advertises the <strong>same</strong> merged <code>inputSc
 transport would — including a selector tool's filter / ordering / pagination
 arguments and its <code>additionalProperties</code> policy, not just the input serializer's
 fields.</p>
+<h3 id="a-tool-that-cannot-run-now">A tool that cannot run now<a class="headerlink" href="#a-tool-that-cannot-run-now" title="Permanent link">&para;</a></h3>
+<p>A service's <code>affordances</code> can say when the operation is possible at all: a
+condition written as a callable reads only the user and the request, never the
+call's arguments, so while it is unmet every call is refused. drf-mcp leaves
+such a tool out of <code>tools/list</code>, and whether one is unmet can change mid-run.
+So the bridge lists definitions <strong>once</strong> per request, every tool the user may
+see included, and on <strong>every step</strong>:</p>
+<ul>
+<li>offers only the tools drf-mcp would list right now, asking it through
+  <code>MCPServer.aunavailable_tools</code> (drf-mcp 0.48+), so a tool that becomes
+  available mid-run is offered from the next step without listing again;</li>
+<li>names each tool it left out in the toolset's instructions, with the reason
+  its condition gives, so a model asked for one says why rather than guessing
+  or denying the operation exists:</li>
+</ul>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>- These operations exist but cannot be performed right now, so they are not among your tools. If the user asks for one, say it is unavailable at the moment and give the reason listed for it, rather than guessing why:
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  - `close_books`: The books are closed.
+</span></code></pre></div>
+<p>That is word for word what <code>[spec-tools]</code> says for the same spec, so the model
+is taught one sentence whichever way a spec is exposed. A server declaring no
+such condition adds nothing to the instructions and no thread hop per step.
+Nothing here is an authorization decision: the call enforces every condition,
+so a tool whose condition flips between the step offering it and the call is
+refused with its code, as below.</p>
 <h3 id="error-semantics">Error semantics<a class="headerlink" href="#error-semantics" title="Permanent link">&para;</a></h3>
 <p>The bridge follows MCP's protocol-vs-tool boundary, which decides whether the
 model gets to recover:</p>
 <ul>
-<li>malformed argument shape (JSON-RPC <code>-32602</code>) and tool-level
-  <code>validation_error</code> results → <code>ModelRetry</code>, so the model retries with the field
-  errors instead of the run dying;</li>
+<li>a fault in the request the model produced — a malformed argument shape or an
+  unknown tool name, which drf-mcp 0.24+ serves on the same JSON-RPC <code>-32602</code> --
+  and tool-level <code>validation_error</code> results → <code>ModelRetry</code>, so the model retries
+  with the field errors fixed, or with a real name (the retry lists the tools
+  this toolset advertises), instead of the run dying;</li>
 <li>a tool-level <code>input_required</code> result (a service asking for more input, which
   an in-process caller cannot be asked for mid-call) → <code>ModelRetry</code> naming the
   arguments to add on the next call;</li>
@@ -1107,14 +1155,15 @@ model gets to recover:</p>
   oversized result) → <code>ToolFailed</code>, so the model reads the sentence and adapts,
   no retry budget is spent, and the call is recorded <code>outcome="failed"</code> for
   anything streaming the run;</li>
-<li>genuine protocol faults (unknown tool, auth, rate limits) → a hard
-  <code>RuntimeError</code> that aborts the run.</li>
+<li>genuine protocol faults (auth, rate limits, an internal error) → a hard
+  <code>RuntimeError</code> that aborts the run: nothing the model can rewrite its way out
+  of.</li>
 </ul>
 <p>A refusal keeps what names it. <code>ToolFailed</code> carries a single string, so when
 drf-mcp serves an affordance refusal's <code>code</code> (drf-mcp 0.45+), or the chain step
 that failed, it rides as a suffix on the sentence:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>The books are closed. (code: books_closed)
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>The books are closed. (code: books_closed, step: void)
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>The books are closed. (code: books_closed)
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>The books are closed. (code: books_closed, step: void)
 </span></code></pre></div>
 <p>The first line is word for word what <code>[spec-tools]</code> produces for the same
 refusal raised in process, so a spec reads the same to the model whichever way
@@ -1126,17 +1175,17 @@ than parsing it out of the sentence.</p>
 <p>Bridged tools also carry destructiveness into the <a href="../policy/">tool guard</a>: the
 bridge maps each tool's <code>readOnlyHint</code> annotation onto <code>DESTRUCTIVE_METADATA_KEY</code>.</p>
 <h2 id="harness-upstream-capabilities"><code>[harness]</code> — upstream capabilities<a class="headerlink" href="#harness-upstream-capabilities" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-pydantic-agent<span class="o">[</span>harness<span class="o">]</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-pydantic-agent<span class="o">[</span>harness<span class="o">]</span>
 </span></code></pre></div>
 <p>The other two extras bridge <em>your</em> API into the agent. This one is different: it
 pulls in <a href="https://github.com/pydantic/pydantic-ai-harness"><code>pydantic-ai-harness</code></a>,
 a library of ready-made <strong>capabilities</strong> — the same seam this package's own audit
 and tool-guard capabilities use. Nothing here wraps or re-implements them; you
 construct one and hand it to <code>AgentConfig</code>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.compaction</span><span class="w"> </span><span class="kn">import</span> <span class="n">SlidingWindow</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=...</span><span class="p">,</span> <span class="n">capabilities</span><span class="o">=</span><span class="p">[</span><span class="n">SlidingWindow</span><span class="p">(</span><span class="n">max_messages</span><span class="o">=</span><span class="mi">80</span><span class="p">)])</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">build_agent</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.compaction</span><span class="w"> </span><span class="kn">import</span> <span class="n">SlidingWindow</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=...</span><span class="p">,</span> <span class="n">capabilities</span><span class="o">=</span><span class="p">[</span><span class="n">SlidingWindow</span><span class="p">(</span><span class="n">max_messages</span><span class="o">=</span><span class="mi">80</span><span class="p">)])</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">build_agent</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
 </span></code></pre></div>
 <p>That is the whole integration. <code>capabilities</code> takes live instances (never dotted
 paths), so a harness capability, a first-party one, and your own all compose the
@@ -1197,12 +1246,12 @@ instructions. <code>Skills</code> discovers them and exposes each as a <strong>d
 capability: the model sees only the name and description up front, and the body
 loads into context if it selects that skill. A dozen skills therefore cost a
 dozen one-line descriptions, not a dozen instruction blocks.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.skills</span><span class="w"> </span><span class="kn">import</span> <span class="n">Skills</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">model</span><span class="o">=...</span><span class="p">,</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">capabilities</span><span class="o">=</span><span class="p">[</span><span class="n">Skills</span><span class="p">(</span><span class="s2">&quot;/srv/app/skills&quot;</span><span class="p">)],</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai_harness.skills</span><span class="w"> </span><span class="kn">import</span> <span class="n">Skills</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">config</span> <span class="o">=</span> <span class="n">AgentConfig</span><span class="p">(</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">model</span><span class="o">=...</span><span class="p">,</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">capabilities</span><span class="o">=</span><span class="p">[</span><span class="n">Skills</span><span class="p">(</span><span class="s2">&quot;/srv/app/skills&quot;</span><span class="p">)],</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">)</span>
 </span></code></pre></div>
 <p><code>directories</code> takes one path or several. Discovery scans <em>immediate</em> child
 directories for a <code>SKILL.md</code>, so <code>/srv/app/skills/summarise/SKILL.md</code> registers a
