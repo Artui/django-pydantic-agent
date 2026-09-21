@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.48`
+  (was `>=0.46`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.31` (was `>=0.30`), and these two floors
+  move together.** drf-mcp 0.48 is where a server answers, in process, which
+  tools a listing leaves out and why, and where `list_tools` takes
+  `include_unavailable=True`; the bridge below needs both, and below that
+  release neither exists. PAI 0.31 is where the other route names each missing
+  operation with its reason, which is the wording the bridge now writes and this
+  package's tests assert against that package's real output. Raising one without
+  the other is what the pairing prevents: a model told why an operation is
+  missing on one route and left guessing on the other.
 - **`DRFMCPToolset` follows tool availability every step instead of once per
   run.** drf-mcp leaves a tool out of `tools/list` while an operation-scope
   affordance refuses it, and the bridge listed once per request, so a tool whose
