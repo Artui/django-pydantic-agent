@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.49`
+  (was `>=0.48`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.32` (was `>=0.31`), and these two floors
+  move together.** Both releases fix the same failure on their own route: a
+  read-shaping `QueryParam` value the output serializer refuses while rendering,
+  most often a selection written against a paged tool's envelope, escaped as a
+  raw `ValidationError` and ended the run. drf-mcp 0.49 answers it with a
+  `validation_error` result naming the argument, which `DRFMCPToolset` already
+  raises as `ModelRetry`, and PAI 0.32 raises the retry itself. Raising one
+  without the other would make the same spec self-correcting on one route and
+  fatal on the other. No code in this package changes; a test drives the bridge
+  through a refused selection, one retry and then the page, so a change to that
+  result type fails here rather than in a consumer.
+
 ## [0.25.0] — 2026-09-21
 
 ### Changed

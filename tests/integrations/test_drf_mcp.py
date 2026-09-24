@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
@@ -10,7 +12,13 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
-from rest_framework_mcp import JsonRpcError, JsonRpcErrorCode
+from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import AllowAny
+from rest_framework_mcp import JsonRpcError, JsonRpcErrorCode, MCPServer, QueryParam
+from rest_framework_mcp.schema import PAGED_QUERY_PARAM_SCOPE
+from rest_framework_services.types.selector_kind import SelectorKind
+from rest_framework_services.types.selector_spec import SelectorSpec
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
@@ -536,3 +544,84 @@ def test_retry_message_without_detail_is_the_bare_message() -> None:
     from django_pydantic_agent.integrations.drf_mcp import _retry_message
 
     assert _retry_message("nope", None) == "nope"
+
+
+class _SelectableRow(serializers.Serializer):
+    """A row that reads its own ``?fields=id,name`` and refuses a name it lacks.
+
+    No selection library behind it: the transport never reads the value, so the
+    contract this bridge relies on is only that a serializer raising a
+    ``ValidationError`` while rendering comes back as a result it can retry.
+    """
+
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+
+    def to_representation(self, instance: Any) -> Any:
+        data = super().to_representation(instance)
+        raw = self.context["request"].query_params.get("fields")
+        if not raw:
+            return data
+        wanted = [name.strip() for name in raw.split(",")]
+        for name in wanted:
+            if name not in data:
+                raise ValidationError(f"Unknown field `{name}`.", code="unknown_field")
+        return {name: data[name] for name in wanted}
+
+
+def _paged_selection_server() -> MCPServer:
+    paged = MCPServer(name="paged")
+    paged.register_selector_tool(
+        name="list_rows",
+        description="List rows.",
+        spec=SelectorSpec(
+            kind=SelectorKind.LIST,
+            selector=lambda: [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+            output_serializer=_SelectableRow,
+            permission_classes=[AllowAny],
+        ),
+        paginate=True,
+        query_params=[QueryParam("fields")],
+    )
+    return paged
+
+
+async def test_a_selection_refused_while_rendering_is_one_retry_then_the_page() -> None:
+    # drf-mcp answers a read-shaping value its output serializer refuses with an
+    # ``isError`` ``validation_error`` result, and this route's self-correction
+    # rests on the bridge turning that into ``ModelRetry``. The selection is the
+    # likeliest wrong one on a paged tool: the envelope, which is the shape the
+    # tool's result documents. Pinned here so a change to that result type fails
+    # in this package rather than as a dead run in a consumer's.
+    selections = iter(["items", "name"])
+
+    def model_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        if any(part.part_kind == "tool-return" for part in messages[-1].parts):
+            return ModelResponse(parts=[TextPart("done")])
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name="list_rows", args={"fields": next(selections)})]
+        )
+
+    toolset = DRFMCPToolset(_paged_selection_server(), _request())
+    result = await Agent(FunctionModel(model_fn), toolsets=[toolset]).run("list the rows")
+
+    retries = [
+        part.content
+        for message in result.all_messages()
+        for part in message.parts
+        if part.part_kind == "retry-prompt"
+    ]
+    assert len(retries) == 1
+    # The argument is named, the serializer is quoted in its own words, and the
+    # model is told what the selection applies to on a paged tool.
+    assert retries[0].startswith(
+        "`fields` was rejected while rendering the result: Unknown field `items`. "
+        + PAGED_QUERY_PARAM_SCOPE
+    )
+    page = [
+        part.content
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert page[0]["items"] == [{"name": "a"}, {"name": "b"}]
