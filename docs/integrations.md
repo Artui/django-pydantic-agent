@@ -128,7 +128,11 @@ model gets to recover:
   unknown tool name, which drf-mcp 0.24+ serves on the same JSON-RPC `-32602` --
   and tool-level `validation_error` results → `ModelRetry`, so the model retries
   with the field errors fixed, or with a real name (the retry lists the tools
-  this toolset advertises), instead of the run dying;
+  this toolset advertises), instead of the run dying. That includes a
+  read-shaping `QueryParam` value (a `fields` selection, say) the output
+  serializer refuses while rendering, which drf-mcp 0.49+ answers as a
+  `validation_error` naming the argument; on a paged tool the likeliest one is a
+  selection written against the page envelope rather than one item;
 - a tool-level `input_required` result (a service asking for more input, which
   an in-process caller cannot be asked for mid-call) → `ModelRetry` naming the
   arguments to add on the next call;
