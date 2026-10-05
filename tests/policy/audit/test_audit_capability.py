@@ -644,14 +644,18 @@ class _OneThing(AbstractCapability[Any]):
     Every hook ``behaviour`` does not name passes the call on unchanged, so
     each case below differs from the tool's own execution in one way only.
     Passed to a single run it sorts after the agent's own capabilities, audit
-    included; in ``config.capabilities`` ``build_agent`` puts audit after it.
+    included; in ``config.capabilities`` ``build_agent`` puts audit after it,
+    unless ``inside_audit`` makes its ordering ask audit to wrap it.
     """
 
-    def __init__(self, behaviour: str) -> None:
+    def __init__(self, behaviour: str, *, inside_audit: bool = False) -> None:
         self._behaviour = behaviour
+        self._inside_audit = inside_audit
         self._asked = False
 
     def get_ordering(self) -> CapabilityOrdering:
+        if self._inside_audit:
+            return CapabilityOrdering(position="innermost", wrapped_by=[AuditCapability])
         return CapabilityOrdering(position="innermost")
 
     def _ask_again_once(self, behaviour: str) -> None:
@@ -694,6 +698,7 @@ class _OneThing(AbstractCapability[Any]):
         args: dict[str, Any],
         result: Any,
     ) -> Any:
+        self._ask_again_once("after-asks-again")
         if self._behaviour == "after-rewrites-the-result":
             return "y" * 500
         if self._behaviour == "after-is-slow":
@@ -720,7 +725,7 @@ class _OneThing(AbstractCapability[Any]):
             # From 2.54 what reaches a wrapper is the failure policy's copy,
             # not the tool's exception, so each of these acts on any one.
             if self._behaviour == "wrapper-reruns":
-                return await handler(args)
+                return await self._run_again(handler, args)
             if self._behaviour == "wrapper-recovers":
                 return "recovered"
             if self._behaviour == "wrapper-raises-its-own":
@@ -729,14 +734,33 @@ class _OneThing(AbstractCapability[Any]):
                 # the run rather than reach the failure policy.
                 raise ToolFailed("converted") from error
             raise
+        if self._behaviour == "wrapper-reruns-a-success":
+            return await self._run_again(handler, args)
         if self._behaviour == "wrapper-rewrites-the-result":
             return "y" * 500
         return result
+
+    async def _run_again(
+        self, handler: Callable[[dict[str, Any]], Any], args: dict[str, Any]
+    ) -> Any:
+        """Run the tool a second time, later and with other arguments.
+
+        Different arguments say which run a record's ``arguments_repr`` comes
+        from, and the pause between the runs says whether its ``duration_ms``
+        spans both.
+        """
+        await asyncio.sleep(0.3)
+        return await handler({**args, "n": 5})
 
 
 _FAILED = ("lookup", '{"n": 0}', False, "ValueError: kaboom", None)
 _FOUND = ("lookup", '{"n": 0}', True, None, 5)
 _ASKED_AGAIN = ("lookup", '{"n": 0}', False, "ModelRetry: n must be positive", None)
+# The tool's result on any run after its first, so a record says which run it
+# measured: called again with the same arguments, and run again by a wrapper
+# with other ones.
+_FOUND_AGAIN = ("lookup", '{"n": 0}', True, None, 11)
+_RUN_AGAIN = ("lookup", '{"n": 5}', True, None, 11)
 
 
 @dataclass(frozen=True)
@@ -745,6 +769,9 @@ class _SortedAfterAudit:
 
     ``own`` is the tool's own execution, which is what the record holds when
     the capability is composed through ``config.capabilities``, on both.
+    ``from_2_54`` and ``before_2_54`` are what it holds when the capability
+    sorts after audit: passed to a single run, or in ``config.capabilities``
+    with an ordering that places it inside audit.
     """
 
     behaviour: str
@@ -802,6 +829,16 @@ _SORTED_AFTER_AUDIT = [
         from_2_54=[_ASKED_AGAIN, _FOUND],
         before_2_54=[_FOUND],
     ),
+    # The tool succeeded and its result was refused, yet from 2.54 that call
+    # is recorded as a failure. The model's retry runs the tool again.
+    _SortedAfterAudit(
+        "after-asks-again",
+        tool_fails=False,
+        ran=[0, 0],
+        own=[_FOUND, _FOUND_AGAIN],
+        from_2_54=[_ASKED_AGAIN, _FOUND_AGAIN],
+        before_2_54=[_FOUND, _FOUND_AGAIN],
+    ),
     # Before 2.54 the hooks run around the wrappers, and this wrapper sits
     # between audit's wrapper and the tool.
     _SortedAfterAudit(
@@ -853,21 +890,34 @@ _SORTED_AFTER_AUDIT = [
         from_2_54=[_FOUND],
         before_2_54=[_ASKED_AGAIN, _FOUND],
     ),
-    # Run twice inside audit's one wrapper entry, the tool gets one record on
-    # both orders: of its first run from 2.54, where audit's hooks settled it,
-    # and of its last before, where audit's wrapper saw only the outcome.
+    # Run again inside audit's one wrapper entry, after a failure or after a
+    # success, the tool gets one record on both orders. From 2.54 audit's
+    # hooks settled it on the first run, and it describes that run whole: its
+    # arguments, its outcome and its time. Before 2.54 audit's wrapper saw
+    # only the last run's outcome, with the arguments it passed on, and timed
+    # both runs and the pause between them.
     _SortedAfterAudit(
         "wrapper-reruns",
         tool_fails=True,
-        ran=[0, 0],
-        own=[_FAILED, _FOUND],
+        ran=[0, 5],
+        own=[_FAILED, _RUN_AGAIN],
         from_2_54=[_FAILED],
-        before_2_54=[_FOUND],
+        before_2_54=[_FOUND_AGAIN],
+        slow_before_2_54=True,
+    ),
+    _SortedAfterAudit(
+        "wrapper-reruns-a-success",
+        tool_fails=False,
+        ran=[0, 5],
+        own=[_FOUND, _RUN_AGAIN],
+        from_2_54=[_FOUND],
+        before_2_54=[_FOUND_AGAIN],
+        slow_before_2_54=True,
     ),
 ]
 
 
-@pytest.mark.parametrize("composed", ["per-run", "config"])
+@pytest.mark.parametrize("composed", ["per-run", "config", "config-ordered-inside-audit"])
 @pytest.mark.parametrize(
     "case", _SORTED_AFTER_AUDIT, ids=[case.behaviour for case in _SORTED_AFTER_AUDIT]
 )
@@ -881,7 +931,12 @@ async def test_a_capability_sorted_after_audit_reaches_the_record(
     2.54 what its ``before``, ``on_error`` and ``after`` hooks do, and the
     reruns of its wrapper; before 2.54 everything its wrapper does. The same
     capability in ``config.capabilities`` leaves the record the tool's own on
-    both orders, because ``build_agent`` appends audit after it.
+    both orders, because ``build_agent`` appends audit after it. That is list
+    order, which a capability's own ordering overrides: in
+    ``config.capabilities`` and asking audit to wrap it, it sorts after audit
+    and reaches the record exactly as it does passed to a single run.
+
+    A duration is never negative, whichever run a record describes.
     """
     ran: list[int] = []
 
@@ -890,23 +945,26 @@ async def test_a_capability_sorted_after_audit_reaches_the_record(
         ran.append(n)
         if case.tool_fails and len(ran) == 1:
             raise ValueError("kaboom")
-        return "found"
+        return "found" if len(ran) == 1 else "found again"
 
     audit = _CapturingLogger()
-    capability = _OneThing(case.behaviour)
+    capability = _OneThing(case.behaviour, inside_audit=composed == "config-ordered-inside-audit")
     if composed == "per-run":
         agent = _agent(lookup, sink=audit)
         async with agent.iter("go", deps=_deps(), capabilities=[capability]) as run:
             async for _ in run:
                 pass
-        expected = case.from_2_54 if _HOOKS_INSIDE_THE_WRAPPER else case.before_2_54
-        slow = case.slow_from_2_54 if _HOOKS_INSIDE_THE_WRAPPER else case.slow_before_2_54
     else:
         await _agent(lookup, sink=audit, capabilities=[capability]).run("go", deps=_deps())
+    if composed == "config":
         expected, slow = case.own, False
+    else:
+        expected = case.from_2_54 if _HOOKS_INSIDE_THE_WRAPPER else case.before_2_54
+        slow = case.slow_from_2_54 if _HOOKS_INSIDE_THE_WRAPPER else case.slow_before_2_54
 
     assert ran == case.ran
     assert _records(audit) == expected
+    assert min(event.duration_ms for event in audit.events) >= 0
     assert (max(event.duration_ms for event in audit.events) >= 300) is slow
 
 
@@ -936,14 +994,16 @@ async def test_a_capability_composed_by_hand_after_audit_reaches_the_record_too(
     reason="this pydantic-ai-harness has no ToolGuardrail",
 )
 @pytest.mark.parametrize("composed", ["per-run", "config"])
-@pytest.mark.parametrize("verdict", ["retry", "replace"])
+@pytest.mark.parametrize("verdict", ["retry", "result-retry", "replace"])
 async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run(
     verdict: str, composed: str
 ) -> None:
     """pydantic-ai-harness's tool guardrail is innermost, so passed to a single
     run it sorts after audit and its verdicts reach the record from 2.54: a
-    ``retry`` before the tool runs is recorded as a failure, and a ``replace``
-    of the result is measured. In ``config.capabilities`` it does not."""
+    ``retry`` before the tool runs is recorded as a failure, a ``retry`` from
+    its ``result_guard`` turns the tool's success into a failure, and a
+    ``replace`` of the result is measured. In ``config.capabilities`` it does
+    not."""
 
     async def guard(ctx: RunContext[Any], info: Any) -> Any:
         if not asked:
@@ -952,7 +1012,12 @@ async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run
         return harness_guardrails.GuardrailResult.allow()
 
     async def result_guard(ctx: RunContext[Any], info: Any) -> Any:
-        return harness_guardrails.GuardrailResult.replace("z" * 300)
+        if verdict == "replace":
+            return harness_guardrails.GuardrailResult.replace("z" * 300)
+        if not asked:
+            asked.append(True)
+            return harness_guardrails.GuardrailResult.retry("result rejected")
+        return harness_guardrails.GuardrailResult.allow()
 
     asked: list[bool] = []
     guardrail = (
@@ -978,6 +1043,9 @@ async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run
     reaches_the_record = composed == "per-run" and _HOOKS_INSIDE_THE_WRAPPER
     if verdict == "retry":
         assert _records(audit) == ([_ASKED_AGAIN, _FOUND] if reaches_the_record else [_FOUND])
+    elif verdict == "result-retry":
+        rejected = ("lookup", '{"n": 0}', False, "ModelRetry: result rejected", None)
+        assert _records(audit) == [rejected if reaches_the_record else _FOUND, _FOUND]
     else:
         replaced = ("lookup", '{"n": 0}', True, None, 300)
         assert _records(audit) == [replaced if reaches_the_record else _FOUND]

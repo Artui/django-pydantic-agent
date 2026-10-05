@@ -37,20 +37,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **An audit record now describes the tool's own execution, on every
-  pydantic-ai and whatever else is composed.** 0.26.1 kept a failed call's
-  record naming the tool's exception rather than `ToolFailurePolicy`'s copy,
-  and documented the rest of what pydantic-ai 2.54 changed about a record as
-  behaviour. From 2.54 a `wrap_*` hook encloses every other capability's
-  `before_tool_execute`, `on_tool_execute_error` and `after_tool_execute`, and
-  audit was pinned outermost, so a record still described what the other
-  capabilities made of the call: a failure another capability recovered from
-  was recorded as a success, a call a `before_tool_execute` vetoed, as
-  harness's guardrails and tool-call judge do, as a failure reading
-  `SkipToolExecution: `, `arguments_repr` preceded another capability's
-  argument rewrite, `result_size` measured its result rewrite, and
-  `duration_ms` included their hooks. On every release, another capability's
-  `wrap_tool_execute` sat inside audit's, so its argument rewrite was missed,
-  its time counted, and a wrapper that ran the tool twice got one record.
+  pydantic-ai and whatever capabilities sort ahead of audit.** 0.26.1 kept a
+  failed call's record naming the tool's exception rather than
+  `ToolFailurePolicy`'s copy, and documented the rest of what pydantic-ai 2.54
+  changed about a record as behaviour. From 2.54 a `wrap_*` hook encloses
+  every other capability's `before_tool_execute`, `on_tool_execute_error` and
+  `after_tool_execute`, and audit was pinned outermost, so a record still
+  described what the other capabilities made of the call: a failure another
+  capability recovered from was recorded as a success, a call a
+  `before_tool_execute` vetoed, as harness's guardrails and tool-call judge
+  do, as a failure reading `SkipToolExecution: `, `arguments_repr` preceded
+  another capability's argument rewrite, `result_size` measured its result
+  rewrite, and `duration_ms` included their hooks. On every release, another
+  capability's `wrap_tool_execute` sat inside audit's, so its argument rewrite
+  was missed, its time counted, and a wrapper that ran the tool twice got one
+  record.
 
   Audit is now pinned innermost and observes the tool from all four hooks; its
   wrapper writes one record per execution as it exits, from what the hooks
@@ -60,16 +61,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure is recorded as a failure with the tool's exception; the size of its
   own result, before an `after_tool_execute` rewrites it; and the time the tool
   alone took. The exception is **a capability that sorts after audit**: an
-  innermost one passed to a single run, or one composed by hand after audit.
-  It runs between audit and the tool, so what it does reaches the record as if
-  the tool had done it. From 2.54 what runs there is its `before_tool_execute`,
-  `on_tool_execute_error` and `after_tool_execute`, so its argument rewrite, a
-  `ModelRetry` it raises before the tool runs, its recovery, an exception of
-  its own, its result rewrite and their time all reach the record. Before 2.54
-  it is its `wrap_tool_execute`, through which it can do any of the same. On
-  both, a tool it runs twice gets one record. Nothing composed through
-  `config.capabilities` sorts after audit; pydantic-ai-harness's tool guardrail
-  is innermost, so passed to a single run it does. **A call that never runs
+  innermost one passed to a single run, one composed by hand after audit, or
+  one whose own ordering places it inside audit. It runs between audit and the
+  tool, so what it does reaches the record as if the tool had done it. From
+  2.54 what runs there is its `before_tool_execute`, `on_tool_execute_error`
+  and `after_tool_execute`, so its argument rewrite, a `ModelRetry` it raises
+  before the tool runs, its recovery, an exception of its own, a `ModelRetry`
+  it raises after the tool succeeded, its result rewrite and their time all
+  reach the record. Before 2.54 it is its `wrap_tool_execute`, through which
+  it can do any of the same. On both, a tool it runs twice gets one record:
+  from 2.54 it describes the first run whole, its arguments, outcome and
+  duration, and before 2.54 it holds the last run's outcome. Nothing composed
+  through `config.capabilities` sorts after audit unless its own ordering
+  places it inside audit; pydantic-ai-harness's tool guardrail is innermost,
+  so passed to a single run it does. **A call that never runs
   the tool has no record**: one stopped before audit's `before_tool_execute`,
   and one whose outcome is what pydantic-ai treats as not executed, a
   `SkipToolExecution` veto or a `CallDeferred` or `ApprovalRequired` deferral,

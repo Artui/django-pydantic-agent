@@ -49,13 +49,17 @@ what it does to any of the four reaches the record as if the tool had done it.
 [A capability that sorts after audit](#a-capability-that-sorts-after-audit)
 says when that happens and what it changes on each release.
 
-**A failure is recorded as the failure, whatever happens to it next.** The
+**A failure is recorded as the failure, whatever a capability ahead of audit
+does with it next.** The
 [failure policy](#what-a-raising-tool-costs) turns a tool's exception into a
 `ToolFailed` for the model, redacted unless `include_detail` is set; the record
 still names the exception the tool raised, because this is the operator's copy.
 A capability whose `on_tool_execute_error` returns a value in the exception's
 place has decided what the run does next, not what the tool did, so that
-failure is recorded as a failure too.
+failure is recorded as a failure too. One that
+[sorts after audit](#a-capability-that-sorts-after-audit) is the exception:
+a recovery in its error hook is recorded as a success from pydantic-ai 2.54,
+and one in its wrapper before.
 
 On an ordinary call two exceptions never reach any capability's error hook,
 and are recorded as they propagate. A `ToolFailed` that **a tool raises
@@ -317,13 +321,17 @@ places: `AuditCapability` after any other innermost capability, and
 ### A capability that sorts after audit
 
 A capability that sorts after audit **runs between audit and the tool**, so
-what it does to the call reaches the record as if the tool had done it. Two
+what it does to the call reaches the record as if the tool had done it. Three
 compositions put one there, whatever `build_agent` did:
 
 - an **innermost capability passed to a single run**, as in
   `agent.run(..., capabilities=[...])`, which pydantic-ai sorts after the
   agent's own capabilities;
-- an innermost capability **composed by hand after audit**.
+- an innermost capability **composed by hand after audit**;
+- a capability whose **own ordering places it inside audit**, wherever it is
+  composed, `AgentConfig.capabilities` included, as
+  `CapabilityOrdering(position="innermost", wrapped_by=[AuditCapability])`
+  does.
 
 Which of its parts runs between audit and the tool depends on the release, and
 so does what it changes about the record:
@@ -333,26 +341,30 @@ so does what it changes about the record:
   argument rewrite; records a `ModelRetry` its `before_tool_execute` raises as
   a failure, though the tool never ran; records its recovery as a success,
   measuring the recovered value, and an exception it raises in place of the
-  tool's; measures its result rewrite; and times its hooks with the tool. If
-  its `wrap_tool_execute` runs the tool again, the one record describes the
-  first run.
+  tool's; records a `ModelRetry` its `after_tool_execute` raises as a failure,
+  though the tool succeeded; measures its result rewrite; and times its hooks
+  with the tool. If its `wrap_tool_execute` runs the tool again, the one
+  record describes the first run whole: its arguments, its outcome and its
+  duration.
 - **Before 2.54**, its `wrap_tool_execute`. A record misses an argument rewrite
   there; records a recovery as a success, an exception of its own in place of
   the tool's, and a `ModelRetry` raised before the tool runs as a failure;
   measures a result rewrite; and times the wrapper with the tool. If it runs
-  the tool again, the one record describes the last run.
+  the tool again, the one record holds the last run's outcome, with the
+  arguments audit passed on and the time of every run.
 
 A veto it raises is still not recorded on either, because a
 `SkipToolExecution` is a call that did not execute.
 
-**Everything composed through `AgentConfig.capabilities` is unaffected.**
-`build_agent` appends audit after all of it, so audit sorts last among the
-innermost capabilities there, and the record is the tool's own on every
-release. pydantic-ai-harness's tool guardrail and tool-call judge are
-innermost: in `config.capabilities` they sort before audit, and passed to a
-single run they sort after it, where from 2.54 a guardrail's `retry` verdict is
-recorded as a failure and its `result_guard`'s `replace` is what the record
-measures.
+**Everything composed through `AgentConfig.capabilities` is unaffected,
+unless its own ordering places it inside audit.** `build_agent` appends audit
+after all of it, so audit sorts last among the innermost capabilities there,
+and the record is the tool's own on every release. pydantic-ai-harness's tool
+guardrail and tool-call judge are innermost: in `config.capabilities` they sort
+before audit, and passed to a single run they sort after it, where from 2.54 a
+guardrail's `retry` verdict is recorded as a failure, a `retry` from its
+`result_guard` turns the tool's success into a failure, and its
+`result_guard`'s `replace` is what the record measures.
 
 ### Why audit needs all four hooks
 

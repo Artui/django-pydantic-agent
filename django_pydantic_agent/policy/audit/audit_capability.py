@@ -98,28 +98,34 @@ class AuditCapability(AbstractCapability[Any]):
     what it does to the call reaches the record as if the tool had done it.
     One does when it is innermost and passed to a single run, since
     pydantic-ai sorts those after the agent's own capabilities whatever
-    ``build_agent`` did, or when it is composed by hand after audit in the
-    innermost tier. Which of its parts runs there depends on the release:
+    ``build_agent`` did; when it is composed by hand after audit in the
+    innermost tier; and wherever it is composed, when its own ordering places
+    it inside audit, as an innermost ``CapabilityOrdering`` with
+    ``wrapped_by=[AuditCapability]`` does. Which of its parts runs there
+    depends on the release:
 
     - From 2.54, its ``before_tool_execute``, ``on_tool_execute_error`` and
       ``after_tool_execute``. A record misses its argument rewrite, records a
       ``ModelRetry`` its ``before_tool_execute`` raises as a failure though
       the tool never ran, records its recovery as a success and an exception
-      it raises in place of the tool's, measures its result rewrite, and times
-      its hooks with the tool. If its ``wrap_tool_execute`` runs the tool
-      again, the one record describes the first run.
+      it raises in place of the tool's, records a ``ModelRetry`` its
+      ``after_tool_execute`` raises as a failure though the tool succeeded,
+      measures its result rewrite, and times its hooks with the tool. If its
+      ``wrap_tool_execute`` runs the tool again, the one record describes the
+      first run whole: its arguments, its outcome and its duration.
     - Before 2.54, its ``wrap_tool_execute``. A record misses an argument
       rewrite there, records a recovery as a success, an exception of its own
       in place of the tool's and a ``ModelRetry`` raised before the tool runs
       as a failure, measures a result rewrite, and times the wrapper with the
-      tool. If it runs the tool again, the one record describes the last run.
+      tool. If it runs the tool again, the one record holds the last run's
+      outcome, with the arguments audit passed on and the time of every run.
 
     A ``SkipToolExecution`` veto from it is still not recorded. Everything
-    composed through ``AgentConfig.capabilities`` is unaffected:
-    ``build_agent`` appends audit after all of it, so audit sorts last among
-    the innermost capabilities there. pydantic-ai-harness's tool guardrail
-    and tool-call judge are innermost, so passed to a single run they sort
-    after audit like any other.
+    composed through ``AgentConfig.capabilities`` is unaffected unless its own
+    ordering places it inside audit: ``build_agent`` appends audit after all
+    of it, so audit sorts last among the innermost capabilities there.
+    pydantic-ai-harness's tool guardrail and tool-call judge are innermost,
+    so passed to a single run they sort after audit like any other.
 
     Recording is **non-raising**. A sink that throws is caught and logged to the
     ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
@@ -321,8 +327,8 @@ class AuditCapability(AbstractCapability[Any]):
         error = execution.error
         event = AuditEvent(
             tool_name=name,
-            arguments_repr=json.dumps(execution.args, default=str, sort_keys=True),
-            duration_ms=(execution.ended - execution.started) * 1000.0,
+            arguments_repr=json.dumps(execution.arguments, default=str, sort_keys=True),
+            duration_ms=execution.duration_ms,
             success=error is None,
             error=None if error is None else f"{type(error).__name__}: {error}",
             result_size=len(str(execution.result)) if error is None else None,
@@ -389,10 +395,13 @@ class _Execution:
         # Whether audit's ``before_tool_execute`` ran for this call, which is
         # the last moment before the tool: a veto ahead of it means no record.
         self.reached = reached
+        # The run about to start, as ``begin`` last saw it.
         self.args: dict[str, Any] = {}
         self.started = 0.0
+        # What the record holds, all of it fixed by ``settle`` at once.
         self.settled = False
-        self.ended = 0.0
+        self.arguments: dict[str, Any] = {}
+        self.duration_ms = 0.0
         self.error: Exception | None = None
         self.result: Any = None
 
@@ -400,7 +409,9 @@ class _Execution:
         """The tool is about to run with ``args``.
 
         The wrapper and ``before_tool_execute`` both call this, and the later
-        of the two is nearer the tool, so each call replaces the last.
+        of the two is nearer the tool, so each call replaces the last. A call
+        after ``settle`` changes nothing the record holds, which ``settle``
+        has already taken.
         """
         self.args = args
         self.started = time.perf_counter()
@@ -410,11 +421,25 @@ class _Execution:
 
         The first account is the one nearest the tool: audit's own error or
         result hook where pydantic-ai calls one, else the wrapper.
+
+        The arguments and the duration are taken here with the outcome, so the
+        record describes one run whole. From 2.54 a wrapper sorted after audit
+        that runs the tool again runs audit's ``before_tool_execute`` again,
+        which calls ``begin`` after this: read when the wrapper writes the
+        record, they would pair the first run's outcome with the second run's
+        arguments and a start later than its end, a negative duration.
+        ``test_a_capability_sorted_after_audit_reaches_the_record`` fails
+        without it from 2.54, on ``[wrapper-reruns-per-run]``,
+        ``[wrapper-reruns-a-success-per-run]`` and their
+        ``config-ordered-inside-audit`` twins. Not a guard in ``begin``
+        instead: before 2.54 nothing calls it after this, so the guard's
+        early return would be a line no test reaches on those releases.
         """
         if self.settled:
             return
         self.settled = True
-        self.ended = time.perf_counter()
+        self.arguments = self.args
+        self.duration_ms = (time.perf_counter() - self.started) * 1000.0
         self.error = error
         self.result = result
 
