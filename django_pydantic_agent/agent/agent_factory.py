@@ -34,6 +34,9 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     policy outermost, so it converts a failure only after every other
     capability has seen it. Within a tier list order breaks ties, so audit is
     appended after ``config.capabilities`` and the policy placed before them.
+    What sorts after audit regardless, such as an innermost capability passed
+    to a single run, can still reach the record; ``AuditCapability`` states
+    that exception.
 
     **A destructive tool is not confirmed unless a config asks for it.** The
     approval interrupt exists only when ``config.tool_guard`` is enabled, and
