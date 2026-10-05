@@ -1806,6 +1806,14 @@ and spec bridges, attachment and skill tools alike.</p>
 <p>Recording is <strong>non-raising</strong>. A sink that throws is caught and logged to the
 <code>django_pydantic_agent.audit</code> Python logger, so a broken audit backend
 costs audit records rather than the run.</p>
+<p>A failed call's <code>error</code> is the exception's type name and message. Where
+<code>ToolFailurePolicy</code> has turned a tool's exception into a failed result,
+the record describes the exception rather than the policy's model-facing
+text, so the operator's copy keeps the detail <code>include_detail</code> withholds
+from the model. Every other <code>ToolFailed</code> keeps its own message, cause or
+not: a tool's, a toolset's, another capability's. A tool's own reaches the
+wrapper as <code>ToolFailedError: &lt;message&gt;</code>, or as <code>ToolFailed: &lt;message&gt;</code>
+under code mode.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -2450,8 +2458,11 @@ depends on and the model's retry budget therefore pass through untouched,
 where a hand-rolled <code>except Exception</code> around the handler would swallow
 them and quietly disable the gate.</p>
 <p>The re-raise is <code>pydantic_ai.exceptions.ToolFailed</code>, so the model sees a
-result marked failed rather than one reading as success. That spends no
-retry budget, so bound a persistently broken tool with run-level
+result marked failed rather than one reading as success. (Precisely, a
+private subclass of it, so an audit record can tell this translation from a
+<code>ToolFailed</code> anything else raised. pydantic-ai's control flow treats it as
+a <code>ToolFailed</code>; a trace records the subclass's name as the exception
+type.) A failed result spends no retry budget, so bound a persistently broken tool with run-level
 <code>UsageLimits</code> rather than expecting this to stop the model calling it.</p>
 <p><strong>Nothing is swallowed.</strong> The exception is logged with its traceback to the
 <code>django_pydantic_agent.failure</code> logger, and an <code>AuditCapability</code> in the
