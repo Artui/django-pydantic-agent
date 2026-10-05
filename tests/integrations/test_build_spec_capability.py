@@ -4,7 +4,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
+from pydantic_ai import Agent
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import RunContext
 from pydantic_ai.usage import RunUsage
@@ -13,6 +17,7 @@ from rest_framework_services import ServiceSpec
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
+from tests.integrations.drf_specs_lookup import SPECS as LOOKUP_SPECS
 
 
 def _ctx(deps: AgentDeps) -> RunContext[AgentDeps]:
@@ -250,3 +255,66 @@ async def test_a_specs_progress_reports_reach_the_runs_sink() -> None:
     await capability.get_toolset().call_tool("import_rows", {}, ctx, None)
 
     assert reports == [(45, 100, "importing rows")]
+
+
+# Each tool reads its row through a selector taking ``pk`` with no default: the
+# selector spec's own selector, and the service spec's target lookup. A call
+# leaving ``pk`` out is corrected by sending it.
+_LOOKUP_CALLS = [
+    pytest.param("get_row", {}, {"pk": 1}, {"id": 1, "name": "first"}, id="selector"),
+    pytest.param(
+        "rename_row",
+        {"name": "second"},
+        {"pk": 1, "name": "second"},
+        {"id": 1, "name": "second"},
+        id="service-target-lookup",
+    ),
+]
+
+
+@pytest.mark.parametrize("name", ["get_row", "rename_row"])
+async def test_a_selector_parameter_without_a_default_is_required(name: str) -> None:
+    """What the model reads: ``pk`` is advertised, and required.
+
+    ``SpecToolset`` lists a selector parameter with no default, which it does
+    not fill, in the tool's ``required``, and a single-item service advertises
+    the lookup its target is resolved through. Without either, ``get_row``
+    called ``pk`` optional and ``rename_row`` never mentioned it, so a model
+    had no reason to send the one argument the call cannot run without.
+    """
+    ctx = _ctx(AgentDeps(user=AnonymousUser()))
+    tools = await build_spec_capability(LOOKUP_SPECS).get_toolset().get_tools(ctx)
+    schema = tools[name].tool_def.parameters_json_schema
+    assert "pk" in schema["properties"]
+    assert "pk" in schema.get("required", [])
+
+
+@pytest.mark.parametrize(("name", "omitted", "corrected", "row"), _LOOKUP_CALLS)
+async def test_a_call_missing_a_selector_argument_is_one_retry_then_the_row(
+    name: str, omitted: dict[str, Any], corrected: dict[str, Any], row: dict[str, Any]
+) -> None:
+    """A call leaving ``pk`` out is a retry naming it, then the row.
+
+    ``SpecToolset`` raises ``ModelRetry`` for the omission itself. Without it the
+    selector raised ``TypeError`` out of the toolset and ended the run over an
+    argument the model could have supplied. Driven through a real run, so the
+    retry is what the model reads.
+    """
+    calls = iter([omitted, corrected])
+
+    def model_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        if any(part.part_kind == "tool-return" for part in messages[-1].parts):
+            return ModelResponse(parts=[TextPart("done")])
+        return ModelResponse(parts=[ToolCallPart(tool_name=name, args=next(calls))])
+
+    agent = Agent(
+        FunctionModel(model_fn),
+        deps_type=AgentDeps,
+        capabilities=[build_spec_capability(LOOKUP_SPECS)],
+    )
+    result = await agent.run("read the row", deps=AgentDeps(user=AnonymousUser()))
+
+    parts = [part for message in result.all_messages() for part in message.parts]
+    retries = [part.content for part in parts if part.part_kind == "retry-prompt"]
+    assert retries == ["Missing required argument(s): `pk`."]
+    assert [part.content for part in parts if isinstance(part, ToolReturnPart)] == [row]

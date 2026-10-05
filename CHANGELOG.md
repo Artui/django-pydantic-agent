@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.50`
+  (was `>=0.49`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.33` (was `>=0.32`), and these two floors
+  move together.** Both releases make a tool's input schema ask for what a call
+  needs, and both turn a call that leaves it out into a retry, one per route. A
+  selector parameter with no default, which the server or toolset does not
+  fill, is now listed in `required`, where `get_row(*, pk)` advertised `pk` as
+  optional; and a service tool now advertises the target lookup its row is
+  resolved through, where a tool changing one row never mentioned the `pk`
+  naming it. A call missing such an argument raised the selector's `TypeError`
+  and ended the run. drf-mcp 0.50 answers it with a `validation_error` result
+  keyed by the missing name, which `DRFMCPToolset` already raises as
+  `ModelRetry`, and PAI 0.33 raises ``ModelRetry("Missing required argument(s):
+  `pk`.")`` itself. Raising one without the other would require `pk` on one
+  route and leave it optional, and fatal when missed, on the other. Both floor
+  drf-services at 0.55.0 in turn, and hard: below it, listing such a tool raises
+  `TypeError`. No code in this package changes. Tests now pin both halves on
+  both routes, through one selector spec and one service spec shared between
+  them: the advertised `required`, a real run where the omission is one retry
+  and then the row, the two routes requiring the same arguments, and the
+  `validation_error` result the bridge's retry rides on, read off the real
+  server.
+
 ## [0.26.0] — 2026-09-24
 
 ### Changed
