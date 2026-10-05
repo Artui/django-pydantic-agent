@@ -59,11 +59,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raised, before anything converts it or recovers from it, so a recovered
   failure is recorded as a failure with the tool's exception; the size of its
   own result, before an `after_tool_execute` rewrites it; and the time the tool
-  alone took. A call that never reaches the tool, vetoed or held for approval,
-  has no record. **The 2.54 effects 0.26.1 documented no longer apply:** a
-  record no longer carries the arguments from before a before-hook's rewrite or
-  measures an after-hook's output, and a call either hook rejects is no longer
-  recorded as a failure. The class and the policy page state the contract
+  alone took. The one gap is an innermost capability passed to a single run,
+  which sorts after audit: from 2.54 a record misses its argument rewrite and
+  times its hook with the tool. **A call that never runs the tool has no
+  record**: one stopped before audit's `before_tool_execute`, and one whose
+  outcome is what pydantic-ai treats as not executed, a `SkipToolExecution`
+  veto or a `CallDeferred` or `ApprovalRequired` deferral, wherever it is
+  raised. 0.26.1 recorded a call deferred from inside it, as a tool raising
+  `ApprovalRequired` or a toolset wrapped in pydantic-ai's `approval_required()`
+  does, as a failure reading `ApprovalRequired: `, and a call deferred to
+  external execution as `CallDeferred: `. A call held for approval is now
+  recorded once it is resumed and runs, and one deferred to external execution,
+  which never runs in this process, not at all. A veto from an innermost
+  capability passed to a single run is not recorded either.
+  **The 2.54 effects 0.26.1 documented no longer apply:** a record no longer
+  carries the arguments from before a before-hook's rewrite or measures an
+  after-hook's output, and a call either hook rejects is no longer recorded as
+  a failure. The class and the policy page state the contract
   field by field, and agent runs with harness-shaped capabilities assert each
   part of it on both hook orders, along with parallel calls in one run and
   concurrent runs of one agent each keeping their own records. `build_agent`
@@ -94,7 +106,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authorization refusal still passes every hook untouched. An earlier hook that
   raises `ModelRetry` or `ToolFailed` in the exception's place has answered for
   the model, so the policy passes it through rather than replacing that answer
-  with its own.
+  with its own, and a `ModelRetry` passed through spends the tool's retry
+  budget like any other. The `django_pydantic_agent.failure` logger now hears
+  only about the failures the policy converts, so a call another capability
+  recovered or answered for is no longer logged there, and the policy page no
+  longer says the full exception reaches that logger either way.
 - **The `[harness]` docs said the extra pins one harness minor.** The ceiling
   came off in 0.14.0 and the extra has declared only a floor since. The
   version-sensitive note now says so, and names what checks the range in place

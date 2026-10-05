@@ -42,10 +42,13 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     broken tool with run-level ``UsageLimits`` rather than expecting this to
     stop the model calling it.
 
-    **Nothing is swallowed.** The exception is logged with its traceback to the
-    ``django_pydantic_agent.failure`` logger, and an ``AuditCapability`` in the
-    same chain still records the failure against the tool that caused it. What
-    changes is only who the failure stops.
+    **Nothing is swallowed.** An exception this converts is logged with its
+    traceback to the ``django_pydantic_agent.failure`` logger first, and an
+    ``AuditCapability`` in the same chain still records the failure against the
+    tool that caused it. What changes is only who the failure stops. That
+    logger hears only about what this converts: not a call another capability
+    recovered or answered for, not a refusal passing through, and not an
+    exception pydantic-ai never hands to an error hook.
 
     **It converts last.** Pinned outermost, and placed first by ``build_agent``,
     so its ``on_tool_execute_error`` is the last of every capability's to run
@@ -55,8 +58,9 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     failure, and a capability that recovers answers before anything is
     converted. What an earlier hook raised in the exception's place is that
     capability's answer, and passes through when it is one pydantic-ai gives the
-    model itself: ``ModelRetry`` asks for the call again, and a ``ToolFailed``
-    already carries its own message for the model.
+    model itself: a ``ModelRetry`` is a retry like any other and spends the
+    tool's retry budget, and a ``ToolFailed`` already carries its own message
+    for the model.
 
     **An authorization refusal is exempt** and ends the run as it would without
     the policy — see ``ToolFailureConfig.reraise``, which is also how a project

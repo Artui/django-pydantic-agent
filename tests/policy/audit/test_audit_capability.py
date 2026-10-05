@@ -18,7 +18,7 @@ from pydantic_ai import (
     Tool,
 )
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import SkipToolExecution, ToolFailed
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, SkipToolExecution, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -81,6 +81,7 @@ def _agent(
     tool_failure: bool = True,
     model: Any = None,
     tool_guard: ToolGuardConfig | None = None,
+    toolsets: Sequence[Any] = (),
 ) -> Agent[AgentDeps, Any]:
     """An agent composed the way a transport composes one: through ``build_agent``.
 
@@ -99,6 +100,7 @@ def _agent(
             capabilities=list(capabilities),
             tool_failure=ToolFailureConfig(enabled=tool_failure),
             tool_guard=tool_guard,
+            toolsets=list(toolsets),
         ),
     )
 
@@ -166,6 +168,30 @@ class _InnermostVeto(_Veto):
         return CapabilityOrdering(position="innermost")
 
 
+class _RetryFirstCall(AbstractCapability[Any]):
+    """Asks the model to try again from ``before_tool_execute``, once.
+
+    A harness-style argument check does this: the call is refused before the
+    tool runs, with a ``ModelRetry`` rather than a veto.
+    """
+
+    def __init__(self) -> None:
+        self._asked = False
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self._asked:
+            self._asked = True
+            raise ModelRetry("n must be positive")
+        return args
+
+
 class _RetryOnce(AbstractCapability[Any]):
     """A wrapper that runs the tool again when it raises.
 
@@ -228,6 +254,13 @@ class _RewriteArgs(AbstractCapability[Any]):
         args: dict[str, Any],
     ) -> dict[str, Any]:
         return {**args, "n": 7}
+
+
+class _InnermostRewriteArgs(_RewriteArgs):
+    """``_RewriteArgs`` pinned innermost, the tier audit shares."""
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(position="innermost")
 
 
 class _RewriteResult(AbstractCapability[Any]):
@@ -506,14 +539,13 @@ async def test_a_vetoed_call_is_not_recorded(veto: type[_Veto]) -> None:
     ]
 
 
-async def test_audit_composed_ahead_of_an_innermost_veto_sees_it_from_2_54() -> None:
-    """Why ``build_agent`` appends audit after ``config.capabilities``.
-
-    List order breaks ties within the innermost tier. Composed by hand ahead of
-    an innermost guardrail, audit's ``before_tool_execute`` runs before the
-    veto, and from pydantic-ai 2.54, where the wrapper encloses that hook, the
-    vetoed call is recorded as a failure. Earlier releases run the veto outside
-    the wrapper, and nothing is recorded.
+async def test_audit_composed_ahead_of_an_innermost_veto_does_not_record_it() -> None:
+    """Composed by hand ahead of an innermost guardrail, audit is not the last
+    ``before_tool_execute``, and from pydantic-ai 2.54, where its wrapper
+    encloses the guardrail's, the veto reaches it after audit has seen the call
+    start. The vetoed call is still not recorded, because a
+    ``SkipToolExecution`` is a call that did not execute. Earlier releases
+    never enter the wrapper for it.
     """
 
     def lookup(n: int) -> str:
@@ -529,15 +561,181 @@ async def test_audit_composed_ahead_of_an_innermost_veto_sees_it_from_2_54() -> 
     )
     await agent.run("go", deps=_deps())
 
-    wrapper_encloses_hooks = tuple(int(p) for p in version("pydantic-ai-slim").split(".")[:2]) >= (
-        2,
-        54,
+    assert _records(audit) == []
+
+
+async def test_a_veto_from_a_capability_passed_per_run_is_not_recorded() -> None:
+    """A capability a transport passes to one run sorts after the agent's own,
+    so an innermost one lands inside audit however ``build_agent`` composed it."""
+    calls: list[int] = []
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        calls.append(n)
+        return "found"
+
+    audit = _CapturingLogger()
+    agent = _agent(lookup, sink=audit)
+    async with agent.iter("go", deps=_deps(), capabilities=[_InnermostVeto()]) as run:
+        async for _ in run:
+            pass
+
+    assert calls == []
+    assert _records(audit) == []
+
+
+class _SlowInnermostRewriteArgs(_InnermostRewriteArgs):
+    """``_InnermostRewriteArgs`` taking far longer than the tool to do it."""
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        await asyncio.sleep(0.3)
+        return await super().before_tool_execute(ctx, call=call, tool_def=tool_def, args=args)
+
+
+async def test_a_per_run_innermost_rewrite_reaches_the_record_only_before_2_54() -> None:
+    """The one gap in "the arguments the tool received" and "the tool alone".
+
+    A capability passed to a single run sorts after audit within the innermost
+    tier, so its ``before_tool_execute`` runs after audit's. Before 2.54
+    audit's wrapper is entered after every ``before`` hook, and records the
+    rewritten arguments and times the tool alone; from 2.54 the wrapper
+    encloses that hook, and the record keeps the arguments from before the
+    rewrite and times the hook with the tool.
+    """
+    received: list[int] = []
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        received.append(n)
+        return "found"
+
+    audit = _CapturingLogger()
+    agent = _agent(lookup, sink=audit)
+    capabilities = [_SlowInnermostRewriteArgs()]
+    async with agent.iter("go", deps=_deps(), capabilities=capabilities) as run:
+        async for _ in run:
+            pass
+
+    hooks_inside_the_wrapper = tuple(
+        int(part) for part in version("pydantic-ai-slim").split(".")[:2]
+    ) >= (2, 54)
+    assert received == [7]
+    assert _records(audit) == [
+        ("lookup", '{"n": 0}' if hooks_inside_the_wrapper else '{"n": 7}', True, None, 5)
+    ]
+    assert (audit.events[0].duration_ms >= 300) is hooks_inside_the_wrapper
+
+
+async def test_a_retry_asked_for_before_the_tool_runs_is_not_recorded() -> None:
+    """The refused attempt never reached the tool, so only the retried one,
+    which did, has a record."""
+    calls: list[int] = []
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        calls.append(n)
+        return "found"
+
+    audit = _CapturingLogger()
+    model = _scripted(
+        [ToolCallPart(tool_name="lookup", args={"n": 0}, tool_call_id="first")],
+        [ToolCallPart(tool_name="lookup", args={"n": 1}, tool_call_id="second")],
     )
-    assert _records(audit) == (
-        [("lookup", '{"n": 0}', False, "SkipToolExecution: ", None)]
-        if wrapper_encloses_hooks
-        else []
+    agent = _agent(lookup, sink=audit, model=model, capabilities=[_RetryFirstCall()])
+    await agent.run("go", deps=_deps())
+
+    assert calls == [1]
+    assert _records(audit) == [("lookup", '{"n": 1}', True, None, 5)]
+
+
+def _wire_toolset() -> FunctionToolset[Any]:
+    toolset: FunctionToolset[Any] = FunctionToolset()
+
+    @toolset.tool_plain
+    def wire(amount: int) -> str:
+        """Wire money."""
+        return f"wired {amount}"
+
+    return toolset
+
+
+async def _approve_and_resume(agent: Agent[AgentDeps, Any], deferred: Any) -> None:
+    approvals = {call.tool_call_id: True for call in deferred.output.approvals}
+    await agent.run(
+        message_history=deferred.all_messages(),
+        deferred_tool_results=DeferredToolResults(approvals=approvals),
+        deps=_deps(),
     )
+
+
+async def test_a_call_an_approval_required_toolset_defers_is_recorded_once_it_runs() -> None:
+    """pydantic-ai's own approval gate, ``FunctionToolset.approval_required()``,
+    raises ``ApprovalRequired`` from inside the call, where audit sees it. The
+    deferred call did not execute, so it has no record; the approved one does.
+    """
+    audit = _CapturingLogger()
+    agent = _agent(
+        sink=audit,
+        model=TestModel(call_tools=["wire"]),
+        toolsets=[_wire_toolset().approval_required()],
+    )
+
+    deferred = await agent.run("go", deps=_deps())
+    assert isinstance(deferred.output, DeferredToolRequests)
+    assert _records(audit) == []
+
+    await _approve_and_resume(agent, deferred)
+    assert _records(audit) == [("wire", '{"amount": 0}', True, None, 7)]
+
+
+async def test_a_tool_asking_for_approval_itself_is_recorded_once_it_runs() -> None:
+    calls: list[int] = []
+    toolset: FunctionToolset[Any] = FunctionToolset()
+
+    @toolset.tool
+    def wire(ctx: RunContext[Any], amount: int) -> str:
+        """Wire money."""
+        if not ctx.tool_call_approved:
+            raise ApprovalRequired
+        calls.append(amount)
+        return f"wired {amount}"
+
+    audit = _CapturingLogger()
+    agent = _agent(sink=audit, model=TestModel(call_tools=["wire"]), toolsets=[toolset])
+
+    deferred = await agent.run("go", deps=_deps())
+    assert isinstance(deferred.output, DeferredToolRequests)
+    assert _records(audit) == []
+
+    await _approve_and_resume(agent, deferred)
+    assert calls == [0]
+    assert _records(audit) == [("wire", '{"amount": 0}', True, None, 7)]
+
+
+async def test_a_call_deferred_to_external_execution_has_no_record() -> None:
+    """It never runs in this process: whatever executes it records it."""
+    toolset: FunctionToolset[Any] = FunctionToolset()
+
+    @toolset.tool_plain
+    def external(amount: int) -> str:
+        """Run elsewhere."""
+        raise CallDeferred
+
+    audit = _CapturingLogger()
+    agent = _agent(sink=audit, model=TestModel(call_tools=["external"]), toolsets=[toolset])
+
+    deferred = await agent.run("go", deps=_deps())
+
+    assert isinstance(deferred.output, DeferredToolRequests)
+    assert [call.tool_name for call in deferred.output.calls] == ["external"]
+    assert _records(audit) == []
 
 
 async def test_an_approval_deferral_is_not_recorded_until_the_approved_call_runs() -> None:
@@ -565,7 +763,13 @@ async def test_an_approval_deferral_is_not_recorded_until_the_approved_call_runs
     assert _records(audit) == [("drop", '{"n": 0}', True, None, 7)]
 
 
-async def test_the_arguments_are_the_ones_the_tool_received() -> None:
+@pytest.mark.parametrize(
+    "rewrite", [_RewriteArgs, _InnermostRewriteArgs], ids=["unpinned", "innermost"]
+)
+async def test_the_arguments_are_the_ones_the_tool_received(rewrite: type[_RewriteArgs]) -> None:
+    """Including an innermost capability's rewrite, which is why ``build_agent``
+    appends audit after ``config.capabilities``: list order breaks ties within
+    a tier, and that keeps audit's ``before_tool_execute`` the last to run."""
     received: list[int] = []
 
     def lookup(n: int) -> str:
@@ -574,7 +778,7 @@ async def test_the_arguments_are_the_ones_the_tool_received() -> None:
         return "found"
 
     audit = _CapturingLogger()
-    await _agent(lookup, sink=audit, capabilities=[_RewriteArgs()]).run("go", deps=_deps())
+    await _agent(lookup, sink=audit, capabilities=[rewrite()]).run("go", deps=_deps())
 
     assert received == [7]
     assert _records(audit) == [("lookup", '{"n": 7}', True, None, 5)]
@@ -990,6 +1194,19 @@ async def test_any_other_exception_records_itself_not_its_cause(route: str) -> N
         )
 
     assert failures == ["ValueError: outer"]
+
+
+async def test_under_code_mode_a_tools_model_retry_is_recorded_as_raised() -> None:
+    """The sandbox's nested tool manager does not turn it into a
+    ``ToolRetryError``, as an ordinary call does."""
+
+    def lookup() -> str:
+        """Look up order 42."""
+        raise ModelRetry("please retry")
+
+    failures, _ = await _run_lookup_under_code_mode(lookup, ToolFailurePolicy())
+
+    assert failures == ["ModelRetry: please retry"]
 
 
 async def test_under_code_mode_the_policys_translation_records_the_exception() -> None:

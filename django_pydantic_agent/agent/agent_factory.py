@@ -52,9 +52,13 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     capabilities = list(config.capabilities) if config.capabilities is not None else []
     if config.audit_logger is not None and not isinstance(config.audit_logger, NullAuditLogger):
         # Appended after ``config.capabilities``: audit is innermost, and list
-        # order breaks ties within that tier, so this keeps it inside harness's
-        # innermost guardrail and tool-call judge, whose vetoes never reach it.
-        # ``test_a_vetoed_call_is_not_recorded[innermost]`` fails without it.
+        # order breaks ties within that tier, so this keeps its
+        # ``before_tool_execute`` after every other innermost one's, such as
+        # harness's guardrail and tool-call judge. The record then carries the
+        # arguments after their rewrites, and a call they veto never reaches
+        # audit's own ``before_tool_execute``.
+        # ``test_the_arguments_are_the_ones_the_tool_received[innermost]``
+        # fails without it from pydantic-ai 2.54.
         capabilities.append(
             AuditCapability(config.audit_logger, ip_address=config.audit_ip_address),
         )

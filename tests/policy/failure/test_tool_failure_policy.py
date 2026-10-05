@@ -10,7 +10,7 @@ import pytest
 from django.test import RequestFactory
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.exceptions import ToolFailed, UnexpectedModelBehavior
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
@@ -151,7 +151,9 @@ class _ErrorHook(AbstractCapability[Any]):
         return self._answer
 
 
-def _composed(*capabilities: AbstractCapability[Any], error: Exception) -> Agent[AgentDeps, Any]:
+def _composed(
+    *capabilities: AbstractCapability[Any], error: Exception, retries: int = 1
+) -> Agent[AgentDeps, Any]:
     """An agent whose one tool raises ``error``, with ``capabilities`` in
     ``config.capabilities`` the way a project adds its own."""
     reg = ToolRegistry()
@@ -167,7 +169,11 @@ def _composed(*capabilities: AbstractCapability[Any], error: Exception) -> Agent
 
     return build_agent(
         reg,
-        AgentConfig(model=TestModel(call_tools=["boom"]), capabilities=list(capabilities)),
+        AgentConfig(
+            model=TestModel(call_tools=["boom"]),
+            capabilities=list(capabilities),
+            retries=retries,
+        ),
     )
 
 
@@ -272,6 +278,17 @@ async def test_another_capabilitys_retry_is_not_converted() -> None:
     assert [r.content for r in _tool_returns(result)] == ["ok"]
 
 
+async def test_another_capabilitys_retry_spends_the_tools_retry_budget() -> None:
+    """Passed through, it is a ``ModelRetry`` like any other: with no retries
+    left the run ends, where the policy's own failed result would not."""
+    hook = _ErrorHook(answer=ModelRetry("try another target"))
+
+    with pytest.raises(UnexpectedModelBehavior, match="max retries"):
+        await _composed(hook, error=RuntimeError("boom"), retries=0).run(
+            "go", deps=AgentDeps(user=None)
+        )
+
+
 async def test_another_capabilitys_failed_result_is_not_converted() -> None:
     """A ``ToolFailed`` from an error hook is that capability's own answer for
     the model, and the policy's message must not replace it.
@@ -300,6 +317,38 @@ async def test_a_denial_passes_every_error_hook_untouched() -> None:
 
     assert raised.value is error
     assert hook.seen == [error]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [ModelRetry("try another target"), ToolFailed("The upstream is down."), "recovered"],
+    ids=["retry", "failed-result", "recovered"],
+)
+async def test_the_failure_logger_hears_nothing_the_policy_did_not_convert(
+    answer: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Another capability answered for the call, so the policy converted nothing
+    and logged nothing."""
+    with caplog.at_level(logging.ERROR, logger="django_pydantic_agent.failure"):
+        await _composed(_ErrorHook(answer=answer), error=RuntimeError("boom")).run(
+            "go", deps=AgentDeps(user=None)
+        )
+
+    assert not [r for r in caplog.records if r.name == "django_pydantic_agent.failure"]
+
+
+async def test_a_refusal_passing_through_is_not_logged_as_a_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from django.core.exceptions import PermissionDenied
+
+    with (
+        caplog.at_level(logging.ERROR, logger="django_pydantic_agent.failure"),
+        pytest.raises(PermissionDenied),
+    ):
+        await _composed(error=PermissionDenied("not yours")).run("go", deps=AgentDeps(user=None))
+
+    assert not [r for r in caplog.records if r.name == "django_pydantic_agent.failure"]
 
 
 async def test_the_failure_is_logged_with_its_traceback(

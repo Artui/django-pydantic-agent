@@ -14,6 +14,7 @@ from pydantic_ai.capabilities import (
     CapabilityOrdering,
     WrapToolExecuteHandler,
 )
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, SkipToolExecution
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import ToolDefinition
 
@@ -21,6 +22,11 @@ from django_pydantic_agent.policy.audit.types.audit_event import AuditEvent
 from django_pydantic_agent.policy.audit.types.audit_logger import AuditLogger
 
 _fallback_logger = logging.getLogger("django_pydantic_agent.audit")
+
+# What pydantic-ai itself treats as a call that did not execute: a veto, and the
+# two deferrals. Each skips every error and result hook, so audit sees one only
+# in its wrapper, as the outcome of a call that never ran.
+_NOT_EXECUTED = (SkipToolExecution, CallDeferred, ApprovalRequired)
 
 
 class AuditCapability(AbstractCapability[Any]):
@@ -35,30 +41,43 @@ class AuditCapability(AbstractCapability[Any]):
     other capabilities are composed and on every supported pydantic-ai:
 
     - ``arguments_repr`` holds the arguments the tool received, after every
-      other capability's ``before_tool_execute`` has rewritten them.
+      other capability's ``before_tool_execute`` has rewritten them, save an
+      innermost capability sorted after audit (below).
     - ``success`` and ``error`` describe what the tool did. ``error`` is
       ``Type: message`` of the exception the tool raised, before any capability
       converts it (as [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy]
       does) or recovers from it with an ``on_tool_execute_error`` that returns a
       value. A recovered failure is still recorded as the failure: recovering is
-      a decision about the run, not about the tool. The exceptions pydantic-ai
-      routes past every error hook are recorded as they arrive: a tool's own
-      ``ToolFailed`` as the ``ToolFailedError`` pydantic-ai converts it into,
-      with the same message, and ``ModelRetry`` as ``ToolRetryError``.
+      a decision about the run, not about the tool. On an ordinary call the
+      exceptions pydantic-ai routes past every error hook are recorded as they
+      arrive: a tool's own ``ToolFailed`` as the ``ToolFailedError``
+      pydantic-ai converts it into, with the same message, and ``ModelRetry``
+      as ``ToolRetryError``. From a code-mode sandbox, whose nested tool
+      manager converts neither, they are recorded as raised:
+      ``ToolFailed: <message>`` and ``ModelRetry: <message>``. A
+      ``ToolFailed`` keeps its own message either way; its cause and context
+      are never read.
     - ``result_size`` is the length of the tool's own result, before any
       ``after_tool_execute`` rewrites it.
     - ``duration_ms`` spans the tool alone: from the last moment audit sees
       before the tool runs, which is after every other capability's
       ``before_tool_execute``, to the first moment it sees the outcome, which
       is before every other capability's ``on_tool_execute_error`` or
-      ``after_tool_execute``. Other capabilities' hooks are not in it.
+      ``after_tool_execute``. Other capabilities' hooks are not in it, save,
+      again, an innermost capability sorted after audit.
 
-    **A call that never reaches the tool produces no record.** A
-    ``before_tool_execute`` that stops the call, such as the
-    ``SkipToolExecution`` pydantic-ai-harness's guardrails and tool-call judge
-    raise, and a destructive call the [`ToolGuard`][django_pydantic_agent.ToolGuard]
-    holds for approval are not executions. The approved call, when it runs, is
-    recorded like any other.
+    **A call that never runs the tool produces no record.** That is a call
+    stopped before audit's ``before_tool_execute``, by any exception, and one
+    whose outcome is what pydantic-ai treats as not executed:
+    ``SkipToolExecution``, ``CallDeferred`` or ``ApprovalRequired``, from
+    wherever it is raised. So a veto such as pydantic-ai-harness's guardrails
+    and tool-call judge raise, a destructive call the
+    [`ToolGuard`][django_pydantic_agent.ToolGuard] holds for approval, a call a
+    tool or a toolset such as pydantic-ai's ``approval_required()`` defers for
+    approval, and a call deferred to external execution are not executions. A
+    call held for approval is recorded when it is resumed and runs, like any
+    other; a call deferred to external execution never runs in this process,
+    so it has no record here.
 
     **How it gets the same record on every release.** pydantic-ai 2.54 moved
     every capability's ``before_tool_execute``, ``on_tool_execute_error`` and
@@ -74,10 +93,14 @@ class AuditCapability(AbstractCapability[Any]):
     captures are what keep the record the tool's.
 
     **Compose it after any other innermost capability.** ``build_agent``
-    appends it after everything in ``AgentConfig.capabilities``, so it runs
-    inside harness's guardrail and tool-call judge, which are innermost too,
-    and their vetoes never reach it. Composed by hand ahead of one, a veto
-    that capability raises would be recorded as a failure on 2.54.
+    appends it after everything in ``AgentConfig.capabilities``, so its
+    ``before_tool_execute`` runs after those of harness's guardrail and
+    tool-call judge, which are innermost too. Composed by hand ahead of an
+    innermost capability, it would run first, and from 2.54 a record would
+    miss that capability's argument rewrite and count its hook in the
+    duration. Its veto is still not recorded. A capability passed to a single
+    run is sorted after the agent's own, so an innermost one sorts after audit
+    in the same way, whatever ``build_agent`` did.
 
     Recording is **non-raising**. A sink that throws is caught and logged to the
     ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
@@ -266,10 +289,7 @@ class AuditCapability(AbstractCapability[Any]):
         return from_deps if from_deps is not None else self._ip_address
 
     def _record(self, name: str, execution: _Execution, *, ip_address: str | None) -> None:
-        if not execution.reached:
-            # A ``before_tool_execute`` ahead of audit's stopped the call, so
-            # the tool never ran. Before 2.54 the wrapper is not even entered
-            # then; this keeps 2.54 the same.
+        if _did_not_execute(execution):
             return
         error = execution.error
         event = AuditEvent(
@@ -290,6 +310,43 @@ class AuditCapability(AbstractCapability[Any]):
                 type(self._logger).__name__,
                 name,
             )
+
+
+def _did_not_execute(execution: _Execution) -> bool:
+    """Whether the call never ran the tool, and so has no record.
+
+    Two ways, either of which is enough:
+
+    - **Nothing reached audit's ``before_tool_execute``.** A capability ahead
+      of audit stopped the call with something other than a veto, such as a
+      ``ModelRetry`` asking for different arguments, or any exception. Before
+      2.54 the wrapper is not even entered then; this keeps 2.54 the same.
+    - **The outcome is one of ``_NOT_EXECUTED``.** A deferral can be raised
+      from inside the call, by the tool or by a toolset such as pydantic-ai's
+      ``FunctionToolset.approval_required()``, so it reaches audit's wrapper on
+      every release. From 2.54 so does a veto from an innermost capability
+      sorted after audit, such as one passed to a single run. A call deferred
+      to external execution never runs in this process; one held for approval
+      is recorded when it is resumed and runs.
+
+    Each condition is one branch arc, the ``isinstance`` tuple included, so
+    coverage cannot see any of them go missing. These tests fail without each,
+    the first two from 2.54 only, since earlier releases never enter the
+    wrapper for a call stopped ahead of audit:
+
+    - ``not execution.reached``:
+      ``test_a_retry_asked_for_before_the_tool_runs_is_not_recorded`` and
+      ``test_a_before_or_after_hook_reaches_the_record_only_through_the_tool[before-reject]``.
+    - ``SkipToolExecution``:
+      ``test_a_veto_from_a_capability_passed_per_run_is_not_recorded`` and
+      ``test_audit_composed_ahead_of_an_innermost_veto_does_not_record_it``.
+    - ``CallDeferred``:
+      ``test_a_call_deferred_to_external_execution_has_no_record``.
+    - ``ApprovalRequired``:
+      ``test_a_call_an_approval_required_toolset_defers_is_recorded_once_it_runs``
+      and ``test_a_tool_asking_for_approval_itself_is_recorded_once_it_runs``.
+    """
+    return not execution.reached or isinstance(execution.error, _NOT_EXECUTED)
 
 
 class _Execution:
