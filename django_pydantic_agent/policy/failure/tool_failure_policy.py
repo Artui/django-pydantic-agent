@@ -48,7 +48,8 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     tool that caused it. What changes is only who the failure stops. That
     logger hears only about what this converts: not a call another capability
     recovered or answered for, not a refusal passing through, and not an
-    exception pydantic-ai never hands to an error hook.
+    exception pydantic-ai never hands to an error hook, such as a tool's own
+    ``ToolFailed``, or its ``ModelRetry`` while it has retries left.
 
     **It converts last.** Pinned outermost, and placed first by ``build_agent``,
     so its ``on_tool_execute_error`` is the last of every capability's to run
@@ -58,9 +59,17 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     failure, and a capability that recovers answers before anything is
     converted. What an earlier hook raised in the exception's place is that
     capability's answer, and passes through when it is one pydantic-ai gives the
-    model itself: a ``ModelRetry`` is a retry like any other and spends the
-    tool's retry budget, and a ``ToolFailed`` already carries its own message
-    for the model.
+    model itself: a ``ToolFailed`` already carries its own message for the
+    model, and a ``ModelRetry`` spends the tool's retry budget. Once that is
+    spent the run ends with ``UnexpectedModelBehavior``, which pydantic-ai
+    raises after every error hook has run, so this never sees it.
+
+    **A tool's own ``ModelRetry`` with no retries left is converted.** While
+    the tool has retries left pydantic-ai never hands its ``ModelRetry`` to an
+    error hook. Once they are spent it raises ``UnexpectedModelBehavior`` in
+    its place from inside the call, which does reach the error hooks, so this
+    logs it and converts it into a failed result like any other exception,
+    where without the policy the run would end.
 
     **An authorization refusal is exempt** and ends the run as it would without
     the policy — see ``ToolFailureConfig.reraise``, which is also how a project

@@ -38,11 +38,11 @@ class AuditCapability(AbstractCapability[Any]):
     bridges, attachment and skill tools alike.
 
     **One record per execution, describing the tool's own execution**, whatever
-    other capabilities are composed and on every supported pydantic-ai:
+    other capabilities are composed ahead of it and on every supported
+    pydantic-ai. A capability that sorts after audit is the exception, below.
 
     - ``arguments_repr`` holds the arguments the tool received, after every
-      other capability's ``before_tool_execute`` has rewritten them, save an
-      innermost capability sorted after audit (below).
+      other capability's ``before_tool_execute`` has rewritten them.
     - ``success`` and ``error`` describe what the tool did. ``error`` is
       ``Type: message`` of the exception the tool raised, before any capability
       converts it (as [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy]
@@ -56,15 +56,17 @@ class AuditCapability(AbstractCapability[Any]):
       manager converts neither, they are recorded as raised:
       ``ToolFailed: <message>`` and ``ModelRetry: <message>``. A
       ``ToolFailed`` keeps its own message either way; its cause and context
-      are never read.
+      are never read. A ``ModelRetry`` on an ordinary call with the tool's
+      retry budget spent is different: pydantic-ai raises
+      ``UnexpectedModelBehavior`` in its place, which does reach the error
+      hooks, and that is what is recorded.
     - ``result_size`` is the length of the tool's own result, before any
       ``after_tool_execute`` rewrites it.
     - ``duration_ms`` spans the tool alone: from the last moment audit sees
       before the tool runs, which is after every other capability's
       ``before_tool_execute``, to the first moment it sees the outcome, which
       is before every other capability's ``on_tool_execute_error`` or
-      ``after_tool_execute``. Other capabilities' hooks are not in it, save,
-      again, an innermost capability sorted after audit.
+      ``after_tool_execute``. Other capabilities' hooks are not in it.
 
     **A call that never runs the tool produces no record.** That is a call
     stopped before audit's ``before_tool_execute``, by any exception, and one
@@ -92,15 +94,32 @@ class AuditCapability(AbstractCapability[Any]):
     already the raw outcome; from 2.54 it encloses every hook, and the
     captures are what keep the record the tool's.
 
-    **Compose it after any other innermost capability.** ``build_agent``
-    appends it after everything in ``AgentConfig.capabilities``, so its
-    ``before_tool_execute`` runs after those of harness's guardrail and
-    tool-call judge, which are innermost too. Composed by hand ahead of an
-    innermost capability, it would run first, and from 2.54 a record would
-    miss that capability's argument rewrite and count its hook in the
-    duration. Its veto is still not recorded. A capability passed to a single
-    run is sorted after the agent's own, so an innermost one sorts after audit
-    in the same way, whatever ``build_agent`` did.
+    **A capability that sorts after audit runs between audit and the tool**, so
+    what it does to the call reaches the record as if the tool had done it.
+    One does when it is innermost and passed to a single run, since
+    pydantic-ai sorts those after the agent's own capabilities whatever
+    ``build_agent`` did, or when it is composed by hand after audit in the
+    innermost tier. Which of its parts runs there depends on the release:
+
+    - From 2.54, its ``before_tool_execute``, ``on_tool_execute_error`` and
+      ``after_tool_execute``. A record misses its argument rewrite, records a
+      ``ModelRetry`` its ``before_tool_execute`` raises as a failure though
+      the tool never ran, records its recovery as a success and an exception
+      it raises in place of the tool's, measures its result rewrite, and times
+      its hooks with the tool. If its ``wrap_tool_execute`` runs the tool
+      again, the one record describes the first run.
+    - Before 2.54, its ``wrap_tool_execute``. A record misses an argument
+      rewrite there, records a recovery as a success, an exception of its own
+      in place of the tool's and a ``ModelRetry`` raised before the tool runs
+      as a failure, measures a result rewrite, and times the wrapper with the
+      tool. If it runs the tool again, the one record describes the last run.
+
+    A ``SkipToolExecution`` veto from it is still not recorded. Everything
+    composed through ``AgentConfig.capabilities`` is unaffected:
+    ``build_agent`` appends audit after all of it, so audit sorts last among
+    the innermost capabilities there. pydantic-ai-harness's tool guardrail
+    and tool-call judge are innermost, so passed to a single run they sort
+    after audit like any other.
 
     Recording is **non-raising**. A sink that throws is caught and logged to the
     ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
@@ -177,9 +196,14 @@ class AuditCapability(AbstractCapability[Any]):
         again. Before 2.54 ``before_tool_execute`` runs once, ahead of every
         wrapper, so whether the call reached the tool is carried over from what
         it left in this context. From 2.54 it runs again inside each entry and
-        says so itself. The reset on the way out is what keeps one entry's
-        verdict from carrying into the next one there:
-        ``test_a_wrapper_that_runs_the_tool_twice_gets_one_record_per_run``.
+        says so itself, unless a capability ahead of audit stops that entry
+        first. The reset on the way out is what keeps the previous entry's
+        "reached" from carrying into one stopped that way, which would record
+        a call that never ran. Coverage cannot see it go missing, since the
+        line runs either way; from 2.54
+        ``test_a_rerun_refused_ahead_of_audit_is_not_recorded`` fails without
+        it. Before 2.54 there is no such entry, because audit's
+        ``before_tool_execute`` has run ahead of every one.
         """
         execution = _Execution(call, reached=self._current(call).reached)
         token = self._execution.set(execution)
@@ -265,12 +289,15 @@ class AuditCapability(AbstractCapability[Any]):
         - ``execution is not None``: every recording test, starting with
           ``test_records_toolset_tools_not_just_registry_tools``, which would
           read ``.call`` off ``None`` in a fresh context.
-        - ``execution.call is call``:
-          ``test_a_nested_run_sharing_the_capability_records_its_own_calls``,
-          where a tool runs an agent composed with this same capability, so the
-          inner calls start in a context that already holds the outer one's.
-          From 2.54 an inner veto would inherit the outer call's verdict and be
-          recorded; before it, the inner hooks would settle the outer record.
+        - ``execution.call is call``: a tool that runs an agent composed with
+          this same capability, whose inner calls start in a context that
+          already holds the outer call's execution. From 2.54 an inner call
+          that a capability ahead of audit refuses with anything but a veto,
+          such as a ``ModelRetry``, would take the outer call's "reached" and
+          be recorded: ``test_a_nested_call_refused_ahead_of_audit_is_not_recorded``.
+          Before 2.54 the inner hooks would settle the outer record, which
+          would then measure the inner tool's result: that test and
+          ``test_a_nested_run_sharing_the_capability_records_its_own_calls``.
           Identity rather than ``tool_call_id``, which the model chooses.
         """
         execution = self._execution.get()

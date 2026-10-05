@@ -5,6 +5,7 @@ import gc
 import logging
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
 
@@ -33,6 +34,7 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai_harness import CodeMode
+from pydantic_ai_harness import guardrails as harness_guardrails
 from rest_framework.permissions import AllowAny
 from rest_framework_pydantic_ai import SpecCapability
 from rest_framework_services import ServiceSpec
@@ -53,7 +55,12 @@ from django_pydantic_agent.registry.tool_registry import ToolRegistry
 # installed pydantic-ai's decision (2.54 moved every ``before`` / ``after`` /
 # ``on_error`` hook inside ``wrap_tool_execute``), so a hand-driven hook would
 # only restate this file's assumption about it. The suite runs on both orders,
-# and every record asserted here is the same on both.
+# and every record asserted here is the same on both, save where a capability
+# sorts after audit, whose tests say which record each order gets.
+
+_HOOKS_INSIDE_THE_WRAPPER = tuple(
+    int(part) for part in version("pydantic-ai-slim").split(".")[:2]
+) >= (2, 54)
 
 
 class _CapturingLogger:
@@ -600,14 +607,15 @@ class _SlowInnermostRewriteArgs(_InnermostRewriteArgs):
 
 
 async def test_a_per_run_innermost_rewrite_reaches_the_record_only_before_2_54() -> None:
-    """The one gap in "the arguments the tool received" and "the tool alone".
+    """A ``before_tool_execute`` sorted after audit, from 2.54.
 
     A capability passed to a single run sorts after audit within the innermost
     tier, so its ``before_tool_execute`` runs after audit's. Before 2.54
     audit's wrapper is entered after every ``before`` hook, and records the
     rewritten arguments and times the tool alone; from 2.54 the wrapper
     encloses that hook, and the record keeps the arguments from before the
-    rewrite and times the hook with the tool.
+    rewrite and times the hook with the tool. The rest of what such a
+    capability changes is below.
     """
     received: list[int] = []
 
@@ -623,14 +631,356 @@ async def test_a_per_run_innermost_rewrite_reaches_the_record_only_before_2_54()
         async for _ in run:
             pass
 
-    hooks_inside_the_wrapper = tuple(
-        int(part) for part in version("pydantic-ai-slim").split(".")[:2]
-    ) >= (2, 54)
     assert received == [7]
     assert _records(audit) == [
-        ("lookup", '{"n": 0}' if hooks_inside_the_wrapper else '{"n": 7}', True, None, 5)
+        ("lookup", '{"n": 0}' if _HOOKS_INSIDE_THE_WRAPPER else '{"n": 7}', True, None, 5)
     ]
-    assert (audit.events[0].duration_ms >= 300) is hooks_inside_the_wrapper
+    assert (audit.events[0].duration_ms >= 300) is _HOOKS_INSIDE_THE_WRAPPER
+
+
+class _OneThing(AbstractCapability[Any]):
+    """An innermost capability doing the one thing ``behaviour`` names to a call.
+
+    Every hook ``behaviour`` does not name passes the call on unchanged, so
+    each case below differs from the tool's own execution in one way only.
+    Passed to a single run it sorts after the agent's own capabilities, audit
+    included; in ``config.capabilities`` ``build_agent`` puts audit after it.
+    """
+
+    def __init__(self, behaviour: str) -> None:
+        self._behaviour = behaviour
+        self._asked = False
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(position="innermost")
+
+    def _ask_again_once(self, behaviour: str) -> None:
+        if self._behaviour == behaviour and not self._asked:
+            self._asked = True
+            raise ModelRetry("n must be positive")
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._ask_again_once("before-asks-again")
+        return args
+
+    async def on_tool_execute_error(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: Any,
+        error: Exception,
+    ) -> Any:
+        if self._behaviour == "on-error-recovers":
+            return "recovered"
+        if self._behaviour == "on-error-raises-its-own":
+            raise RuntimeError("converted") from error
+        raise error
+
+    async def after_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+        result: Any,
+    ) -> Any:
+        if self._behaviour == "after-rewrites-the-result":
+            return "y" * 500
+        if self._behaviour == "after-is-slow":
+            await asyncio.sleep(0.3)
+        return result
+
+    async def wrap_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+        handler: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        self._ask_again_once("wrapper-asks-again")
+        if self._behaviour == "wrapper-rewrites-the-arguments":
+            args = {**args, "n": 5}
+        if self._behaviour == "wrapper-is-slow":
+            await asyncio.sleep(0.3)
+        try:
+            result = await handler(args)
+        except Exception as error:
+            # From 2.54 what reaches a wrapper is the failure policy's copy,
+            # not the tool's exception, so each of these acts on any one.
+            if self._behaviour == "wrapper-reruns":
+                return await handler(args)
+            if self._behaviour == "wrapper-recovers":
+                return "recovered"
+            if self._behaviour == "wrapper-raises-its-own":
+                # A ToolFailed rather than an error: from 2.54 a wrapper is
+                # outside every error hook, so an error raised here would end
+                # the run rather than reach the failure policy.
+                raise ToolFailed("converted") from error
+            raise
+        if self._behaviour == "wrapper-rewrites-the-result":
+            return "y" * 500
+        return result
+
+
+_FAILED = ("lookup", '{"n": 0}', False, "ValueError: kaboom", None)
+_FOUND = ("lookup", '{"n": 0}', True, None, 5)
+_ASKED_AGAIN = ("lookup", '{"n": 0}', False, "ModelRetry: n must be positive", None)
+
+
+@dataclass(frozen=True)
+class _SortedAfterAudit:
+    """What one ``_OneThing`` behaviour does to the record, on each hook order.
+
+    ``own`` is the tool's own execution, which is what the record holds when
+    the capability is composed through ``config.capabilities``, on both.
+    """
+
+    behaviour: str
+    tool_fails: bool
+    ran: list[int]
+    own: list[Any]
+    from_2_54: list[Any]
+    before_2_54: list[Any]
+    slow_from_2_54: bool = False
+    slow_before_2_54: bool = False
+
+
+_SORTED_AFTER_AUDIT = [
+    # From 2.54 audit's wrapper encloses every hook, and these hooks run
+    # between audit's and the tool.
+    _SortedAfterAudit(
+        "on-error-recovers",
+        tool_fails=True,
+        ran=[0],
+        own=[_FAILED],
+        from_2_54=[("lookup", '{"n": 0}', True, None, 9)],
+        before_2_54=[_FAILED],
+    ),
+    _SortedAfterAudit(
+        "on-error-raises-its-own",
+        tool_fails=True,
+        ran=[0],
+        own=[_FAILED],
+        from_2_54=[("lookup", '{"n": 0}', False, "RuntimeError: converted", None)],
+        before_2_54=[_FAILED],
+    ),
+    _SortedAfterAudit(
+        "after-rewrites-the-result",
+        tool_fails=False,
+        ran=[0],
+        own=[_FOUND],
+        from_2_54=[("lookup", '{"n": 0}', True, None, 500)],
+        before_2_54=[_FOUND],
+    ),
+    _SortedAfterAudit(
+        "after-is-slow",
+        tool_fails=False,
+        ran=[0],
+        own=[_FOUND],
+        from_2_54=[_FOUND],
+        before_2_54=[_FOUND],
+        slow_from_2_54=True,
+    ),
+    # The refused attempt never ran the tool, yet from 2.54 it is recorded.
+    _SortedAfterAudit(
+        "before-asks-again",
+        tool_fails=False,
+        ran=[0],
+        own=[_FOUND],
+        from_2_54=[_ASKED_AGAIN, _FOUND],
+        before_2_54=[_FOUND],
+    ),
+    # Before 2.54 the hooks run around the wrappers, and this wrapper sits
+    # between audit's wrapper and the tool.
+    _SortedAfterAudit(
+        "wrapper-rewrites-the-arguments",
+        tool_fails=False,
+        ran=[5],
+        own=[("lookup", '{"n": 5}', True, None, 5)],
+        from_2_54=[("lookup", '{"n": 5}', True, None, 5)],
+        before_2_54=[_FOUND],
+    ),
+    _SortedAfterAudit(
+        "wrapper-recovers",
+        tool_fails=True,
+        ran=[0],
+        own=[_FAILED],
+        from_2_54=[_FAILED],
+        before_2_54=[("lookup", '{"n": 0}', True, None, 9)],
+    ),
+    _SortedAfterAudit(
+        "wrapper-raises-its-own",
+        tool_fails=True,
+        ran=[0],
+        own=[_FAILED],
+        from_2_54=[_FAILED],
+        before_2_54=[("lookup", '{"n": 0}', False, "ToolFailed: converted", None)],
+    ),
+    _SortedAfterAudit(
+        "wrapper-rewrites-the-result",
+        tool_fails=False,
+        ran=[0],
+        own=[_FOUND],
+        from_2_54=[_FOUND],
+        before_2_54=[("lookup", '{"n": 0}', True, None, 500)],
+    ),
+    _SortedAfterAudit(
+        "wrapper-is-slow",
+        tool_fails=False,
+        ran=[0],
+        own=[_FOUND],
+        from_2_54=[_FOUND],
+        before_2_54=[_FOUND],
+        slow_before_2_54=True,
+    ),
+    _SortedAfterAudit(
+        "wrapper-asks-again",
+        tool_fails=False,
+        ran=[0],
+        own=[_FOUND],
+        from_2_54=[_FOUND],
+        before_2_54=[_ASKED_AGAIN, _FOUND],
+    ),
+    # Run twice inside audit's one wrapper entry, the tool gets one record on
+    # both orders: of its first run from 2.54, where audit's hooks settled it,
+    # and of its last before, where audit's wrapper saw only the outcome.
+    _SortedAfterAudit(
+        "wrapper-reruns",
+        tool_fails=True,
+        ran=[0, 0],
+        own=[_FAILED, _FOUND],
+        from_2_54=[_FAILED],
+        before_2_54=[_FOUND],
+    ),
+]
+
+
+@pytest.mark.parametrize("composed", ["per-run", "config"])
+@pytest.mark.parametrize(
+    "case", _SORTED_AFTER_AUDIT, ids=[case.behaviour for case in _SORTED_AFTER_AUDIT]
+)
+async def test_a_capability_sorted_after_audit_reaches_the_record(
+    case: _SortedAfterAudit, composed: str
+) -> None:
+    """A capability that sorts after audit runs between audit and the tool.
+
+    Passed to a single run, an innermost capability sorts after audit, so what
+    it does to the call reaches the record as if the tool had done it: from
+    2.54 what its ``before``, ``on_error`` and ``after`` hooks do, and the
+    reruns of its wrapper; before 2.54 everything its wrapper does. The same
+    capability in ``config.capabilities`` leaves the record the tool's own on
+    both orders, because ``build_agent`` appends audit after it.
+    """
+    ran: list[int] = []
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        ran.append(n)
+        if case.tool_fails and len(ran) == 1:
+            raise ValueError("kaboom")
+        return "found"
+
+    audit = _CapturingLogger()
+    capability = _OneThing(case.behaviour)
+    if composed == "per-run":
+        agent = _agent(lookup, sink=audit)
+        async with agent.iter("go", deps=_deps(), capabilities=[capability]) as run:
+            async for _ in run:
+                pass
+        expected = case.from_2_54 if _HOOKS_INSIDE_THE_WRAPPER else case.before_2_54
+        slow = case.slow_from_2_54 if _HOOKS_INSIDE_THE_WRAPPER else case.slow_before_2_54
+    else:
+        await _agent(lookup, sink=audit, capabilities=[capability]).run("go", deps=_deps())
+        expected, slow = case.own, False
+
+    assert ran == case.ran
+    assert _records(audit) == expected
+    assert (max(event.duration_ms for event in audit.events) >= 300) is slow
+
+
+async def test_a_capability_composed_by_hand_after_audit_reaches_the_record_too() -> None:
+    """Sorting after audit is what matters, not being passed to a single run:
+    composed by hand after audit, an innermost recovery is recorded from 2.54."""
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        raise ValueError("kaboom")
+
+    audit = _CapturingLogger()
+    agent = Agent(
+        TestModel(call_tools=["lookup"]),
+        deps_type=AgentDeps,
+        tools=[lookup],
+        capabilities=[AuditCapability(audit), _OneThing("on-error-recovers")],
+    )
+    await agent.run("go", deps=_deps())
+
+    recovered = ("lookup", '{"n": 0}', True, None, 9)
+    assert _records(audit) == [recovered if _HOOKS_INSIDE_THE_WRAPPER else _FAILED]
+
+
+@pytest.mark.skipif(
+    not hasattr(harness_guardrails, "ToolGuardrail"),
+    reason="this pydantic-ai-harness has no ToolGuardrail",
+)
+@pytest.mark.parametrize("composed", ["per-run", "config"])
+@pytest.mark.parametrize("verdict", ["retry", "replace"])
+async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run(
+    verdict: str, composed: str
+) -> None:
+    """pydantic-ai-harness's tool guardrail is innermost, so passed to a single
+    run it sorts after audit and its verdicts reach the record from 2.54: a
+    ``retry`` before the tool runs is recorded as a failure, and a ``replace``
+    of the result is measured. In ``config.capabilities`` it does not."""
+
+    async def guard(ctx: RunContext[Any], info: Any) -> Any:
+        if not asked:
+            asked.append(True)
+            return harness_guardrails.GuardrailResult.retry("n must be positive")
+        return harness_guardrails.GuardrailResult.allow()
+
+    async def result_guard(ctx: RunContext[Any], info: Any) -> Any:
+        return harness_guardrails.GuardrailResult.replace("z" * 300)
+
+    asked: list[bool] = []
+    guardrail = (
+        harness_guardrails.ToolGuardrail(guard=guard)
+        if verdict == "retry"
+        else harness_guardrails.ToolGuardrail(result_guard=result_guard)
+    )
+    assert guardrail.get_ordering().position == "innermost"
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        return "found"
+
+    audit = _CapturingLogger()
+    if composed == "per-run":
+        agent = _agent(lookup, sink=audit)
+        async with agent.iter("go", deps=_deps(), capabilities=[guardrail]) as run:
+            async for _ in run:
+                pass
+    else:
+        await _agent(lookup, sink=audit, capabilities=[guardrail]).run("go", deps=_deps())
+
+    reaches_the_record = composed == "per-run" and _HOOKS_INSIDE_THE_WRAPPER
+    if verdict == "retry":
+        assert _records(audit) == ([_ASKED_AGAIN, _FOUND] if reaches_the_record else [_FOUND])
+    else:
+        replaced = ("lookup", '{"n": 0}', True, None, 300)
+        assert _records(audit) == [replaced if reaches_the_record else _FOUND]
 
 
 async def test_a_retry_asked_for_before_the_tool_runs_is_not_recorded() -> None:
@@ -832,6 +1182,67 @@ async def test_a_wrapper_that_runs_the_tool_twice_gets_one_record_per_run() -> N
     assert _records(audit) == [expected[outcome] for outcome in ran]
 
 
+class _RefuseTheSecondAttempt(AbstractCapability[Any]):
+    """Asks for a retry from ``before_tool_execute`` on its second call only.
+
+    Unpinned, so it runs ahead of audit's ``before_tool_execute``.
+    """
+
+    def __init__(self) -> None:
+        self._attempts = 0
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._attempts += 1
+        if self._attempts == 2:
+            raise ModelRetry("not again")
+        return args
+
+
+async def test_a_rerun_refused_ahead_of_audit_is_not_recorded() -> None:
+    """A wrapper runs the tool again after a failure, and a capability ahead of
+    audit refuses that second run with a ``ModelRetry``; the model's own retry
+    then runs the tool.
+
+    From 2.54 the rerun enters audit's wrapper again, and the refusal reaches
+    it before audit's ``before_tool_execute`` has run for that entry. Only the
+    reset on the way out of the first entry keeps the second from carrying
+    over the first's "reached" and recording a call that never ran. Before
+    2.54 every ``before`` hook runs once per call, ahead of the wrappers, so
+    the refusal falls on the model's retry instead, and the tool runs twice
+    inside the first call. The records follow the tool either way.
+    """
+    ran: list[str] = []
+
+    def flaky(n: int) -> str:
+        """Fails the first time."""
+        if not ran:
+            ran.append("failed")
+            raise ValueError("first")
+        ran.append("found")
+        return "found"
+
+    audit = _CapturingLogger()
+    await _agent(
+        flaky,
+        sink=audit,
+        capabilities=[_RetryOnce(), _RefuseTheSecondAttempt()],
+        tool_failure=False,
+    ).run("go", deps=_deps())
+
+    assert ran == ["failed", "found"]
+    assert _records(audit) == [
+        ("flaky", '{"n": 0}', False, "ValueError: first", None),
+        ("flaky", '{"n": 0}', True, None, 5),
+    ]
+
+
 async def test_the_result_size_is_the_tools_own_result() -> None:
     def lookup(n: int) -> str:
         """Look a thing up."""
@@ -1004,6 +1415,50 @@ async def test_a_nested_run_sharing_the_capability_records_its_own_calls() -> No
     )
     await outer.run("go")
 
+    assert _records(audit_log) == [
+        ("leaf", '{"n": 0}', True, None, 4),
+        ("delegate", '{"n": 0}', True, None, 9),
+    ]
+
+
+async def test_a_nested_call_refused_ahead_of_audit_is_not_recorded() -> None:
+    """A tool runs another agent composed with the same capability, whose first
+    call a capability ahead of audit refuses with a ``ModelRetry``.
+
+    From 2.54 the refusal reaches the inner call's audit wrapper, which starts
+    in a context still holding the outer call's execution, before audit's
+    ``before_tool_execute`` has run for the inner call. Only the identity
+    check keeps the inner call from taking the outer one's "reached" and
+    recording a call that never ran.
+    """
+    audit_log = _CapturingLogger()
+    audit = AuditCapability(audit_log)
+    ran: list[int] = []
+
+    def leaf(n: int) -> str:
+        """The inner tool."""
+        ran.append(n)
+        return "leaf"
+
+    inner = Agent(
+        TestModel(call_tools=["leaf"]),
+        toolsets=[FunctionToolset([leaf])],
+        capabilities=[_RetryFirstCall(), audit],
+    )
+
+    async def delegate(n: int) -> str:
+        """The outer tool."""
+        await inner.run("go")
+        return "delegated"
+
+    outer = Agent(
+        TestModel(call_tools=["delegate"]),
+        toolsets=[FunctionToolset([delegate])],
+        capabilities=[audit],
+    )
+    await outer.run("go")
+
+    assert ran == [0]
     assert _records(audit_log) == [
         ("leaf", '{"n": 0}', True, None, 4),
         ("delegate", '{"n": 0}', True, None, 9),
