@@ -43,10 +43,16 @@ raised from has no text at all. A tool's own `ToolFailed` is recorded as
 called from a code-mode sandbox.
 
 From pydantic-ai 2.54, `before_tool_execute` and `after_tool_execute` run inside
-the audit's wrapper, where before 2.54 they ran outside it. So the record now
-carries the validated arguments rather than what a before-hook rewrote them to
-(a redaction done in that hook no longer reaches it), and a call a before-hook
-rejects is recorded as a failure, where before 2.54 it left no record.
+the audit's wrapper, where before 2.54 they ran outside it, and that changes
+what a record says about either hook:
+
+- **A before-hook.** The record now carries the validated arguments rather than
+  what the hook rewrote them to, so a redaction done there no longer reaches it.
+  A call the hook rejects is recorded as a failure, where before 2.54 it left no
+  record.
+- **An after-hook.** `result_size` now measures what the hook returned rather
+  than the tool's own result. A call the hook rejects is recorded as a failure,
+  where before 2.54 the record said the call had succeeded.
 
 Arguments are stored **as a string** (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.

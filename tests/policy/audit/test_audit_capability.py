@@ -424,8 +424,12 @@ _HOOKS_INSIDE_THE_WRAPPER = tuple(int(part) for part in pydantic_ai_version.spli
 )
 
 
-class _BeforeHook(AbstractCapability[Any]):
-    def __init__(self, *, reject: bool) -> None:
+class _Hook(AbstractCapability[Any]):
+    """A before- or after-hook that rewrites what passes through it, or rejects
+    the call outright."""
+
+    def __init__(self, *, stage: str, reject: bool) -> None:
+        self._stage = stage
         self._reject = reject
 
     async def before_tool_execute(
@@ -436,38 +440,89 @@ class _BeforeHook(AbstractCapability[Any]):
         tool_def: ToolDefinition,
         args: dict[str, Any],
     ) -> dict[str, Any]:
+        if self._stage != "before":
+            return args
         if self._reject:
             raise PermissionError("rejected before execution")
         return {**args, "secret": "[redacted]"}
 
+    async def after_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+        result: Any,
+    ) -> Any:
+        if self._stage != "after":
+            return result
+        if self._reject:
+            raise PermissionError("rejected after execution")
+        return "x" * 1000
 
-@pytest.mark.parametrize("reject", [False, True], ids=["rewrite", "reject"])
-async def test_what_a_before_hook_does_reaches_the_record_by_hook_order(reject: bool) -> None:
-    """The record carries the arguments the wrapper was handed, and sees what
-    raises inside it. From 2.54 that is the validated arguments, before a
-    before-hook's rewrite, and a before-hook's rejection is a failed record;
-    before 2.54 it was the rewritten arguments, and a rejection left none."""
+
+# Each record as (success, error, result_size, whether the before-hook's
+# redaction reached arguments_repr). The tool returns "ok", so an untouched
+# result is 2 long and the after-hook's rewrite is 1000.
+_OK = (True, None, 2, False)
+
+
+@pytest.mark.parametrize(
+    ("stage", "reject", "inside", "outside"),
+    [
+        ("before", False, [_OK], [(True, None, 2, True)]),
+        (
+            "before",
+            True,
+            [(False, "PermissionError: rejected before execution", None, False)],
+            [],
+        ),
+        ("after", False, [(True, None, 1000, False)], [_OK]),
+        (
+            "after",
+            True,
+            [(False, "PermissionError: rejected after execution", None, False)],
+            [_OK],
+        ),
+    ],
+    ids=["before-rewrite", "before-reject", "after-rewrite", "after-reject"],
+)
+async def test_what_a_before_or_after_hook_does_reaches_the_record_by_hook_order(
+    stage: str,
+    reject: bool,
+    inside: list[tuple[bool, str | None, int | None, bool]],
+    outside: list[tuple[bool, str | None, int | None, bool]],
+) -> None:
+    """The record carries what the wrapper was handed and what it returned, and
+    sees what raises inside it.
+
+    From 2.54 both hooks run inside the wrapper: the record carries the
+    validated arguments rather than a before-hook's rewrite, a before-hook's
+    rejection is a failed record, the result size is the after-hook's output,
+    and an after-hook's rejection is a failed record. Before 2.54 both ran
+    outside it: the record carried the rewritten arguments, a before-hook's
+    rejection left no record, the size was the tool's own result, and an
+    after-hook's rejection followed a record of success.
+    """
 
     def echo(secret: str) -> str:
         """Echo."""
-        return secret
+        return "ok"
 
     audit = _CapturingLogger()
     agent = Agent(
         TestModel(call_tools=["echo"]),
         toolsets=[FunctionToolset([echo])],
-        capabilities=[AuditCapability(audit), _BeforeHook(reject=reject)],
+        capabilities=[AuditCapability(audit), _Hook(stage=stage, reject=reject)],
     )
     if reject:
         with pytest.raises(PermissionError):
             await agent.run("echo")
-        expected = (
-            [(False, "PermissionError: rejected before execution")]
-            if _HOOKS_INSIDE_THE_WRAPPER
-            else []
-        )
-        assert [(e.success, e.error) for e in audit.events] == expected
-        return
-    await agent.run("echo")
-    [event] = audit.events
-    assert ("[redacted]" in event.arguments_repr) is not _HOOKS_INSIDE_THE_WRAPPER
+    else:
+        await agent.run("echo")
+
+    records = [
+        (e.success, e.error, e.result_size, "[redacted]" in e.arguments_repr) for e in audit.events
+    ]
+    assert records == (inside if _HOOKS_INSIDE_THE_WRAPPER else outside)

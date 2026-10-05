@@ -35,9 +35,10 @@ class ToolFailurePolicy(AbstractCapability[Any]):
 
     The re-raise is ``pydantic_ai.exceptions.ToolFailed``, so the model sees a
     result marked failed rather than one reading as success. (Precisely, a
-    private subclass of it that pydantic-ai handles identically, so an audit
-    record can tell this translation from a ``ToolFailed`` anything else
-    raised.) A failed result spends no retry budget, so bound a persistently broken tool with run-level
+    private subclass of it, so an audit record can tell this translation from a
+    ``ToolFailed`` anything else raised. pydantic-ai's control flow treats it as
+    a ``ToolFailed``; a trace records the subclass's name as the exception
+    type.) A failed result spends no retry budget, so bound a persistently broken tool with run-level
     ``UsageLimits`` rather than expecting this to stop the model calling it.
 
     **Nothing is swallowed.** The exception is logged with its traceback to the

@@ -19,10 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `include_detail` off, which is the default, that text carries none of the
   original, so the record read `ToolFailed: The boom tool failed and returned no
   result...` and the operator's copy was redacted along with the model's. The
-  policy now raises a private subclass of `ToolFailed`, which pydantic-ai
-  handles identically, and the audit describes that one translation by the
-  exception it was raised from, `RuntimeError: kaboom`, under either hook order.
-  A translation that has lost its cause is recorded as itself.
+  policy now raises a private subclass of `ToolFailed`, and the audit describes
+  that one translation by the exception it was raised from, `RuntimeError:
+  kaboom`, under either hook order. A translation that has lost its cause is
+  recorded as itself. pydantic-ai's control flow treats the subclass as a
+  `ToolFailed`, but a trace records the subclass's name: on 2.54 a failed tool
+  span's `exception.type` reads
+  `django_pydantic_agent.policy.failure.utils.PolicyToolFailed` where it read
+  `pydantic_ai.exceptions.ToolFailed`, and before 2.54 it names the tool's own
+  exception, as it did. It also never compares equal to a plain `ToolFailed`
+  with the same message, in either direction.
 - **Every other `ToolFailed` keeps its own message, cause or not, and that is
   deliberate.** A tool's own, a toolset's and another capability's were each
   written as the outcome, and a cause can say less than the message: a spec
@@ -35,10 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pydantic-ai 2.54. The ordering section now describes both hook orders, and
   the audit section states what a failed call's `error` holds and what else
   2.54 changed about a record: `before_tool_execute` and `after_tool_execute`
-  now run inside the audit's wrapper, so the record carries the validated
-  arguments rather than a before-hook's rewrite of them, and a call a
-  before-hook rejects is recorded as a failure where it used to leave no
-  record.
+  now run inside the audit's wrapper. The record carries the validated
+  arguments rather than a before-hook's rewrite of them, its `result_size`
+  measures an after-hook's output rather than the tool's result, and a call
+  either hook rejects is recorded as a failure, where a before-hook's rejection
+  used to leave no record and an after-hook's followed a record of success.
 
 ## [0.26.0] — 2026-09-24
 
