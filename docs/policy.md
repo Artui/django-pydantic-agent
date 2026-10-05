@@ -28,14 +28,22 @@ when the logger is null, so "auditing off" costs nothing.
 `AuditEvent` carries `tool_name`, `arguments_repr`, `duration_ms`, `success`,
 and optional `error` / `result_size`.
 
-On a failure, `error` reads `Type: message` and names **the tool's own
-exception**. A `ToolFailed` raised `from` another exception is recorded as that
-cause, because a `ToolFailed` is the copy written for the model: the
-[failure policy](#what-a-raising-tool-costs) redacts it unless `include_detail`
-is set, and this record is the operator's. So a tool that raises
-`ToolFailed("...") from e` itself is recorded as `e` too. A `ToolFailed` with
-no cause has nothing else to name and is recorded as itself. The exception the
-run sees is never changed; only the record is.
+On a failure, `error` reads `Type: message` for the exception that reached
+audit, with one exception. When the [failure policy](#what-a-raising-tool-costs)
+has turned a tool's exception into a `ToolFailed`, the record names that
+cause instead: the `ToolFailed` is the copy written for the model, redacted
+unless `include_detail` is set, and this record is the operator's. Any
+`ToolFailed` a capability hook raises `from` an exception is recorded the same
+way, and one with no cause, such as a `before_tool_execute` veto, is recorded
+as itself.
+
+A `ToolFailed` that **a tool raises itself** is different, and never recorded
+by its cause. pydantic-ai converts it into a `ToolFailedError` carrying the
+same message before any capability sees it, so
+`raise ToolFailed("model copy") from e` is recorded as
+`ToolFailedError: model copy`, and the policy is never handed it. The drf-mcp
+bridge's refusals arrive the same way. The exception the run sees is never
+changed by audit; only the record is.
 
 Arguments are stored **as a string** (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.
@@ -205,12 +213,30 @@ No capability here needs positioning. Each declares its place via
 `get_ordering()` — audit outermost, the guard orthogonal — and pydantic-ai's
 `CombinedCapability` topologically sorts them. The failure policy needs no
 constraint at all: it rides `on_tool_execute_error` while audit rides
-`wrap_tool_execute`. Which of the two sees a failure first is pydantic-ai's
-call, and it changed in 2.54, where a `wrap_*` hook began enclosing every
-other capability's error hooks, so audit now catches the policy's `ToolFailed`
-rather than the tool's exception. The record is the same on either side of
-that change, because audit records a `ToolFailed` by the exception that caused
-it (see [what lands in a record](#what-lands-in-a-record)). Append your own
-capabilities in any order.
+`wrap_tool_execute`. Append your own capabilities in any order.
+
+What audit's wrapper encloses is pydantic-ai's call, though, and it changed in
+2.54, where a `wrap_*` hook began enclosing every other capability's
+`before_tool_execute`, `after_tool_execute` and `on_tool_execute_error` for
+the same call. Earlier releases showed audit the tool alone; from 2.54 it sees
+what the other capabilities made of the call.
+
+**For the failure policy the record is the same either way**: audit now
+catches the policy's `ToolFailed` rather than the tool's exception, and records
+it by its cause (see [what lands in a record](#what-lands-in-a-record)). That is
+the one effect this package compensates for. The others are upstream ordering
+effects that this package does not change. From 2.54, compared with earlier
+releases:
+
+- A failure another capability's `on_tool_execute_error` recovers from is
+  recorded as a **success** with no error, where it was recorded as the failure.
+- A `before_tool_execute` that vetoes the call is recorded as a **failure**,
+  where nothing was recorded. A `SkipToolExecution`, which
+  pydantic-ai-harness's guardrails and tool-call judge raise, carries a result
+  rather than a message, so the record reads `SkipToolExecution: `.
+- `arguments_repr` holds the arguments **before** another capability's
+  `before_tool_execute` rewrites them, and `result_size` measures the result
+  **after** its `after_tool_execute`. Earlier it was the other way round.
+- `duration_ms` includes the time spent in other capabilities' hooks.
 
 Full signatures in the [policy reference](reference/policy.md).

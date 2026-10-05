@@ -35,13 +35,38 @@ class AuditCapability(AbstractCapability[Any]):
     ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
     costs audit records rather than the run.
 
-    A failure is recorded as **the tool's own exception**. When what reaches
-    the hook is a ``pydantic_ai.exceptions.ToolFailed`` raised ``from`` another
-    exception, the record names that cause: the ``ToolFailed`` is the copy
-    written for the model, which
-    [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy] redacts
-    unless ``include_detail``, while this record is the operator's and is never
-    redacted. The exception the run sees is untouched either way.
+    A failure is recorded as ``Type: message`` of the exception that reaches
+    the hook, with one exception. A ``pydantic_ai.exceptions.ToolFailed`` that
+    a capability hook raised ``from`` the tool's exception, as
+    [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy] does, is
+    recorded as that cause. The ``ToolFailed`` is the copy written for the
+    model, which the policy redacts unless ``include_detail``, and this record
+    is the operator's, which is never redacted. A ``ToolFailed`` with no cause,
+    such as a ``before_tool_execute`` veto, is recorded as itself. A
+    ``ToolFailed`` the tool raises itself never arrives as one: pydantic-ai
+    converts it into a ``ToolFailedError`` carrying the same message before any
+    capability sees it, so that message is what is recorded, never its cause.
+    The exception the run sees is untouched in every case.
+
+    **What this hook encloses is pydantic-ai's decision**, and it changed in
+    2.54, where a ``wrap_*`` hook began enclosing every other capability's
+    hooks for the same tool call. Pinned outermost, audit on 2.54 sees what
+    those hooks made of the call, where earlier releases showed it the tool
+    alone:
+
+    - A failure another capability's ``on_tool_execute_error`` recovers from
+      is recorded as a success with no error; earlier, as the failure.
+    - A ``before_tool_execute`` that vetoes the call is recorded as a failure,
+      where earlier nothing was recorded. A ``SkipToolExecution``, which
+      pydantic-ai-harness's guardrails and tool-call judge raise, carries a
+      result rather than a message, so it reads ``SkipToolExecution: ``.
+    - ``arguments_repr`` holds the arguments before another capability's
+      ``before_tool_execute`` rewrites them, and ``result_size`` measures the
+      result after its ``after_tool_execute``. Earlier it was the reverse.
+    - ``duration_ms`` includes the time spent in those hooks.
+
+    These are upstream ordering effects, and the ``ToolFailed`` unwrap above is
+    the only one this class compensates for.
 
     Args:
         logger: The sink each [`AuditEvent`][django_pydantic_agent.AuditEvent]
@@ -88,11 +113,13 @@ class AuditCapability(AbstractCapability[Any]):
     ) -> Any:
         """Time the tool, record the outcome, and hand the result back as is.
 
-        Because audit is pinned outermost, this wrapper encloses every other
-        capability's execution hooks, and since pydantic-ai 2.54 that includes
-        their ``on_tool_execute_error``. So what arrives here on a failure may
-        already be another capability's translation of it rather than the
-        tool's exception; see ``_operator_error`` for which one is recorded.
+        Pinned outermost, this wrapper encloses every other capability's
+        ``wrap_tool_execute``, and from pydantic-ai 2.54 their
+        ``before_tool_execute``, ``after_tool_execute`` and
+        ``on_tool_execute_error`` as well. So what arrives here may already be
+        another capability's account of the call rather than the tool's. The
+        class docstring says what is recorded in each case, and which of those
+        differences are upstream's rather than this class's.
         """
         started = time.perf_counter()
         ip_address = self._resolve_ip_address(ctx)
@@ -171,18 +198,24 @@ def _operator_error(error: Exception) -> str:
     exception audit catches. Recording it as caught would put the model's copy
     in the one record meant to keep the cause.
 
-    A tool that itself raises ``ToolFailed(...) from e`` is recorded as ``e``
-    too, and that is intended: the ``ToolFailed`` is still the model-facing
-    sentence, and ``e`` is still what went wrong. A ``ToolFailed`` with no cause
-    (the drf-mcp bridge raises one for a server's refusal) has nothing else to
-    name and is recorded as itself.
+    Only a capability hook's ``ToolFailed`` arrives here as one. A
+    ``ToolFailed`` a tool raises itself, ``from e`` or not (the drf-mcp bridge
+    raises one for a server's refusal), is converted by pydantic-ai's tool
+    manager into a ``ToolFailedError`` carrying the same message before any
+    capability sees it. That is not a ``ToolFailed``, so it is recorded as
+    caught, by its message and never by ``e``. A ``ToolFailed`` with no cause,
+    such as a ``before_tool_execute`` veto, has nothing else to name and is
+    recorded as itself.
 
     Each condition is one branch arc with the other, so coverage cannot see
     either go missing. These tests do:
 
     - ``isinstance(error, ToolFailed)``:
       ``test_only_a_tool_failed_is_unwrapped_to_its_cause``, where any other
-      chained exception would be recorded as its cause.
+      chained exception would be recorded as its cause, and
+      ``test_a_tools_own_tool_failed_is_recorded_as_pydantic_ai_delivers_it``,
+      where the ``ToolFailedError`` would be recorded as the tool's
+      ``ToolFailed``.
     - ``isinstance(cause, Exception)``:
       ``test_a_tool_failed_with_no_cause_is_recorded_as_itself``, where a
       missing cause would be recorded as ``NoneType: None``.

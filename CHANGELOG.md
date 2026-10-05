@@ -27,10 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pk`.")`` itself. Raising one without the other would require `pk` on one
   route and leave it optional, and fatal when missed, on the other. Both floor
   drf-services at 0.55.0 in turn, and hard: below it, listing such a tool raises
-  `TypeError`. No code in this package changes. Tests now pin both halves on
-  both routes, through one selector spec and one service spec shared between
-  them: the advertised `required`, a real run where the omission is one retry
-  and then the row, the two routes requiring the same arguments, and the
+  `TypeError`. The floor raise needs no code change here. Tests now pin both
+  halves on both routes, through one selector spec and one service spec shared
+  between them: the advertised `required`, a real run where the omission is one
+  retry and then the row, the two routes requiring the same arguments, and the
   `validation_error` result the bridge's retry rides on, read off the real
   server.
 
@@ -45,12 +45,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operator's record, the one copy documented as never redacted, lost the cause.
   Audit now records a `ToolFailed` raised `from` an exception as that cause,
   whichever hook order the installed pydantic-ai uses, and re-raises the
-  `ToolFailed` untouched. A tool that raises `ToolFailed(...) from e` itself is
-  recorded as `e` as well, which is intended: that is still what went wrong. A
-  `ToolFailed` with no cause, such as the drf-mcp bridge's refusal, is recorded
-  as before. Tests drive the hook directly with both shapes, so they hold the
-  unwrap on any pydantic-ai, and the dev lock now resolves pydantic-ai 2.54 and
-  pydantic-ai-harness 0.54 so every CI job runs the new order.
+  `ToolFailed` untouched. A `ToolFailed` with no cause, such as a
+  `before_tool_execute` veto, is recorded as itself. A `ToolFailed` a tool
+  raises itself is unaffected: pydantic-ai converts it into a `ToolFailedError`
+  before any capability sees it, so `raise ToolFailed("model copy") from e` is
+  recorded as `ToolFailedError: model copy`, as it was before, and a real agent
+  run now asserts exactly that. Tests drive the hook directly with each shape,
+  so they hold the unwrap on any pydantic-ai. The dev lock now resolves
+  pydantic-ai 2.54 and pydantic-ai-harness 0.54, so the jobs that install from
+  it run the new order, while the `lowest declared versions` job keeps the old
+  one covered at the floor.
+
+  2.54 changes other parts of an audit record too, because audit now encloses
+  every other capability's `before_tool_execute` and `after_tool_execute` as
+  well. A failure another capability recovers from is recorded as a success, a
+  `before_tool_execute` veto is recorded as a failure (`SkipToolExecution: `
+  for harness's guardrails and tool-call judge), `arguments_repr` precedes
+  another capability's argument rewrite, `result_size` follows its result
+  rewrite, and `duration_ms` includes their hooks. These are upstream ordering
+  effects that this release does not change; the policy page now lists them.
 - **The `[harness]` docs said the extra pins one harness minor.** The ceiling
   came off in 0.14.0 and the extra has declared only a floor since. The
   version-sensitive note now says so, and names what checks the range in place

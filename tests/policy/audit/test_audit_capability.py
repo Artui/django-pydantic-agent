@@ -15,6 +15,7 @@ from pydantic_ai.usage import RunUsage
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.policy.audit.audit_capability import AuditCapability
 from django_pydantic_agent.policy.audit.types.audit_event import AuditEvent
+from django_pydantic_agent.policy.failure.tool_failure_policy import ToolFailurePolicy
 
 
 def test_audit_declares_outermost_ordering() -> None:
@@ -194,10 +195,11 @@ async def test_a_tool_failed_is_recorded_by_the_exception_that_caused_it() -> No
 
 
 async def test_a_tool_failed_with_no_cause_is_recorded_as_itself() -> None:
-    """A tool that raises ``ToolFailed`` directly has no other exception to name.
+    """A ``ToolFailed`` with no cause has no other exception to name.
 
-    The drf-mcp bridge does exactly that for a server's refusal, so its record
-    must keep the ``ToolFailed`` text rather than reading ``NoneType: None``.
+    A capability hook raises one: a ``before_tool_execute`` veto, which audit
+    encloses on pydantic-ai 2.54. Its record must keep the ``ToolFailed`` text
+    rather than reading ``NoneType: None``.
     """
     audit = _CapturingLogger()
 
@@ -222,6 +224,44 @@ async def test_only_a_tool_failed_is_unwrapped_to_its_cause() -> None:
         await _drive(AuditCapability(audit), error)
 
     assert [e.error for e in audit.events] == ["RuntimeError: upstream refused"]
+
+
+async def test_a_tools_own_tool_failed_is_recorded_as_pydantic_ai_delivers_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A ``ToolFailed`` the tool raises itself is never unwrapped to its cause.
+
+    pydantic-ai's tool manager converts it into a ``ToolFailedError`` carrying
+    the same message before any capability's ``wrap_tool_execute`` sees it, so
+    audit records that message, and the failure policy, which is not handed a
+    ``ToolFailedError``, leaves it alone. Only a ``ToolFailed`` a capability
+    hook raises reaches audit as one. Driven through a real run so the claim is
+    the installed pydantic-ai's, not this file's.
+
+    It also holds the ``isinstance(error, ToolFailed)`` condition from the run
+    side: the ``ToolFailedError`` is chained ``from`` the tool's ``ToolFailed``,
+    so unwrapping any chained exception would record ``ToolFailed: model copy``.
+    """
+
+    def boom() -> str:
+        """Fails with a sentence for the model."""
+        try:
+            raise ValueError("root cause")
+        except ValueError as error:
+            raise ToolFailed("model copy") from error
+
+    audit = _CapturingLogger()
+    agent = Agent(
+        TestModel(call_tools=["boom"]),
+        toolsets=[FunctionToolset([boom])],
+        capabilities=[AuditCapability(audit), ToolFailurePolicy()],
+    )
+    with caplog.at_level(logging.ERROR, logger="django_pydantic_agent.failure"):
+        await agent.run("boom", deps=AgentDeps(user=None))
+
+    assert [(e.success, e.error) for e in audit.events] == [(False, "ToolFailedError: model copy")]
+    # The policy logs every failure it converts; silence is it never seeing one.
+    assert not [r for r in caplog.records if r.name == "django_pydantic_agent.failure"]
 
 
 async def test_raising_sink_never_breaks_the_run(caplog: pytest.LogCaptureFixture) -> None:
