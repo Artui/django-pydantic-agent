@@ -229,9 +229,11 @@ AgentConfig(model=..., tool_failure=ToolFailureConfig(include_detail=True))
 run survives is a reliability question; whether the exception's text reaches the
 model is a disclosure one. A traceback message can carry a query, a path or a
 credential, and anything handed to the model is also handed to whatever renders
-the transcript. The operator's copy is never redacted. Audit records the tool's
-exception in full, and whenever the policy converts a failure it first logs the
-exception, with its traceback, to the `django_pydantic_agent.failure` logger.
+the transcript. The policy never redacts the operator's copy. Audit records the
+tool's exception in full, unless a capability
+[sorts after audit](#a-capability-that-sorts-after-audit) and changes it, and
+whenever the policy converts a failure it first logs the exception, with its
+traceback, to the `django_pydantic_agent.failure` logger.
 That logger hears only about the failures the policy converts: nothing when
 another capability recovered the call or answered for the model with its own
 `ModelRetry` or `ToolFailed`, when an authorization refusal passes through, or
