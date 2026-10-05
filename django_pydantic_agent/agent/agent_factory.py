@@ -55,9 +55,12 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     if config.tool_guard is not None and config.tool_guard.enabled:
         capabilities.append(ToolGuard(registry, config=config.tool_guard))
     if config.tool_failure.enabled:
-        # No ordering constraint against the audit capability: the two ride
-        # different hooks (``on_tool_execute_error`` here, ``wrap_tool_execute``
-        # there), so the failure is recorded and then converted either way.
+        # No ordering constraint against the audit capability, and its record
+        # names the tool's exception either way. Before pydantic-ai 2.54 the
+        # audit's ``wrap_tool_execute`` surrounded only the tool's execution and
+        # this policy's ``on_tool_execute_error`` ran after it; from 2.54 the
+        # hook runs inside the wrapper, which is handed the policy's translation
+        # and describes the exception that translation was raised from.
         capabilities.append(ToolFailurePolicy(config.tool_failure))
     return Agent(
         model=config.model,

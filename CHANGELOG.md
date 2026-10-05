@@ -19,20 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `include_detail` off, which is the default, that text carries none of the
   original, so the record read `ToolFailed: The boom tool failed and returned no
   result...` and the operator's copy was redacted along with the model's. The
-  record now describes a `ToolFailed` raised *from* another exception by that
-  exception, `RuntimeError: kaboom`, under either hook order. A `ToolFailed`
-  with no cause, or raised `from None`, is recorded as itself, and any other
-  exception is recorded as raised, cause or not.
-- **A tool that raises `ToolFailed` itself is not affected, and that is
-  deliberate.** Its message is the outcome it chose, so the record keeps it,
-  even when the tool raised it `from` another exception. pydantic-ai hands a
-  tool's own `ToolFailed` to every wrapper as a `ToolFailedError`, before and
-  after 2.54, so it is recorded as `ToolFailedError: <message>` exactly as
-  before.
+  policy now raises a private subclass of `ToolFailed`, which pydantic-ai
+  handles identically, and the audit describes that one translation by the
+  exception it was raised from, `RuntimeError: kaboom`, under either hook order.
+  A translation that has lost its cause is recorded as itself.
+- **Every other `ToolFailed` keeps its own message, cause or not, and that is
+  deliberate.** A tool's own, a toolset's and another capability's were each
+  written as the outcome, and a cause can say less than the message: a spec
+  tool's timeout names the limit, and is raised from an `asyncio` timeout with
+  no text. A tool's own `ToolFailed` is recorded as
+  `ToolFailedError: <message>` on an ordinary call and as
+  `ToolFailed: <message>` from a code-mode sandbox, exactly as before.
 - **The policy docs said audit records a failure before the policy converts
   it, whichever way the capabilities are sorted.** That held only before
   pydantic-ai 2.54. The ordering section now describes both hook orders, and
-  the audit section states what a failed call's `error` holds.
+  the audit section states what a failed call's `error` holds and what else
+  2.54 changed about a record: `before_tool_execute` and `after_tool_execute`
+  now run inside the audit's wrapper, so the record carries the validated
+  arguments rather than a before-hook's rewrite of them, and a call a
+  before-hook rejects is recorded as a failure where it used to leave no
+  record.
 
 ## [0.26.0] — 2026-09-24
 

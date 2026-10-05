@@ -29,13 +29,24 @@ when the logger is null, so "auditing off" costs nothing.
 and optional `error` / `result_size`.
 
 A failed call's `error` is the exception's type name and message, such as
-`"ValueError: kaboom"`, and it names the exception the tool raised even where
-the model was handed something else. A `ToolFailed` raised *from* another
-exception, which is how the [failure policy](#what-a-raising-tool-costs) hands
-a failure to the model, is described by the exception it was raised from, so
-the operator's copy keeps what `include_detail` withholds. A tool that raises
-`ToolFailed` itself chose that message as its outcome, and the record keeps it:
-pydantic-ai delivers it as `"ToolFailedError: <message>"`, cause or not.
+`"ValueError: kaboom"`. Where the [failure policy](#what-a-raising-tool-costs)
+has turned a tool's exception into a failed result, the record describes that
+exception rather than the policy's model-facing text, so the operator's copy
+keeps what `include_detail` withholds.
+
+Every other `ToolFailed` keeps its own message, cause or not, because its raiser
+chose that message as the outcome: a tool's own, a toolset's, another
+capability's. Its cause can say less than the message does: a spec tool's
+timeout names the limit in the message, while the `asyncio` timeout it is
+raised from has no text at all. A tool's own `ToolFailed` is recorded as
+`"ToolFailedError: <message>"`, or as `"ToolFailed: <message>"` when it is
+called from a code-mode sandbox.
+
+From pydantic-ai 2.54, `before_tool_execute` and `after_tool_execute` run inside
+the audit's wrapper, where before 2.54 they ran outside it. So the record now
+carries the validated arguments rather than what a before-hook rewrote them to
+(a redaction done in that hook no longer reaches it), and a call a before-hook
+rejects is recorded as a failure, where before 2.54 it left no record.
 
 Arguments are stored **as a string** (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.
@@ -210,7 +221,8 @@ the list is sorted. Which of the two sees the failure first is pydantic-ai's
 call, and it changed in 2.54: before it, the wrapper surrounded only the tool's
 execution, so audit recorded the exception and the policy converted it
 afterwards; from 2.54 the error hook runs inside the wrapper, so audit is handed
-the converted `ToolFailed` and records the exception it was raised from.
+the policy's translation, recognises it as the policy's, and records the
+exception it was raised from.
 Append your own capabilities in any order.
 
 Full signatures in the [policy reference](reference/policy.md).
