@@ -28,6 +28,15 @@ when the logger is null, so "auditing off" costs nothing.
 `AuditEvent` carries `tool_name`, `arguments_repr`, `duration_ms`, `success`,
 and optional `error` / `result_size`.
 
+A failed call's `error` is the exception's type name and message, such as
+`"ValueError: kaboom"`, and it names the exception the tool raised even where
+the model was handed something else. A `ToolFailed` raised *from* another
+exception, which is how the [failure policy](#what-a-raising-tool-costs) hands
+a failure to the model, is described by the exception it was raised from, so
+the operator's copy keeps what `include_detail` withholds. A tool that raises
+`ToolFailed` itself chose that message as its outcome, and the record keeps it:
+pydantic-ai delivers it as `"ToolFailedError: <message>"`, cause or not.
+
 Arguments are stored **as a string** (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.
 
@@ -196,7 +205,12 @@ No capability here needs positioning. Each declares its place via
 `get_ordering()` — audit outermost, the guard orthogonal — and pydantic-ai's
 `CombinedCapability` topologically sorts them. The failure policy needs no
 constraint at all: it rides `on_tool_execute_error` while audit rides
-`wrap_tool_execute`, so the failure is recorded and then converted whichever
-way the list is sorted. Append your own capabilities in any order.
+`wrap_tool_execute`, and the record names the original exception whichever way
+the list is sorted. Which of the two sees the failure first is pydantic-ai's
+call, and it changed in 2.54: before it, the wrapper surrounded only the tool's
+execution, so audit recorded the exception and the policy converted it
+afterwards; from 2.54 the error hook runs inside the wrapper, so audit is handed
+the converted `ToolFailed` and records the exception it was raised from.
+Append your own capabilities in any order.
 
 Full signatures in the [policy reference](reference/policy.md).

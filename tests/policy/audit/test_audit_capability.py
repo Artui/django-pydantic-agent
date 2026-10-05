@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
@@ -158,3 +163,99 @@ async def test_raising_sink_never_breaks_the_run(caplog: pytest.LogCaptureFixtur
         result = await agent.run("ping")
     assert result.output is not None
     assert any("event dropped" in record.message for record in caplog.records)
+
+
+async def _record_failure(
+    handler: Callable[[dict[str, Any]], Awaitable[Any]],
+) -> tuple[AuditEvent, BaseException]:
+    """Drive ``wrap_tool_execute`` directly with a handler that raises.
+
+    Direct, rather than through an agent, so the exception the wrapper is
+    handed is exactly the one under test whichever pydantic-ai hook order is
+    installed: from 2.54 the ``on_tool_execute_error`` hook runs *inside* the
+    wrapper's handler, and before that it ran outside it.
+    """
+    audit = _CapturingLogger()
+    with pytest.raises(Exception) as raised:
+        await AuditCapability(audit).wrap_tool_execute(
+            # Only ``deps`` is read off the context, for the IP fallback.
+            SimpleNamespace(deps=None),
+            call=ToolCallPart(tool_name="boom", args={}),
+            tool_def=ToolDefinition(name="boom", parameters_json_schema={"type": "object"}),
+            args={},
+            handler=handler,
+        )
+    [event] = audit.events
+    return event, raised.value
+
+
+async def test_a_translated_failure_records_the_exception_it_was_raised_from() -> None:
+    """A capability that turns a tool's exception into ``ToolFailed`` from
+    ``on_tool_execute_error`` hands the wrapper its *translation* once that hook
+    runs inside ``wrap_tool_execute``. The operator's record names the exception
+    the translation was raised from, not the model-facing text."""
+
+    async def handler(args: dict[str, Any]) -> Any:
+        raise ToolFailed("The boom tool failed and returned no result.") from RuntimeError("kaboom")
+
+    event, raised = await _record_failure(handler)
+
+    assert event.success is False
+    assert event.error == "RuntimeError: kaboom"
+    # Unwrapping is for the record only: the model still gets the failed result.
+    assert isinstance(raised, ToolFailed)
+
+
+@pytest.mark.parametrize("suppress", [False, True], ids=["no-cause", "from-none"])
+async def test_a_tool_failed_with_no_cause_records_its_own_text(suppress: bool) -> None:
+    """Nothing to unwrap: a bare ``ToolFailed``, or one raised ``from None`` to
+    hide its cause on purpose, is recorded as itself."""
+
+    async def handler(args: dict[str, Any]) -> Any:
+        if suppress:
+            raise ToolFailed("Order 42 does not exist.") from None
+        raise ToolFailed("Order 42 does not exist.")
+
+    event, _ = await _record_failure(handler)
+
+    assert event.error == "ToolFailed: Order 42 does not exist."
+
+
+async def test_only_a_tool_failed_is_unwrapped() -> None:
+    """Any other exception carrying a cause is the failure itself, and is
+    recorded as raised. Its text is not written for the model, so there is
+    nothing to see past."""
+
+    async def handler(args: dict[str, Any]) -> Any:
+        raise ValueError("outer") from KeyError("inner")
+
+    event, _ = await _record_failure(handler)
+
+    assert event.error == "ValueError: outer"
+
+
+async def test_a_tool_raising_tool_failed_records_its_own_message() -> None:
+    """A tool's own ``raise ToolFailed(...) from error`` is not unwrapped: the
+    tool chose that message as its outcome, and the record keeps it.
+
+    pydantic-ai turns a tool's ``ToolFailed`` into a ``ToolFailedError`` (raised
+    from it) inside the execution step, before any wrapper sees it, and never
+    routes it to ``on_tool_execute_error``. So this arrives as a different type
+    from a hook's translation, under either hook order, and the description
+    rule never applies to it.
+    """
+
+    def lookup() -> str:
+        """Look up order 42."""
+        raise ToolFailed("Order 42 does not exist.") from LookupError("no row with pk=42")
+
+    audit = _CapturingLogger()
+    agent = Agent(
+        TestModel(call_tools=["lookup"]),
+        toolsets=[FunctionToolset([lookup])],
+        capabilities=[AuditCapability(audit)],
+    )
+    await agent.run("lookup")
+
+    failures = [e for e in audit.events if not e.success]
+    assert [e.error for e in failures] == ["ToolFailedError: Order 42 does not exist."]

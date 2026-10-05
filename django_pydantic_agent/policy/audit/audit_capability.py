@@ -13,6 +13,7 @@ from pydantic_ai.capabilities import (
     CapabilityOrdering,
     WrapToolExecuteHandler,
 )
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import ToolDefinition
 
@@ -33,6 +34,14 @@ class AuditCapability(AbstractCapability[Any]):
     Recording is **non-raising**. A sink that throws is caught and logged to the
     ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
     costs audit records rather than the run.
+
+    A failed call's ``error`` is the exception's type name and message, and it
+    names the exception the tool raised even where the model was handed
+    something else. A ``ToolFailed`` raised *from* another exception, as
+    ``ToolFailurePolicy`` raises one, is described by that exception, so the
+    operator's copy keeps the detail ``include_detail`` withholds from the
+    model. A tool that raises ``ToolFailed`` itself chose that message as its
+    outcome, and the record keeps it as ``ToolFailedError: <message>``.
 
     Args:
         logger: The sink each [`AuditEvent`][django_pydantic_agent.AuditEvent]
@@ -88,7 +97,7 @@ class AuditCapability(AbstractCapability[Any]):
                 started,
                 ip_address=ip_address,
                 success=False,
-                error=f"{type(error).__name__}: {error}",
+                error=_describe_failure(error),
             )
             raise
         self._record(
@@ -140,6 +149,38 @@ class AuditCapability(AbstractCapability[Any]):
                 type(self._logger).__name__,
                 name,
             )
+
+
+def _describe_failure(error: Exception) -> str:
+    """The record's ``error`` text: an exception's type name and message.
+
+    **A ``ToolFailed`` raised from another exception is described by that
+    exception instead.** It is a capability's translation of the failure for
+    the model, the way ``ToolFailurePolicy`` raises one from
+    ``on_tool_execute_error``, and its text is written for the model: with
+    ``include_detail`` off it carries none of the original at all. From
+    pydantic-ai 2.54 that hook runs *inside* ``wrap_tool_execute``, so the
+    translation is what reaches this wrapper, and recording it as-is would cost
+    the operator's copy the very detail the model's copy withholds.
+
+    Both conditions hold the line, each with a test that fails without it:
+
+    - ``isinstance(error, ToolFailed)``: only the model-facing signal is seen
+      past. Any other exception raised ``from`` a cause is the failure itself
+      (``test_only_a_tool_failed_is_unwrapped``).
+    - ``cause is not None``: a bare ``ToolFailed``, or one raised ``from None``
+      to hide its cause on purpose, is recorded as itself
+      (``test_a_tool_failed_with_no_cause_records_its_own_text``).
+
+    A tool's *own* ``ToolFailed`` never reaches this branch: pydantic-ai turns
+    it into a ``ToolFailedError`` before any wrapper sees it, so it keeps the
+    message the tool wrote, cause or not
+    (``test_a_tool_raising_tool_failed_records_its_own_message``).
+    """
+    cause = error.__cause__
+    if isinstance(error, ToolFailed) and cause is not None:
+        return f"{type(cause).__name__}: {cause}"
+    return f"{type(error).__name__}: {error}"
 
 
 __all__ = ["AuditCapability"]

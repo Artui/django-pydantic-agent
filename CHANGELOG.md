@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **On pydantic-ai 2.54 and later, an audit record for a failed tool lost the
+  exception and kept only the message written for the model.** pydantic-ai 2.54
+  runs `on_tool_execute_error` inside `wrap_tool_execute`, where it used to run
+  after it, so `AuditCapability` was handed the `ToolFailed` that
+  `ToolFailurePolicy` raises in place of the tool's exception. With
+  `include_detail` off, which is the default, that text carries none of the
+  original, so the record read `ToolFailed: The boom tool failed and returned no
+  result...` and the operator's copy was redacted along with the model's. The
+  record now describes a `ToolFailed` raised *from* another exception by that
+  exception, `RuntimeError: kaboom`, under either hook order. A `ToolFailed`
+  with no cause, or raised `from None`, is recorded as itself, and any other
+  exception is recorded as raised, cause or not.
+- **A tool that raises `ToolFailed` itself is not affected, and that is
+  deliberate.** Its message is the outcome it chose, so the record keeps it,
+  even when the tool raised it `from` another exception. pydantic-ai hands a
+  tool's own `ToolFailed` to every wrapper as a `ToolFailedError`, before and
+  after 2.54, so it is recorded as `ToolFailedError: <message>` exactly as
+  before.
+- **The policy docs said audit records a failure before the policy converts
+  it, whichever way the capabilities are sorted.** That held only before
+  pydantic-ai 2.54. The ordering section now describes both hook orders, and
+  the audit section states what a failed call's `error` holds.
+
 ## [0.26.0] — 2026-09-24
 
 ### Changed

@@ -104,8 +104,13 @@ async def test_disabled_restores_the_failing_run() -> None:
 async def test_the_operator_copy_is_never_redacted() -> None:
     """Audit still records the real failure against the tool that caused it.
 
-    The two capabilities ride different hooks, so neither has to be ordered
-    against the other for this to hold.
+    Neither capability is ordered against the other, and which sees the failure
+    first is pydantic-ai's call. Before 2.54 the audit wrapper surrounded only
+    the tool's execution and saw the raw exception; from 2.54 the error hook
+    runs inside it, so audit is handed this policy's ``ToolFailed`` and has to
+    describe the exception it was raised from. The default ``include_detail``
+    off is what makes the difference visible: the translation carries none of
+    the original text.
     """
     audit = _RecordingAudit()
 
