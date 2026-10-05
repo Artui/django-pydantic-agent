@@ -236,13 +236,15 @@ class DRFMCPToolset(AbstractToolset[Any]):
         )
         if isinstance(result, JsonRpcError):
             if result.code == JsonRpcErrorCode.INVALID_PARAMS:
-                # Since drf-mcp 0.24.0 `-32602` covers an unknown tool as well
-                # as malformed arguments (it emitted `-32004` for the former
-                # before), so the two can no longer be told apart by code. Both
-                # are retried deliberately: `-32602` is by definition a fault in
-                # the request the model produced, and both a wrong name and
-                # wrong arguments are things it can change. pydantic-ai bounds
-                # the retries, so an unfixable call still ends the run.
+                # `-32602` is now a call drf-mcp could not dispatch at all: an
+                # unknown tool (it emitted `-32004` for that before 0.24.0) or
+                # `arguments` that are not an object. Argument values a tool
+                # refuses, a missing, unexpected or wrongly typed one, arrive
+                # as a `validation_error` result instead (since 0.50.0) and are
+                # retried below. This is retried deliberately: `-32602` is by
+                # definition a fault in the request the model produced, and a
+                # wrong name is something it can change. pydantic-ai bounds the
+                # retries, so an unfixable call still ends the run.
                 raise ModelRetry(
                     _retry_message(
                         result.message,
