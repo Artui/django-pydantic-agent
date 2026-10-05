@@ -9,12 +9,21 @@ from importlib.metadata import version
 from typing import Any
 
 import pytest
-from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults, ModelRetry, RunContext
+from pydantic_ai import (
+    Agent,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ModelRetry,
+    RunContext,
+    Tool,
+)
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.exceptions import SkipToolExecution, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelRequest,
     ModelResponse,
+    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -23,12 +32,17 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai_harness import CodeMode
+from rest_framework.permissions import AllowAny
+from rest_framework_pydantic_ai import SpecCapability
+from rest_framework_services import ServiceSpec
 
 from django_pydantic_agent.agent.agent_factory import build_agent
 from django_pydantic_agent.agent.types.agent_config import AgentConfig
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.policy.audit.audit_capability import AuditCapability
 from django_pydantic_agent.policy.audit.types.audit_event import AuditEvent
+from django_pydantic_agent.policy.failure.tool_failure_policy import ToolFailurePolicy
 from django_pydantic_agent.policy.failure.types.tool_failure_config import ToolFailureConfig
 from django_pydantic_agent.policy.guard.types.tool_guard_config import ToolGuardConfig
 from django_pydantic_agent.registry.decorator import tool
@@ -384,7 +398,12 @@ async def test_a_raising_tool_is_recorded_by_its_own_exception(tool_failure: boo
     agent = _agent(lookup, sink=audit, tool_failure=tool_failure)
 
     if tool_failure:
-        await agent.run("go", deps=_deps())
+        result = await agent.run("go", deps=_deps())
+        # The record is the operator's copy only: the model still gets the
+        # policy's failed result, which carries none of the exception's text.
+        [returned] = _tool_returns(result.all_messages())
+        assert returned.outcome == "failed"
+        assert "kaboom" not in str(returned.content)
     else:
         with pytest.raises(ValueError, match="kaboom"):
             await agent.run("go", deps=_deps())
@@ -849,3 +868,261 @@ async def test_raising_sink_never_breaks_the_run(caplog: pytest.LogCaptureFixtur
         result = await agent.run("ping")
     assert result.output is not None
     assert any("event dropped" in record.message for record in caplog.records)
+
+
+# What a ``ToolFailed`` from anything but the failure policy records. Each is
+# the failure as its raiser chose to state it, so the record keeps its message,
+# whatever it was raised from or while handling.
+
+
+def _tool_failed_from_a_cause() -> str:
+    raise ToolFailed("Order 42 does not exist.") from LookupError("no row with pk=42")
+
+
+def _tool_failed_from_an_empty_timeout() -> str:
+    # The shape of a spec tool's timeout: the limit is in the message, and the
+    # cause is an ``asyncio`` timeout whose text is empty.
+    raise ToolFailed("This call took longer than the 5s limit.") from TimeoutError()
+
+
+def _tool_failed_while_handling() -> str:
+    try:
+        raise LookupError("no row with pk=42")
+    except LookupError:
+        raise ToolFailed("Order 42 does not exist.")  # noqa: B904 -- the implicit context is the case
+
+
+def _tool_failed_from_none() -> str:
+    try:
+        raise LookupError("no row with pk=42")
+    except LookupError:
+        raise ToolFailed("Order 42 does not exist.") from None
+
+
+def _another_exception_from_a_cause() -> str:
+    raise ValueError("outer") from KeyError("inner")
+
+
+def _calls_lookup_from_the_sandbox(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    if len(messages) == 1:
+        return ModelResponse(parts=[ToolCallPart("run_code", {"code": "await lookup()"})])
+    return ModelResponse(parts=[TextPart("done")])
+
+
+async def _run_lookup_under_code_mode(
+    lookup: Callable[[], str], *capabilities: Any
+) -> tuple[list[str | None], str]:
+    """Run ``lookup`` from inside a code-mode sandbox. Returns the audit's
+    failure records for it, and the retry text the model was sent for the
+    ``run_code`` call, which carries what the sandbox saw.
+
+    Code mode calls the sandbox's tools through a nested tool manager that
+    inherits the agent's capabilities but leaves a ``ToolFailed`` unconverted,
+    so a tool's own ``ToolFailed`` reaches every hook as raised.
+    """
+    audit = _CapturingLogger()
+    agent = Agent(
+        FunctionModel(_calls_lookup_from_the_sandbox),
+        toolsets=[FunctionToolset([Tool(lookup, name="lookup")])],
+        capabilities=[CodeMode(), AuditCapability(audit), *capabilities],
+    )
+    result = await agent.run("lookup")
+    retries = [
+        str(part.content)
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, RetryPromptPart) and part.tool_name == "run_code"
+    ]
+    failures = [e.error for e in audit.events if not e.success and e.tool_name == "lookup"]
+    return failures, "\n".join(retries)
+
+
+async def _run_lookup_directly(lookup: Callable[[], str]) -> list[str | None]:
+    """Run ``lookup`` as an ordinary tool call, with the failure policy on as a
+    deployment has it. Returns the audit's failure records for it."""
+    audit = _CapturingLogger()
+    agent = Agent(
+        TestModel(call_tools=["lookup"]),
+        toolsets=[FunctionToolset([Tool(lookup, name="lookup")])],
+        capabilities=[AuditCapability(audit), ToolFailurePolicy()],
+    )
+    await agent.run("lookup")
+    return [e.error for e in audit.events if not e.success]
+
+
+@pytest.mark.parametrize(
+    ("raise_it", "message"),
+    [
+        (_tool_failed_from_a_cause, "Order 42 does not exist."),
+        (_tool_failed_from_an_empty_timeout, "This call took longer than the 5s limit."),
+        (_tool_failed_while_handling, "Order 42 does not exist."),
+        (_tool_failed_from_none, "Order 42 does not exist."),
+    ],
+    ids=["from-a-cause", "empty-timeout", "implicit-context", "from-none"],
+)
+@pytest.mark.parametrize("route", ["direct", "code-mode"])
+async def test_a_tools_own_tool_failed_keeps_its_own_message(
+    raise_it: Callable[[], str], message: str, route: str
+) -> None:
+    """Never its cause, and never its context.
+
+    The cause can say less than the message (the empty timeout), and the
+    context is whatever the tool happened to be handling. On an ordinary call
+    pydantic-ai converts the tool's ``ToolFailed`` into a ``ToolFailedError``
+    with the same message before any hook sees it; a code-mode sandbox's
+    nested tool manager leaves it as raised.
+    """
+    if route == "direct":
+        assert await _run_lookup_directly(raise_it) == [f"ToolFailedError: {message}"]
+    else:
+        failures, _ = await _run_lookup_under_code_mode(raise_it, ToolFailurePolicy())
+        assert failures == [f"ToolFailed: {message}"]
+
+
+@pytest.mark.parametrize("route", ["direct", "code-mode"])
+async def test_any_other_exception_records_itself_not_its_cause(route: str) -> None:
+    if route == "direct":
+        failures = await _run_lookup_directly(_another_exception_from_a_cause)
+    else:
+        failures, _ = await _run_lookup_under_code_mode(
+            _another_exception_from_a_cause, ToolFailurePolicy()
+        )
+
+    assert failures == ["ValueError: outer"]
+
+
+async def test_under_code_mode_the_policys_translation_records_the_exception() -> None:
+    """The record names the exception, and the sandbox sees the policy's raise
+    as a plain ``Exception`` carrying its message, as it sees any
+    ``ToolFailed``: the private subclass the policy raises is not visible to
+    the model's script."""
+
+    def lookup() -> str:
+        """Look up order 42."""
+        raise RuntimeError("hunter2")
+
+    failures, sandbox_saw = await _run_lookup_under_code_mode(lookup, ToolFailurePolicy())
+
+    assert failures == ["RuntimeError: hunter2"]
+    assert "Exception: The lookup tool failed and returned no result." in sandbox_saw
+    assert "PolicyToolFailed" not in sandbox_saw
+    assert "hunter2" not in sandbox_saw
+
+
+async def test_a_spec_tools_timeout_keeps_its_message() -> None:
+    """The real producer of the empty-timeout shape above.
+
+    ``SpecToolset`` raises a ``ToolFailed`` naming its limit from the
+    ``asyncio`` timeout, whose own text is empty, so a record describing the
+    cause would read ``TimeoutError: `` and lose the only detail there is.
+    """
+
+    def slow(user: Any) -> dict[str, Any]:
+        """Take longer than the limit."""
+        time.sleep(0.2)
+        return {}
+
+    audit = _CapturingLogger()
+    spec = ServiceSpec(service=slow, atomic=False, permission_classes=[AllowAny])
+    agent = _agent(
+        sink=audit,
+        model=TestModel(call_tools=["slow"]),
+        capabilities=[SpecCapability({"slow": spec}, dispatch_timeout=0.01)],
+    )
+    await agent.run("go", deps=_deps())
+
+    [event] = audit.events
+    assert event.success is False
+    assert event.error is not None
+    assert event.error.startswith("ToolFailedError: This call took longer than the 0.01s limit")
+
+
+class _Hook(AbstractCapability[Any]):
+    """A before- or after-hook that rewrites what passes through it, or rejects
+    the call outright."""
+
+    def __init__(self, *, stage: str, reject: bool) -> None:
+        self._stage = stage
+        self._reject = reject
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self._stage != "before":
+            return args
+        if self._reject:
+            raise PermissionError("rejected before execution")
+        return {**args, "secret": "[redacted]"}
+
+    async def after_tool_execute(
+        self,
+        ctx: RunContext[Any],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+        result: Any,
+    ) -> Any:
+        if self._stage != "after":
+            return result
+        if self._reject:
+            raise PermissionError("rejected after execution")
+        return "x" * 1000
+
+
+# Each record as (success, error, result_size, whether the before-hook's
+# redaction reached arguments_repr). The tool returns "ok", so its own result
+# is 2 long and the after-hook's rewrite is 1000.
+_OK = (True, None, 2, False)
+
+
+@pytest.mark.parametrize(
+    ("stage", "reject", "recorded"),
+    [
+        ("before", False, [(True, None, 2, True)]),
+        ("before", True, []),
+        ("after", False, [_OK]),
+        ("after", True, [_OK]),
+    ],
+    ids=["before-rewrite", "before-reject", "after-rewrite", "after-reject"],
+)
+async def test_a_before_or_after_hook_reaches_the_record_only_through_the_tool(
+    stage: str,
+    reject: bool,
+    recorded: list[tuple[bool, str | None, int | None, bool]],
+) -> None:
+    """The same record on every pydantic-ai, whichever side of the wrapper the
+    installed release runs these hooks.
+
+    A before-hook's rewrite is in the arguments, because it is what the tool
+    received. A before-hook's rejection leaves no record, because the tool
+    never ran. The size is the tool's own result, not the after-hook's
+    rewrite, and an after-hook's rejection comes after a tool that succeeded.
+    """
+
+    def echo(secret: str) -> str:
+        """Echo."""
+        return "ok"
+
+    audit = _CapturingLogger()
+    agent = Agent(
+        TestModel(call_tools=["echo"]),
+        toolsets=[FunctionToolset([echo])],
+        capabilities=[AuditCapability(audit), _Hook(stage=stage, reject=reject)],
+    )
+    if reject:
+        with pytest.raises(PermissionError):
+            await agent.run("echo")
+    else:
+        await agent.run("echo")
+
+    records = [
+        (e.success, e.error, e.result_size, "[redacted]" in e.arguments_repr) for e in audit.events
+    ]
+    assert records == recorded

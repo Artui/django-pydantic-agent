@@ -111,7 +111,8 @@ async def test_the_operator_copy_is_never_redacted() -> None:
 
     Audit's error hook runs before every other one and the policy's after every
     other one, so the exception audit keeps is the tool's, never the
-    policy's redacted copy.
+    policy's redacted copy. The default ``include_detail`` off is what makes
+    the difference visible: the copy carries none of the original text.
     """
     audit = _RecordingAudit()
 

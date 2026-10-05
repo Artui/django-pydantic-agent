@@ -13,6 +13,7 @@ from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import ToolDefinition
 
 from django_pydantic_agent.policy.failure.types.tool_failure_config import ToolFailureConfig
+from django_pydantic_agent.policy.failure.utils import PolicyToolFailed
 
 _logger = logging.getLogger("django_pydantic_agent.failure")
 
@@ -34,9 +35,12 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     them and quietly disable the gate.
 
     The re-raise is ``pydantic_ai.exceptions.ToolFailed``, so the model sees a
-    result marked failed rather than one reading as success. That spends no
-    retry budget, so bound a persistently broken tool with run-level
-    ``UsageLimits`` rather than expecting this to stop the model calling it.
+    result marked failed rather than one reading as success. (Precisely, a
+    private subclass of it: pydantic-ai's control flow treats it as a
+    ``ToolFailed``, and a trace records the subclass's name as the exception
+    type.) A failed result spends no retry budget, so bound a persistently
+    broken tool with run-level ``UsageLimits`` rather than expecting this to
+    stop the model calling it.
 
     **Nothing is swallowed.** The exception is logged with its traceback to the
     ``django_pydantic_agent.failure`` logger, and an ``AuditCapability`` in the
@@ -103,7 +107,7 @@ class ToolFailurePolicy(AbstractCapability[Any]):
             tool_def.name,
             exc_info=error,
         )
-        raise ToolFailed(self._message(tool_def.name, error)) from error
+        raise PolicyToolFailed(self._message(tool_def.name, error)) from error
 
     def _message(self, tool_name: str, error: Exception) -> str:
         """The model-facing text. Names the tool either way, so the model can

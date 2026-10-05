@@ -59,6 +59,15 @@ pydantic-ai into a `ToolFailedError` carrying the same message, so
 bridge's refusals arrive the same way. A `ModelRetry` is recorded as
 `ToolRetryError: <message>`, and the retried call gets a record of its own.
 
+**A `ToolFailed` keeps its own message, cause or not**, because whoever raised
+it chose that message as the outcome: a tool, or a toolset such as the spec
+bridge. Its cause can say less than the message does: a spec tool's timeout
+names the limit in the message, while the `asyncio` timeout it is raised from
+has no text at all. Neither an exception's cause nor its context is read into
+the record. A tool's own `ToolFailed` is recorded as
+`"ToolFailedError: <message>"`, or as `"ToolFailed: <message>"` when it is
+called from a code-mode sandbox.
+
 **A call that never reaches the tool produces no record.** A
 `before_tool_execute` that stops the call is not an execution, and neither is a
 destructive call the [gate](#the-destructive-tool-gate) holds for approval.
