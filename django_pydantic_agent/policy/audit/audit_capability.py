@@ -13,6 +13,7 @@ from pydantic_ai.capabilities import (
     CapabilityOrdering,
     WrapToolExecuteHandler,
 )
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import ToolDefinition
 
@@ -33,6 +34,14 @@ class AuditCapability(AbstractCapability[Any]):
     Recording is **non-raising**. A sink that throws is caught and logged to the
     ``django_pydantic_agent.audit`` Python logger, so a broken audit backend
     costs audit records rather than the run.
+
+    A failure is recorded as **the tool's own exception**. When what reaches
+    the hook is a ``pydantic_ai.exceptions.ToolFailed`` raised ``from`` another
+    exception, the record names that cause: the ``ToolFailed`` is the copy
+    written for the model, which
+    [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy] redacts
+    unless ``include_detail``, while this record is the operator's and is never
+    redacted. The exception the run sees is untouched either way.
 
     Args:
         logger: The sink each [`AuditEvent`][django_pydantic_agent.AuditEvent]
@@ -77,6 +86,14 @@ class AuditCapability(AbstractCapability[Any]):
         args: dict[str, Any],
         handler: WrapToolExecuteHandler,
     ) -> Any:
+        """Time the tool, record the outcome, and hand the result back as is.
+
+        Because audit is pinned outermost, this wrapper encloses every other
+        capability's execution hooks, and since pydantic-ai 2.54 that includes
+        their ``on_tool_execute_error``. So what arrives here on a failure may
+        already be another capability's translation of it rather than the
+        tool's exception; see ``_operator_error`` for which one is recorded.
+        """
         started = time.perf_counter()
         ip_address = self._resolve_ip_address(ctx)
         try:
@@ -88,8 +105,10 @@ class AuditCapability(AbstractCapability[Any]):
                 started,
                 ip_address=ip_address,
                 success=False,
-                error=f"{type(error).__name__}: {error}",
+                error=_operator_error(error),
             )
+            # The caught error, never the unwrapped cause: what the model and
+            # the transport see is another capability's decision, not audit's.
             raise
         self._record(
             tool_def.name,
@@ -140,6 +159,38 @@ class AuditCapability(AbstractCapability[Any]):
                 type(self._logger).__name__,
                 name,
             )
+
+
+def _operator_error(error: Exception) -> str:
+    """The failure as the operator's record names it: ``Type: message``.
+
+    A ``ToolFailed`` raised ``from`` an exception is recorded as that cause.
+    ``ToolFailurePolicy`` raises exactly that from ``on_tool_execute_error``,
+    with text written for the model and redacted unless ``include_detail``, and
+    once pydantic-ai wraps error hooks inside ``wrap_tool_execute`` this is the
+    exception audit catches. Recording it as caught would put the model's copy
+    in the one record meant to keep the cause.
+
+    A tool that itself raises ``ToolFailed(...) from e`` is recorded as ``e``
+    too, and that is intended: the ``ToolFailed`` is still the model-facing
+    sentence, and ``e`` is still what went wrong. A ``ToolFailed`` with no cause
+    (the drf-mcp bridge raises one for a server's refusal) has nothing else to
+    name and is recorded as itself.
+
+    Each condition is one branch arc with the other, so coverage cannot see
+    either go missing. These tests do:
+
+    - ``isinstance(error, ToolFailed)``:
+      ``test_only_a_tool_failed_is_unwrapped_to_its_cause``, where any other
+      chained exception would be recorded as its cause.
+    - ``isinstance(cause, Exception)``:
+      ``test_a_tool_failed_with_no_cause_is_recorded_as_itself``, where a
+      missing cause would be recorded as ``NoneType: None``.
+    """
+    cause = error.__cause__
+    if isinstance(error, ToolFailed) and isinstance(cause, Exception):
+        error = cause
+    return f"{type(error).__name__}: {error}"
 
 
 __all__ = ["AuditCapability"]

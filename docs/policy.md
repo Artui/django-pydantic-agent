@@ -28,6 +28,15 @@ when the logger is null, so "auditing off" costs nothing.
 `AuditEvent` carries `tool_name`, `arguments_repr`, `duration_ms`, `success`,
 and optional `error` / `result_size`.
 
+On a failure, `error` reads `Type: message` and names **the tool's own
+exception**. A `ToolFailed` raised `from` another exception is recorded as that
+cause, because a `ToolFailed` is the copy written for the model: the
+[failure policy](#what-a-raising-tool-costs) redacts it unless `include_detail`
+is set, and this record is the operator's. So a tool that raises
+`ToolFailed("...") from e` itself is recorded as `e` too. A `ToolFailed` with
+no cause has nothing else to name and is recorded as itself. The exception the
+run sees is never changed; only the record is.
+
 Arguments are stored **as a string** (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.
 
@@ -196,7 +205,12 @@ No capability here needs positioning. Each declares its place via
 `get_ordering()` — audit outermost, the guard orthogonal — and pydantic-ai's
 `CombinedCapability` topologically sorts them. The failure policy needs no
 constraint at all: it rides `on_tool_execute_error` while audit rides
-`wrap_tool_execute`, so the failure is recorded and then converted whichever
-way the list is sorted. Append your own capabilities in any order.
+`wrap_tool_execute`. Which of the two sees a failure first is pydantic-ai's
+call, and it changed in 2.54, where a `wrap_*` hook began enclosing every
+other capability's error hooks, so audit now catches the policy's `ToolFailed`
+rather than the tool's exception. The record is the same on either side of
+that change, because audit records a `ToolFailed` by the exception that caused
+it (see [what lands in a record](#what-lands-in-a-record)). Append your own
+capabilities in any order.
 
 Full signatures in the [policy reference](reference/policy.md).

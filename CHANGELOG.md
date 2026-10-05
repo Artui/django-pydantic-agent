@@ -34,6 +34,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `validation_error` result the bridge's retry rides on, read off the real
   server.
 
+### Fixed
+
+- **On pydantic-ai 2.54, an audit record of a failed tool named the model's
+  copy of the failure instead of the tool's exception.** 2.54 made a `wrap_*`
+  hook enclose every other capability's error hooks, so `AuditCapability`,
+  pinned outermost, began catching the `ToolFailed` that `ToolFailurePolicy`
+  raises rather than the exception the tool raised. That text is written for the
+  model and redacted unless `include_detail`, so with the default settings the
+  operator's record, the one copy documented as never redacted, lost the cause.
+  Audit now records a `ToolFailed` raised `from` an exception as that cause,
+  whichever hook order the installed pydantic-ai uses, and re-raises the
+  `ToolFailed` untouched. A tool that raises `ToolFailed(...) from e` itself is
+  recorded as `e` as well, which is intended: that is still what went wrong. A
+  `ToolFailed` with no cause, such as the drf-mcp bridge's refusal, is recorded
+  as before. Tests drive the hook directly with both shapes, so they hold the
+  unwrap on any pydantic-ai, and the dev lock now resolves pydantic-ai 2.54 and
+  pydantic-ai-harness 0.54 so every CI job runs the new order.
+- **The `[harness]` docs said the extra pins one harness minor.** The ceiling
+  came off in 0.14.0 and the extra has declared only a floor since. The
+  version-sensitive note now says so, and names what checks the range in place
+  of a ceiling: the lock, the per-PR `lowest declared versions` job at the
+  floor, and the weekly `upstream drift` run at the newest. It also notes that
+  recent harness releases pin `pydantic-ai-slim` exactly, so the harness a
+  project resolves decides its pydantic-ai. The policy page's account of hook
+  ordering, which said the failure is always recorded before it is converted,
+  now describes both orders.
+
 ## [0.26.0] — 2026-09-24
 
 ### Changed

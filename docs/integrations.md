@@ -212,10 +212,26 @@ paths), so a harness capability, a first-party one, and your own all compose the
 same way, and pydantic-ai orders them by their own `get_ordering()`.
 
 !!! warning "Version-sensitive"
-    `pydantic-ai-harness` is 0.x and its minors may break. This package pins
-    `>=0.12,<0.13`; check the changelog before widening it. The 0.7 → 0.12 jump
+    `pydantic-ai-harness` is 0.x and its minors may break: the 0.7 → 0.12 jump
     changed the `StepStore` protocol, which is why `DefaultStepStore` grew an
-    `include_interrupted` argument and a `state` column.
+    `include_interrupted` argument and a `state` column. Even so, the `[harness]`
+    extra declares a **floor and no upper bound** (the number is in
+    `pyproject.toml`). A one-minor ceiling over an upstream that releases this
+    often made the package unresolvable on every harness release, whether or
+    not anything broke. Three checks stand in for it instead:
+
+    - **The lock** pins the harness and pydantic-ai every CI job runs against,
+      and is moved to the newest deliberately rather than left to drift.
+    - **The `lowest declared versions` job** runs the suite on every pull
+      request against the oldest harness the extra allows, so the floor stays
+      true.
+    - **The weekly `upstream drift` run** ignores the lock, resolves the newest
+      harness and pydantic-ai the extras allow, and runs the suite, so a
+      breaking release is found by a scheduled job rather than by you.
+
+    Recent harness releases pin `pydantic-ai-slim` to one exact release, so
+    with `[harness]` installed the harness version you resolve also decides
+    your pydantic-ai version.
 
 ### Long runs: compaction
 
