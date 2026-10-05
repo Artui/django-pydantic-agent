@@ -38,8 +38,10 @@ class AuditCapability(AbstractCapability[Any]):
     bridges, attachment and skill tools alike.
 
     **One record per execution, describing the tool's own execution**, whatever
-    other capabilities are composed ahead of it and on every supported
-    pydantic-ai. A capability that sorts after audit is the exception, below.
+    other capabilities sort ahead of it and on every supported pydantic-ai.
+    That is everything composed through ``AgentConfig.capabilities`` unless
+    its own ordering places it inside audit. A capability that sorts after
+    audit is the exception, below.
 
     - ``arguments_repr`` holds the arguments the tool received, after every
       other capability's ``before_tool_execute`` has rewritten them.
@@ -91,32 +93,45 @@ class AuditCapability(AbstractCapability[Any]):
     hooks. Its wrapper is the only one that writes the record, once, as it
     exits, preferring what the hooks captured over what it saw itself. Before
     2.54 the innermost wrapper encloses the tool alone and what it sees is
-    already the raw outcome; from 2.54 it encloses every hook, and the
-    captures are what keep the record the tool's.
+    already the raw outcome; from 2.54 it encloses every hook, and for what
+    sorts ahead of audit the captures are what keep the record the tool's.
 
-    **A capability that sorts after audit runs between audit and the tool**, so
-    what it does to the call reaches the record as if the tool had done it.
+    **A capability that sorts after audit runs between audit and the tool.**
     One does when it is innermost and passed to a single run, since
     pydantic-ai sorts those after the agent's own capabilities whatever
     ``build_agent`` did; when it is composed by hand after audit in the
     innermost tier; and wherever it is composed, when its own ordering places
     it inside audit, as an innermost ``CapabilityOrdering`` with
-    ``wrapped_by=[AuditCapability]`` does. Which of its parts runs there
-    depends on the release:
+    ``wrapped_by=[AuditCapability]`` does. What such a capability does can
+    reach the record, on every pydantic-ai and through any of its hooks, and
+    the record is then not the tool's own. These are measured examples, not
+    a list of the only ways:
 
-    - From 2.54, its ``before_tool_execute``, ``on_tool_execute_error`` and
-      ``after_tool_execute``. A record misses its argument rewrite, records a
-      ``ModelRetry`` its ``before_tool_execute`` raises as a failure though
-      the tool never ran, records its recovery as a success and an exception
-      it raises in place of the tool's, records a ``ModelRetry`` its
-      ``after_tool_execute`` raises as a failure though the tool succeeded,
-      measures its result rewrite, and times its hooks with the tool. If its
-      ``wrap_tool_execute`` runs the tool again, the one record describes the
-      first run whole: its arguments, its outcome and its duration.
-    - Before 2.54, its ``wrap_tool_execute``. A record misses an argument
-      rewrite there, records a recovery as a success, an exception of its own
-      in place of the tool's and a ``ModelRetry`` raised before the tool runs
-      as a failure, measures a result rewrite, and times the wrapper with the
+    - From 2.54, through its ``before_tool_execute``,
+      ``on_tool_execute_error`` and ``after_tool_execute``: a record misses
+      its argument rewrite, records a ``ModelRetry`` its
+      ``before_tool_execute`` raises as a failure though the tool never ran,
+      records its recovery as a success and an exception it raises in place
+      of the tool's, records a ``ModelRetry`` its ``after_tool_execute``
+      raises as a failure though the tool succeeded, measures its result
+      rewrite, and times its hooks with the tool.
+    - From 2.54, through its ``wrap_tool_execute``, when the tool raised
+      ``ModelRetry`` or ``ToolFailed``, which pydantic-ai routes past every
+      error and result hook, audit's included: a record carries its rewrite
+      of the message, as pydantic-ai-harness's ``result_guard`` does,
+      records its recovery as a success, and records an exception it raises
+      in their place. If it runs the tool again, the record describes the
+      later run alone and the failed run has none; with that rerun refused
+      ahead of audit, the record pairs the first run's arguments with the
+      refusal. Run again after a failure audit's error hook saw, or after a
+      success, the tool gets one record, of its first run. Reruns it makes
+      concurrently share one record, which can pair one run's arguments with
+      another's result.
+    - Before 2.54, through its ``wrap_tool_execute``: a record misses an
+      argument rewrite there, records a recovery as a success, an exception
+      of its own in place of the tool's and a ``ModelRetry`` raised before
+      the tool runs as a failure, measures a result rewrite, carries a
+      rewrite of a failed tool's message, and times the wrapper with the
       tool. If it runs the tool again, the one record holds the last run's
       outcome, with the arguments audit passed on and the time of every run.
 
@@ -174,8 +189,10 @@ class AuditCapability(AbstractCapability[Any]):
         first, so innermost is the one position whose hooks sit directly either
         side of the tool: after every other capability's argument rewrite and
         veto, and before any other capability converts, recovers or rewrites
-        the outcome. Declared here rather than left to list order at the
-        ``build_agent`` call site, since pydantic-ai sorts by these constraints.
+        the outcome, unless a capability sorts after audit even so (see the
+        class). Declared here rather than left to list order at the
+        ``build_agent`` call site, since pydantic-ai sorts by these
+        constraints.
         """
         return CapabilityOrdering(position="innermost")
 
@@ -194,7 +211,8 @@ class AuditCapability(AbstractCapability[Any]):
         2.54, every capability's hooks around it from 2.54. Either way the
         hooks below have recorded the tool's side first where they could, and
         ``settle`` keeps the first account it is given, so what is written is
-        the tool's. A call whose ``before_tool_execute`` never ran here never
+        the tool's whenever nothing sorts between audit and the tool (see the
+        class). A call whose ``before_tool_execute`` never ran here never
         reached the tool, and is not recorded.
 
         Every entry starts a fresh execution, because pydantic-ai lets an outer
@@ -240,8 +258,9 @@ class AuditCapability(AbstractCapability[Any]):
 
         Innermost, so this runs after every other capability's
         ``before_tool_execute``, and nothing else stands between it and the
-        tool. Bound to the context here as well as in the wrapper because before
-        2.54 this hook runs first, and the wrapper reads it from there.
+        tool, unless a capability sorts after audit (see the class). Bound to
+        the context here as well as in the wrapper because before 2.54 this
+        hook runs first, and the wrapper reads it from there.
         """
         execution = self._current(call)
         self._execution.set(execution)
@@ -261,8 +280,9 @@ class AuditCapability(AbstractCapability[Any]):
         """Keep the tool's own exception, then pass it on unchanged.
 
         Innermost, so this is the first error hook to run, before any other
-        capability converts or recovers. Re-raising is what keeps the chain
-        going: the next capability's hook is handed the same exception.
+        capability converts or recovers, unless one sorts after audit (see the
+        class). Re-raising is what keeps the chain going: the next
+        capability's hook is handed the same exception.
         """
         self._current(call).settle(error=error)
         raise error
@@ -279,9 +299,9 @@ class AuditCapability(AbstractCapability[Any]):
         """Keep the tool's own result, then pass it on unchanged.
 
         Innermost, so this is the first result hook to run, before any other
-        capability rewrites the result. After a recovery it is handed the
-        recovered value instead, which ``settle`` ignores: the error hook
-        settled the call first.
+        capability rewrites the result, unless one sorts after audit (see the
+        class). After a recovery it is handed the recovered value instead,
+        which ``settle`` ignores: the error hook settled the call first.
         """
         self._current(call).settle(result=result)
         return result
@@ -422,12 +442,15 @@ class _Execution:
         The first account is the one nearest the tool: audit's own error or
         result hook where pydantic-ai calls one, else the wrapper.
 
-        The arguments and the duration are taken here with the outcome, so the
-        record describes one run whole. From 2.54 a wrapper sorted after audit
-        that runs the tool again runs audit's ``before_tool_execute`` again,
-        which calls ``begin`` after this: read when the wrapper writes the
-        record, they would pair the first run's outcome with the second run's
-        arguments and a start later than its end, a negative duration.
+        The arguments and the duration are taken here with the outcome, so a
+        run audit's own hooks settled is recorded with its own arguments and
+        time. From 2.54 a wrapper sorted after audit that runs the tool again
+        runs audit's ``before_tool_execute`` again, which calls ``begin`` after
+        this: read when the wrapper writes the record, they would pair the
+        first run's outcome with the second run's arguments and a start later
+        than its end, a negative duration. Where audit's hooks never see the
+        first run's outcome, as with a tool's own ``ModelRetry``, nothing has
+        settled when the rerun begins, and the record is of the later run.
         ``test_a_capability_sorted_after_audit_reaches_the_record`` fails
         without it from 2.54, on ``[wrapper-reruns-per-run]``,
         ``[wrapper-reruns-a-success-per-run]`` and their

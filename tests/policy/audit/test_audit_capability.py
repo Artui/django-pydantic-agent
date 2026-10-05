@@ -782,6 +782,64 @@ class _SortedAfterAudit:
     before_2_54: list[Any]
     slow_from_2_54: bool = False
     slow_before_2_54: bool = False
+    # What the tool raises on its first run when it fails.
+    raises: type[Exception] = ValueError
+
+    @property
+    def id(self) -> str:
+        """The behaviour, suffixed with what the tool raises where that is not
+        the ``ValueError`` most rows fail with."""
+        if self.raises is ValueError:
+            return self.behaviour
+        return f"{self.behaviour}-on-{self.raises.__name__}"
+
+
+def _past_every_hook(raises: type[Exception], recorded_as: str) -> list[_SortedAfterAudit]:
+    """A wrapper recovering, raising its own and rerunning, when the tool raises
+    one of the two exceptions pydantic-ai routes past every error and result
+    hook.
+
+    ``recorded_as`` is the type pydantic-ai converts ``raises`` into, which is
+    what the record names when audit sees it first. Sorted after audit, from
+    2.54 too, audit's hooks never settle the call, so audit's wrapper records
+    whatever the wrapper inside it hands back: a recovery as a success, its
+    own exception in the tool's place, and a rerun as the later run alone,
+    the first having no record. Before 2.54 each is recorded as for any other
+    failure.
+    """
+    failed = ("lookup", '{"n": 0}', False, f"{recorded_as}: kaboom", None)
+    recovered = ("lookup", '{"n": 0}', True, None, 9)
+    converted = ("lookup", '{"n": 0}', False, "ToolFailed: converted", None)
+    return [
+        _SortedAfterAudit(
+            "wrapper-recovers",
+            tool_fails=True,
+            raises=raises,
+            ran=[0],
+            own=[failed],
+            from_2_54=[recovered],
+            before_2_54=[recovered],
+        ),
+        _SortedAfterAudit(
+            "wrapper-raises-its-own",
+            tool_fails=True,
+            raises=raises,
+            ran=[0],
+            own=[failed],
+            from_2_54=[converted],
+            before_2_54=[converted],
+        ),
+        _SortedAfterAudit(
+            "wrapper-reruns",
+            tool_fails=True,
+            raises=raises,
+            ran=[0, 5],
+            own=[failed, _RUN_AGAIN],
+            from_2_54=[_RUN_AGAIN],
+            before_2_54=[_FOUND_AGAIN],
+            slow_before_2_54=True,
+        ),
+    ]
 
 
 _SORTED_AFTER_AUDIT = [
@@ -890,10 +948,10 @@ _SORTED_AFTER_AUDIT = [
         from_2_54=[_FOUND],
         before_2_54=[_ASKED_AGAIN, _FOUND],
     ),
-    # Run again inside audit's one wrapper entry, after a failure or after a
-    # success, the tool gets one record on both orders. From 2.54 audit's
-    # hooks settled it on the first run, and it describes that run whole: its
-    # arguments, its outcome and its time. Before 2.54 audit's wrapper saw
+    # Run again inside audit's one wrapper entry, after an ordinary failure or
+    # after a success, the tool gets one record on both orders. From 2.54
+    # audit's hooks settled it on the first run, and it describes that run:
+    # its arguments, its outcome and its time. Before 2.54 audit's wrapper saw
     # only the last run's outcome, with the arguments it passed on, and timed
     # both runs and the pause between them.
     _SortedAfterAudit(
@@ -914,13 +972,13 @@ _SORTED_AFTER_AUDIT = [
         before_2_54=[_FOUND_AGAIN],
         slow_before_2_54=True,
     ),
+    *_past_every_hook(ModelRetry, "ToolRetryError"),
+    *_past_every_hook(ToolFailed, "ToolFailedError"),
 ]
 
 
 @pytest.mark.parametrize("composed", ["per-run", "config", "config-ordered-inside-audit"])
-@pytest.mark.parametrize(
-    "case", _SORTED_AFTER_AUDIT, ids=[case.behaviour for case in _SORTED_AFTER_AUDIT]
-)
+@pytest.mark.parametrize("case", _SORTED_AFTER_AUDIT, ids=[case.id for case in _SORTED_AFTER_AUDIT])
 async def test_a_capability_sorted_after_audit_reaches_the_record(
     case: _SortedAfterAudit, composed: str
 ) -> None:
@@ -928,8 +986,10 @@ async def test_a_capability_sorted_after_audit_reaches_the_record(
 
     Passed to a single run, an innermost capability sorts after audit, so what
     it does to the call reaches the record as if the tool had done it: from
-    2.54 what its ``before``, ``on_error`` and ``after`` hooks do, and the
-    reruns of its wrapper; before 2.54 everything its wrapper does. The same
+    2.54 what its ``before``, ``on_error`` and ``after`` hooks do, the reruns
+    of its wrapper, and what its wrapper does with a tool's own
+    ``ModelRetry`` or ``ToolFailed``; before 2.54 everything its wrapper does.
+    These are examples of that, not a list of the only ways. The same
     capability in ``config.capabilities`` leaves the record the tool's own on
     both orders, because ``build_agent`` appends audit after it. That is list
     order, which a capability's own ordering overrides: in
@@ -944,7 +1004,7 @@ async def test_a_capability_sorted_after_audit_reaches_the_record(
         """Look a thing up."""
         ran.append(n)
         if case.tool_fails and len(ran) == 1:
-            raise ValueError("kaboom")
+            raise case.raises("kaboom")
         return "found" if len(ran) == 1 else "found again"
 
     audit = _CapturingLogger()
@@ -989,12 +1049,21 @@ async def test_a_capability_composed_by_hand_after_audit_reaches_the_record_too(
     assert _records(audit) == [recovered if _HOOKS_INSIDE_THE_WRAPPER else _FAILED]
 
 
+# The tool's own failure each ``replace-a-*`` verdict below screens: what the
+# tool raises, the type pydantic-ai converts it into, and whether the model
+# calls the tool again, as it does after a retry and not after a failure.
+_SCREENS_A_FAILURE: dict[str, tuple[type[Exception], str, bool]] = {
+    "replace-a-retry": (ModelRetry, "ToolRetryError", True),
+    "replace-a-failure": (ToolFailed, "ToolFailedError", False),
+}
+
+
 @pytest.mark.skipif(
     not hasattr(harness_guardrails, "ToolGuardrail"),
     reason="this pydantic-ai-harness has no ToolGuardrail",
 )
 @pytest.mark.parametrize("composed", ["per-run", "config"])
-@pytest.mark.parametrize("verdict", ["retry", "result-retry", "replace"])
+@pytest.mark.parametrize("verdict", ["retry", "result-retry", "replace", *_SCREENS_A_FAILURE])
 async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run(
     verdict: str, composed: str
 ) -> None:
@@ -1002,8 +1071,11 @@ async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run
     run it sorts after audit and its verdicts reach the record from 2.54: a
     ``retry`` before the tool runs is recorded as a failure, a ``retry`` from
     its ``result_guard`` turns the tool's success into a failure, and a
-    ``replace`` of the result is measured. In ``config.capabilities`` it does
-    not."""
+    ``replace`` of the result is measured. Its ``result_guard`` also screens
+    the message of a tool that raised ``ModelRetry`` or ``ToolFailed``, from
+    its ``wrap_tool_execute``, so on every release a ``replace`` there is
+    the message the record names. In ``config.capabilities`` none of it
+    reaches the record."""
 
     async def guard(ctx: RunContext[Any], info: Any) -> Any:
         if not asked:
@@ -1016,6 +1088,8 @@ async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run
             return harness_guardrails.GuardrailResult.replace("z" * 300)
         if not asked:
             asked.append(True)
+            if verdict in _SCREENS_A_FAILURE:
+                return harness_guardrails.GuardrailResult.replace("[redacted]")
             return harness_guardrails.GuardrailResult.retry("result rejected")
         return harness_guardrails.GuardrailResult.allow()
 
@@ -1026,9 +1100,13 @@ async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run
         else harness_guardrails.ToolGuardrail(result_guard=result_guard)
     )
     assert guardrail.get_ordering().position == "innermost"
+    ran: list[int] = []
 
     def lookup(n: int) -> str:
         """Look a thing up."""
+        ran.append(n)
+        if verdict in _SCREENS_A_FAILURE and len(ran) == 1:
+            raise _SCREENS_A_FAILURE[verdict][0]("secret 123")
         return "found"
 
     audit = _CapturingLogger()
@@ -1046,6 +1124,13 @@ async def test_harness_tool_guardrail_is_innermost_and_sorts_after_audit_per_run
     elif verdict == "result-retry":
         rejected = ("lookup", '{"n": 0}', False, "ModelRetry: result rejected", None)
         assert _records(audit) == [rejected if reaches_the_record else _FOUND, _FOUND]
+    elif verdict in _SCREENS_A_FAILURE:
+        # The guardrail screens it in its wrapper, which per run sits inside
+        # audit's on every release, and in config outside it.
+        _, recorded_as, called_again = _SCREENS_A_FAILURE[verdict]
+        message = "[redacted]" if composed == "per-run" else "secret 123"
+        screened = ("lookup", '{"n": 0}', False, f"{recorded_as}: {message}", None)
+        assert _records(audit) == ([screened, _FOUND] if called_again else [screened])
     else:
         replaced = ("lookup", '{"n": 0}', True, None, 300)
         assert _records(audit) == [replaced if reaches_the_record else _FOUND]
@@ -1309,6 +1394,43 @@ async def test_a_rerun_refused_ahead_of_audit_is_not_recorded() -> None:
         ("flaky", '{"n": 0}', False, "ValueError: first", None),
         ("flaky", '{"n": 0}', True, None, 5),
     ]
+
+
+async def test_a_rerun_sorted_after_audit_and_refused_ahead_of_it_mixes_two_runs() -> None:
+    """A wrapper sorted after audit runs the tool again after the tool's own
+    ``ModelRetry``, and a capability ahead of audit refuses that second run.
+
+    From 2.54 audit's hooks saw neither outcome, the retry having been routed
+    past them and the refusal arriving before audit's ``before_tool_execute``,
+    so audit's wrapper records the refusal with the first run's arguments and
+    a time spanning the wrapper's pause. The model's own retry then gets a
+    record of its own. Before 2.54 every ``before`` hook runs once per call,
+    ahead of the wrappers, so nothing refuses the rerun, and the record holds
+    its outcome as for any rerun.
+    """
+    ran: list[int] = []
+
+    def lookup(n: int) -> str:
+        """Look a thing up."""
+        ran.append(n)
+        if len(ran) == 1:
+            raise ModelRetry("kaboom")
+        return "found again"
+
+    audit = _CapturingLogger()
+    agent = _agent(lookup, sink=audit, capabilities=[_RefuseTheSecondAttempt()])
+    async with agent.iter("go", deps=_deps(), capabilities=[_OneThing("wrapper-reruns")]) as run:
+        async for _ in run:
+            pass
+
+    if _HOOKS_INSIDE_THE_WRAPPER:
+        refused = ("lookup", '{"n": 0}', False, "ModelRetry: not again", None)
+        assert ran == [0, 0]
+        assert _records(audit) == [refused, _FOUND_AGAIN]
+    else:
+        assert ran == [0, 5]
+        assert _records(audit) == [_FOUND_AGAIN]
+    assert audit.events[0].duration_ms >= 300
 
 
 async def test_the_result_size_is_the_tools_own_result() -> None:

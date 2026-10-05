@@ -63,22 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alone took. The exception is **a capability that sorts after audit**: an
   innermost one passed to a single run, one composed by hand after audit, or
   one whose own ordering places it inside audit. It runs between audit and the
-  tool, so what it does reaches the record as if the tool had done it. From
-  2.54 what runs there is its `before_tool_execute`, `on_tool_execute_error`
-  and `after_tool_execute`, so its argument rewrite, a `ModelRetry` it raises
-  before the tool runs, its recovery, an exception of its own, a `ModelRetry`
-  it raises after the tool succeeded, its result rewrite and their time all
-  reach the record. Before 2.54 it is its `wrap_tool_execute`, through which
-  it can do any of the same. On both, a tool it runs twice gets one record:
-  from 2.54 it describes the first run whole, its arguments, outcome and
-  duration, and before 2.54 it holds the last run's outcome. Nothing composed
-  through `config.capabilities` sorts after audit unless its own ordering
-  places it inside audit; pydantic-ai-harness's tool guardrail is innermost,
-  so passed to a single run it does. **A call that never runs
-  the tool has no record**: one stopped before audit's `before_tool_execute`,
-  and one whose outcome is what pydantic-ai treats as not executed, a
-  `SkipToolExecution` veto or a `CallDeferred` or `ApprovalRequired` deferral,
-  wherever it is raised. 0.26.1 recorded a call deferred from inside it, as a
+  tool, so what it does can reach the record, on every pydantic-ai and through
+  any of its hooks, and the record is then not the tool's own. The policy page
+  gives measured examples for each release, which are examples rather than a
+  list of the only ways. Nothing composed through `config.capabilities` sorts
+  after audit unless its own ordering places it inside audit;
+  pydantic-ai-harness's tool guardrail is innermost, so passed to a single run
+  it does. **A call that never runs the tool has no record**: one stopped
+  before audit's `before_tool_execute`, and one whose outcome is what
+  pydantic-ai treats as not executed, a `SkipToolExecution` veto or a
+  `CallDeferred` or `ApprovalRequired` deferral, wherever it is raised. 0.26.1 recorded a call deferred from inside it, as a
   tool raising `ApprovalRequired` or a toolset wrapped in pydantic-ai's
   `approval_required()` does, as a failure reading `ApprovalRequired: `, and a
   call deferred to external execution as `CallDeferred: `. A call held for
@@ -95,10 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `config.capabilities`, so it also sits inside harness's innermost guardrail
   and judge.
 - **Audit no longer reads the failure policy's copy by its cause.** Its error
-  hook now runs before every other one and is handed the tool's exception, so
-  the record never sees the policy's copy, and the step 0.26.1 added to
-  describe that copy by the exception it was raised from is gone. The copy is
-  still 0.26.1's subclass. Every other `ToolFailed` keeps its own message.
+  hook now runs before every other one that sorts ahead of audit, the policy's
+  included, and is handed the tool's exception, so the record never sees the
+  policy's copy, and the step 0.26.1 added to describe that copy by the
+  exception it was raised from is gone. The copy is still 0.26.1's subclass.
+  Every other `ToolFailed` keeps its own message.
 - **Every other capability's error hook was handed `ToolFailurePolicy`'s copy
   of a failure instead of the tool's exception.** The policy declared no
   position and `build_agent` appended it last, and pydantic-ai runs
