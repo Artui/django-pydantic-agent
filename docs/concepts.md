@@ -40,18 +40,24 @@ record down. This package never reads them itself.
 composes capabilities:
 
 - **`AuditCapability`**, when `audit_logger` is set and isn't the null logger.
-  It rides the `wrap_tool_execute` lifecycle hook, so it times and records
-  **every** tool the agent runs — registry tools *and* composed toolsets alike,
-  not just the ones registered here.
+  It hooks pydantic-ai's tool execution, so it times and records **every** tool
+  the agent runs — registry tools *and* composed toolsets alike, not just the
+  ones registered here — with one record per execution describing the tool's
+  own.
 - **`ToolGuard`**, when `tool_guard` is set and `enabled`. It flips destructive
   tools to require approval.
+- **`ToolFailurePolicy`**, unless `tool_failure` turns it off. A raising tool
+  fails its own call rather than the whole run.
 - Anything in `config.capabilities`, verbatim.
 
-Capabilities are composed **order-independently**. Each declares its position
-via `get_ordering()` (audit is outermost; the guard is orthogonal), and
-pydantic-ai's `CombinedCapability` topologically sorts them — so the list
-`build_agent` assembles needn't be pre-ordered, and a transport appending its
-own capability doesn't have to think about where.
+Each declares its position via `get_ordering()` and pydantic-ai's
+`CombinedCapability` sorts them topologically, so a transport appending its own
+capability to `config.capabilities` doesn't have to think about where. Audit is
+**innermost**, closest to the tool, and the failure policy **outermost**, so it
+converts a failure only after every other capability has seen it; the guard is
+orthogonal. Within a tier list order breaks ties, which is why `build_agent`
+appends audit after `config.capabilities` and places the policy before them.
+[Ordering](policy.md#ordering) says what each position buys.
 
 The agent's `output_type` includes `DeferredToolRequests`, which turns on the
 tool-approval interrupt loop for **server-side** tools. That is deliberate and

@@ -36,43 +36,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **On pydantic-ai 2.54, an audit record of a failed tool named the model's
-  copy of the failure instead of the tool's exception.** 2.54 made a `wrap_*`
-  hook enclose every other capability's error hooks, so `AuditCapability`,
-  pinned outermost, began catching the `ToolFailed` that `ToolFailurePolicy`
-  raises rather than the exception the tool raised. That text is written for the
-  model and redacted unless `include_detail`, so with the default settings the
-  operator's record, the one copy documented as never redacted, lost the cause.
-  Audit now records a `ToolFailed` raised `from` an exception as that cause,
-  whichever hook order the installed pydantic-ai uses, and re-raises the
-  `ToolFailed` untouched. A `ToolFailed` with no cause, such as a
-  `before_tool_execute` veto, is recorded as itself. A `ToolFailed` a tool
-  raises itself is unaffected: pydantic-ai converts it into a `ToolFailedError`
-  before any capability sees it, so `raise ToolFailed("model copy") from e` is
-  recorded as `ToolFailedError: model copy`, as it was before, and a real agent
-  run now asserts exactly that. Tests drive the hook directly with each shape,
-  so they hold the unwrap on any pydantic-ai. The dev lock now resolves
+- **An audit record now describes the tool's own execution, on every
+  pydantic-ai.** `AuditCapability` recorded what its wrapper saw, and it was
+  pinned outermost. pydantic-ai 2.54 made a `wrap_*` hook enclose every other
+  capability's `before_tool_execute`, `on_tool_execute_error` and
+  `after_tool_execute`, so from 2.54 a record described what the other
+  capabilities made of the call. A failed tool was recorded by
+  `ToolFailurePolicy`'s copy of the failure, written for the model and redacted
+  unless `include_detail`, instead of the tool's exception. A failure another
+  capability recovered from was recorded as a success, and a call a
+  `before_tool_execute` vetoed, as harness's guardrails and tool-call judge do,
+  as a failure reading `SkipToolExecution: `. `arguments_repr` preceded another
+  capability's argument rewrite, `result_size` followed its result rewrite, and
+  `duration_ms` included their hooks. On every release, another capability's
+  `wrap_tool_execute` sat inside audit's, so its argument rewrite was missed,
+  its time counted, and a wrapper that ran the tool twice got one record.
+
+  Audit is now pinned innermost and observes the tool from all four hooks; its
+  wrapper writes one record per execution as it exits, from what the hooks
+  captured. A record holds the arguments the tool received, the exception it
+  raised before anything converts it or recovers from it, the size of its own
+  result, and the time the tool alone took. A call that never reaches the tool,
+  vetoed or held for approval, has no record. The class and the policy page
+  state that contract field by field, and agent runs with harness-shaped
+  capabilities assert each part of it on both hook orders, along with parallel
+  calls in one run and concurrent runs of one agent each keeping their own
+  records. `build_agent` appends audit after `config.capabilities`, so it also
+  sits inside harness's innermost guardrail and judge. The dev lock now resolves
   pydantic-ai 2.54 and pydantic-ai-harness 0.54, so the jobs that install from
   it run the new order, while the `lowest declared versions` job keeps the old
   one covered at the floor.
-
-  2.54 changes other parts of an audit record too, because audit now encloses
-  every other capability's `before_tool_execute` and `after_tool_execute` as
-  well. A failure another capability recovers from is recorded as a success, a
-  `before_tool_execute` veto is recorded as a failure (`SkipToolExecution: `
-  for harness's guardrails and tool-call judge), `arguments_repr` precedes
-  another capability's argument rewrite, `result_size` follows its result
-  rewrite, and `duration_ms` includes their hooks. These are upstream ordering
-  effects that this release does not change; the policy page now lists them.
+- **Every other capability's error hook was handed `ToolFailurePolicy`'s copy
+  of a failure instead of the tool's exception.** The policy declared no
+  position and `build_agent` appended it last, and pydantic-ai runs
+  `on_tool_execute_error` innermost first, so the policy converted the
+  exception before anything composed through `config.capabilities` saw it. A
+  step recorder such as pydantic-ai-harness's `StepPersistence` logged the
+  policy's redacted `ToolFailed` as the tool's failure, and a capability that
+  recovered by returning a value was handed that copy too, while the policy
+  logged a failure the run had recovered from. The policy is now pinned
+  outermost and placed first, so it converts last: every other error hook sees
+  the tool's exception, a recovering one answers before anything is converted,
+  and when none does the model gets the same failed result as before. An
+  authorization refusal still passes every hook untouched. An earlier hook that
+  raises `ModelRetry` or `ToolFailed` in the exception's place has answered for
+  the model, so the policy passes it through rather than replacing that answer
+  with its own.
 - **The `[harness]` docs said the extra pins one harness minor.** The ceiling
   came off in 0.14.0 and the extra has declared only a floor since. The
   version-sensitive note now says so, and names what checks the range in place
   of a ceiling: the lock, the per-PR `lowest declared versions` job at the
   floor, and the weekly `upstream drift` run at the newest. It also notes that
   recent harness releases pin `pydantic-ai-slim` exactly, so the harness a
-  project resolves decides its pydantic-ai. The policy page's account of hook
-  ordering, which said the failure is always recorded before it is converted,
-  now describes both orders.
+  project resolves decides its pydantic-ai.
 
 ## [0.26.0] — 2026-09-24
 

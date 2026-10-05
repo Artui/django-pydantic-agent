@@ -29,9 +29,11 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     destructive tools to require approval, and a
     [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy], on unless
     turned off, so a raising tool fails its own call rather than the whole run.
-    Each declares its position through
-    ``get_ordering`` and pydantic-ai sorts them, so the list needs no
-    pre-ordering.
+    Each declares its position through ``get_ordering`` and pydantic-ai sorts
+    them: audit innermost, so it records the tool's own execution, and the
+    policy outermost, so it converts a failure only after every other
+    capability has seen it. Within a tier list order breaks ties, so audit is
+    appended after ``config.capabilities`` and the policy placed before them.
 
     **A destructive tool is not confirmed unless a config asks for it.** The
     approval interrupt exists only when ``config.tool_guard`` is enabled, and
@@ -49,16 +51,23 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     """
     capabilities = list(config.capabilities) if config.capabilities is not None else []
     if config.audit_logger is not None and not isinstance(config.audit_logger, NullAuditLogger):
+        # Appended after ``config.capabilities``: audit is innermost, and list
+        # order breaks ties within that tier, so this keeps it inside harness's
+        # innermost guardrail and tool-call judge, whose vetoes never reach it.
+        # ``test_a_vetoed_call_is_not_recorded[innermost]`` fails without it.
         capabilities.append(
             AuditCapability(config.audit_logger, ip_address=config.audit_ip_address),
         )
     if config.tool_guard is not None and config.tool_guard.enabled:
         capabilities.append(ToolGuard(registry, config=config.tool_guard))
     if config.tool_failure.enabled:
-        # No ordering constraint against the audit capability: the two ride
-        # different hooks (``on_tool_execute_error`` here, ``wrap_tool_execute``
-        # there), so the failure is recorded and then converted either way.
-        capabilities.append(ToolFailurePolicy(config.tool_failure))
+        # Placed first: the policy is outermost, and first within that tier, so
+        # its ``on_tool_execute_error`` runs after every other capability's.
+        # Each of them, a step recorder included, sees the tool's exception
+        # before the policy turns it into the model's redacted copy.
+        # ``test_an_outermost_error_hook_still_sees_the_tools_exception`` fails
+        # without it.
+        capabilities.insert(0, ToolFailurePolicy(config.tool_failure))
     return Agent(
         model=config.model,
         deps_type=AgentDeps,

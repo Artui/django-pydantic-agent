@@ -15,8 +15,8 @@ from django_pydantic_agent import AgentConfig, LoggingAuditLogger, build_agent
 agent = build_agent(registry, AgentConfig(model=..., audit_logger=LoggingAuditLogger()))
 ```
 
-It rides the `wrap_tool_execute` lifecycle hook, which is the point: it times
-and records **every tool the agent runs**, not just the ones in the registry —
+It hooks pydantic-ai's tool execution itself, which is the point: it times and
+records **every tool the agent runs**, not just the ones in the registry —
 drf-mcp and spec-toolset bridges, attachment tools, everything. A per-tool
 wrapper would miss the composed toolsets.
 
@@ -28,22 +28,47 @@ when the logger is null, so "auditing off" costs nothing.
 `AuditEvent` carries `tool_name`, `arguments_repr`, `duration_ms`, `success`,
 and optional `error` / `result_size`.
 
-On a failure, `error` reads `Type: message` for the exception that reached
-audit, with one exception. When the [failure policy](#what-a-raising-tool-costs)
-has turned a tool's exception into a `ToolFailed`, the record names that
-cause instead: the `ToolFailed` is the copy written for the model, redacted
-unless `include_detail` is set, and this record is the operator's. Any
-`ToolFailed` a capability hook raises `from` an exception is recorded the same
-way, and one with no cause, such as a `before_tool_execute` veto, is recorded
-as itself.
+**There is one record per tool execution, and it describes the tool's own
+execution**, whatever other capabilities are composed around it and on every
+supported pydantic-ai release:
 
-A `ToolFailed` that **a tool raises itself** is different, and never recorded
-by its cause. pydantic-ai converts it into a `ToolFailedError` carrying the
-same message before any capability sees it, so
+- `arguments_repr` holds the arguments the tool received, after every other
+  capability's `before_tool_execute` has rewritten them.
+- `success` and `error` describe what the tool did. `error` reads
+  `Type: message` for the exception the tool raised, before anything converts
+  it or recovers from it.
+- `result_size` is the length of the tool's own result, before any
+  `after_tool_execute` rewrites it.
+- `duration_ms` spans the tool alone: from after every other capability's
+  `before_tool_execute` to before any `on_tool_execute_error` or
+  `after_tool_execute`. Time spent in other capabilities' hooks is not in it.
+
+**A failure is recorded as the failure, whatever happens to it next.** The
+[failure policy](#what-a-raising-tool-costs) turns a tool's exception into a
+`ToolFailed` for the model, redacted unless `include_detail` is set; the record
+still names the exception the tool raised, because this is the operator's copy.
+A capability whose `on_tool_execute_error` returns a value in the exception's
+place has decided what the run does next, not what the tool did, so that
+failure is recorded as a failure too.
+
+Two exceptions never reach any capability's error hook, and are recorded as
+they propagate. A `ToolFailed` that **a tool raises itself** is converted by
+pydantic-ai into a `ToolFailedError` carrying the same message, so
 `raise ToolFailed("model copy") from e` is recorded as
 `ToolFailedError: model copy`, and the policy is never handed it. The drf-mcp
-bridge's refusals arrive the same way. The exception the run sees is never
-changed by audit; only the record is.
+bridge's refusals arrive the same way. A `ModelRetry` is recorded as
+`ToolRetryError: <message>`, and the retried call gets a record of its own.
+
+**A call that never reaches the tool produces no record.** A
+`before_tool_execute` that stops the call is not an execution, and neither is a
+destructive call the [gate](#the-destructive-tool-gate) holds for approval.
+pydantic-ai-harness's guardrails and tool-call judge stop a call that way, with
+`SkipToolExecution`. The approved call, when it runs, is recorded like any
+other. A record of what was refused belongs to whatever refused it.
+
+Audit never changes what the run sees. Its error hook re-raises what it is
+handed, and a sink that raises is caught and logged to the
+`django_pydantic_agent.audit` logger, costing the record rather than the run.
 
 Arguments are stored **as a string** (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.
@@ -164,7 +189,7 @@ credential, and anything handed to the model is also handed to whatever renders
 the transcript. The operator's copy is never redacted — the full exception goes
 to the audit logger and to the `django_pydantic_agent.failure` logger either way.
 
-Two things worth knowing:
+Three things worth knowing:
 
 - **It hangs off `on_tool_execute_error`, not a `try` around the handler.**
   Pydantic-AI does not route control-flow exceptions to that hook —
@@ -173,6 +198,15 @@ Two things worth knowing:
   model's retry budget both pass through untouched. A hand-written
   `except Exception` would have caught `ApprovalRequired` and silently disabled
   the gate.
+- **It converts last.** It is pinned outermost and `build_agent` places it
+  first, so its `on_tool_execute_error` runs after every other capability's
+  (see [ordering](#ordering)). Every other error hook is handed the exception
+  the tool raised, never the policy's redacted copy: a step recorder such as
+  pydantic-ai-harness's `StepPersistence` logs the real failure, and a
+  capability that recovers by returning a value answers before anything is
+  converted. An earlier error hook that raises `ModelRetry` or `ToolFailed` in
+  the exception's place has answered for the model, so that passes through
+  unconverted.
 - **It spends no retry budget**, because `ToolFailed` deliberately doesn't.
   A model can call a persistently broken tool again; bound that with run-level
   `UsageLimits` rather than expecting this to stop it.
@@ -209,34 +243,48 @@ ToolFailureConfig(reraise=(PermissionDenied, LookupError))
 
 ## Ordering
 
-No capability here needs positioning. Each declares its place via
-`get_ordering()` — audit outermost, the guard orthogonal — and pydantic-ai's
-`CombinedCapability` topologically sorts them. The failure policy needs no
-constraint at all: it rides `on_tool_execute_error` while audit rides
-`wrap_tool_execute`. Append your own capabilities in any order.
+Each capability here declares its own place through `get_ordering()`, and
+pydantic-ai's `CombinedCapability` sorts them topologically, with list order
+breaking ties within a tier. Add your own to `AgentConfig.capabilities` in any
+order; `build_agent` positions its own around them.
 
-What audit's wrapper encloses is pydantic-ai's call, though, and it changed in
-2.54, where a `wrap_*` hook began enclosing every other capability's
-`before_tool_execute`, `after_tool_execute` and `on_tool_execute_error` for
-the same call. Earlier releases showed audit the tool alone; from 2.54 it sees
-what the other capabilities made of the call.
+- **Audit is innermost**, the capability closest to the tool: its
+  `before_tool_execute` runs last, and its `on_tool_execute_error` and
+  `after_tool_execute` run first. `build_agent` appends it after
+  `config.capabilities`, which keeps it inside other innermost capabilities
+  too, such as pydantic-ai-harness's guardrail and tool-call judge, so their
+  vetoes never reach it.
+- **The failure policy is outermost**, and `build_agent` places it first, which
+  keeps it outside other outermost capabilities. pydantic-ai runs error hooks
+  innermost first, so the policy's runs last.
+- **The guard is orthogonal.** It touches only `prepare_tools`, before any call
+  is made.
 
-**For the failure policy the record is the same either way**: audit now
-catches the policy's `ToolFailed` rather than the tool's exception, and records
-it by its cause (see [what lands in a record](#what-lands-in-a-record)). That is
-the one effect this package compensates for. The others are upstream ordering
-effects that this package does not change. From 2.54, compared with earlier
-releases:
+Composing these by hand rather than through `build_agent`, keep the same
+places: `AuditCapability` after any other innermost capability, and
+`ToolFailurePolicy` before any other outermost one. Ahead of an innermost
+guardrail, audit would run its hooks before the guardrail's veto, and on
+pydantic-ai 2.54 and later would record the vetoed call as a failure.
 
-- A failure another capability's `on_tool_execute_error` recovers from is
-  recorded as a **success** with no error, where it was recorded as the failure.
-- A `before_tool_execute` that vetoes the call is recorded as a **failure**,
-  where nothing was recorded. A `SkipToolExecution`, which
-  pydantic-ai-harness's guardrails and tool-call judge raise, carries a result
-  rather than a message, so the record reads `SkipToolExecution: `.
-- `arguments_repr` holds the arguments **before** another capability's
-  `before_tool_execute` rewrites them, and `result_size` measures the result
-  **after** its `after_tool_execute`. Earlier it was the other way round.
-- `duration_ms` includes the time spent in other capabilities' hooks.
+### Why audit needs all four hooks
+
+pydantic-ai 2.54 moved every capability's `before_tool_execute`,
+`on_tool_execute_error` and `after_tool_execute` inside the
+`wrap_tool_execute` chain; earlier releases ran them around it. A wrapper that
+recorded only what it saw would therefore describe a different thing on each
+side of 2.54. From 2.54 it would record a failure another capability recovers
+from as a success, a vetoed call as a failure, the arguments before a rewrite
+and the result after one, and other capabilities' hooks in the duration.
+
+Audit records the same thing on both because it observes the tool from all four
+hooks. Its `before_tool_execute` captures the arguments and the start, its
+`on_tool_execute_error` the tool's exception, and its `after_tool_execute` the
+tool's result. Its wrapper is the only one that writes the record, once per
+execution, as it exits, preferring what the hooks captured over what it saw
+itself. Before 2.54 the innermost wrapper encloses the tool alone, so what it
+sees is already the tool's outcome; from 2.54 it encloses every hook, and the
+captures are what keep the record the tool's. Each call's captures belong to
+that call, so parallel calls in one run and concurrent runs of one agent never
+read each other's.
 
 Full signatures in the [policy reference](reference/policy.md).
