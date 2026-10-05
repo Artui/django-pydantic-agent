@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] — 2026-10-05
+
+### Fixed
+
+- **On pydantic-ai 2.54 and later, an audit record for a failed tool lost the
+  exception and kept only the message written for the model.** pydantic-ai 2.54
+  runs `on_tool_execute_error` inside `wrap_tool_execute`, where it used to run
+  after it, so `AuditCapability` was handed the `ToolFailed` that
+  `ToolFailurePolicy` raises in place of the tool's exception. With
+  `include_detail` off, which is the default, that text carries none of the
+  original, so the record read `ToolFailed: The boom tool failed and returned no
+  result...` and the operator's copy was redacted along with the model's. The
+  policy now raises a private subclass of `ToolFailed`, and the audit describes
+  that one translation by the exception it was raised from, `RuntimeError:
+  kaboom`, under either hook order. A translation that has lost its cause is
+  recorded as itself. pydantic-ai's control flow treats the subclass as a
+  `ToolFailed`, but a trace records the subclass's name: on 2.54 a failed tool
+  span's `exception.type` reads
+  `django_pydantic_agent.policy.failure.utils.PolicyToolFailed` where it read
+  `pydantic_ai.exceptions.ToolFailed`, and before 2.54 it names the tool's own
+  exception, as it did. It also never compares equal to a plain `ToolFailed`
+  with the same message, in either direction.
+- **Every other `ToolFailed` keeps its own message, cause or not, and that is
+  deliberate.** A tool's own, a toolset's and another capability's were each
+  written as the outcome, and a cause can say less than the message: a spec
+  tool's timeout names the limit, and is raised from an `asyncio` timeout with
+  no text. A tool's own `ToolFailed` is recorded as
+  `ToolFailedError: <message>` on an ordinary call and as
+  `ToolFailed: <message>` from a code-mode sandbox, exactly as before.
+- **The policy docs said audit records a failure before the policy converts
+  it, whichever way the capabilities are sorted.** That held only before
+  pydantic-ai 2.54. The ordering section now describes both hook orders, and
+  the audit section states what a failed call's `error` holds and what else
+  2.54 changed about a record: `before_tool_execute` and `after_tool_execute`
+  now run inside the audit's wrapper. The record carries the validated
+  arguments rather than a before-hook's rewrite of them, its `result_size`
+  measures an after-hook's output rather than the tool's result, and a call
+  either hook rejects is recorded as a failure, where a before-hook's rejection
+  used to leave no record and an after-hook's followed a record of success.
+
 ## [0.26.0] — 2026-09-24
 
 ### Changed
@@ -1419,7 +1459,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.1...HEAD
+[0.26.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.23.0...v0.24.0
