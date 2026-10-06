@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-10-05
+
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.50`
+  (was `>=0.49`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.33` (was `>=0.32`), and these two floors
+  move together.** Both releases make a tool's input schema ask for what a call
+  needs, and both turn a call that leaves it out into a retry, one per route. A
+  selector parameter with no default, which the server or toolset does not
+  fill, is now listed in `required`, where `get_row(*, pk)` advertised `pk` as
+  optional; and a service tool now advertises the target lookup its row is
+  resolved through, where a tool changing one row never mentioned the `pk`
+  naming it. A call missing such an argument raised the selector's `TypeError`
+  and ended the run. drf-mcp 0.50 answers it with a `validation_error` result
+  keyed by the missing name, which `DRFMCPToolset` already raises as
+  `ModelRetry`, and PAI 0.33 raises ``ModelRetry("Missing required argument(s):
+  `pk`.")`` itself. Raising one without the other would require `pk` on one
+  route and leave it optional, and fatal when missed, on the other. Both floor
+  drf-services at 0.55.0 in turn, and hard: below it, listing such a tool raises
+  `TypeError`. The floor raise needs no code change here. Tests now pin both
+  halves on both routes, through one selector spec and one service spec shared
+  between them: the advertised `required`, a real run where the omission is one
+  retry and then the row, the two routes requiring the same arguments, and the
+  `validation_error` result the bridge's retry rides on, read off the real
+  server.
+
+### Fixed
+
+- **An audit record now describes the tool's own execution, on every
+  pydantic-ai and whatever capabilities sort ahead of audit.** 0.26.1 kept a
+  failed call's record naming the tool's exception rather than
+  `ToolFailurePolicy`'s copy, and documented the rest of what pydantic-ai 2.54
+  changed about a record as behaviour. From 2.54 a `wrap_*` hook encloses
+  every other capability's `before_tool_execute`, `on_tool_execute_error` and
+  `after_tool_execute`, and audit was pinned outermost, so a record still
+  described what the other capabilities made of the call: a failure another
+  capability recovered from was recorded as a success, a call a
+  `before_tool_execute` vetoed, as harness's guardrails and tool-call judge
+  do, as a failure reading `SkipToolExecution: `, `arguments_repr` preceded
+  another capability's argument rewrite, `result_size` measured its result
+  rewrite, and `duration_ms` included their hooks. On every release, another
+  capability's `wrap_tool_execute` sat inside audit's, so its argument rewrite
+  was missed, its time counted, and a wrapper that ran the tool twice got one
+  record.
+
+  Audit is now pinned innermost and observes the tool from all four hooks; its
+  wrapper writes one record per execution as it exits, from what the hooks
+  captured. On every supported pydantic-ai a record holds the arguments the
+  tool received, after every other capability's rewrite; the exception it
+  raised, before anything converts it or recovers from it, so a recovered
+  failure is recorded as a failure with the tool's exception; the size of its
+  own result, before an `after_tool_execute` rewrites it; and the time the tool
+  alone took. The exception is **a capability that sorts after audit**: an
+  innermost one passed to a single run, one composed by hand after audit, or
+  one whose own ordering places it inside audit. It runs between audit and the
+  tool, so what it does can reach the record, on every pydantic-ai and through
+  any of its hooks, and the record is then not the tool's own. The policy page
+  gives measured examples for each release, which are examples rather than a
+  list of the only ways. Nothing composed through `config.capabilities` sorts
+  after audit unless its own ordering places it inside audit;
+  pydantic-ai-harness's tool guardrail is innermost, so passed to a single run
+  it does. **A call that never runs the tool has no record**: one stopped
+  before audit's `before_tool_execute`, and one whose outcome is what
+  pydantic-ai treats as not executed, a `SkipToolExecution` veto or a
+  `CallDeferred` or `ApprovalRequired` deferral, wherever it is raised. 0.26.1 recorded a call deferred from inside it, as a
+  tool raising `ApprovalRequired` or a toolset wrapped in pydantic-ai's
+  `approval_required()` does, as a failure reading `ApprovalRequired: `, and a
+  call deferred to external execution as `CallDeferred: `. A call held for
+  approval is now recorded once it is resumed and runs, and one deferred to
+  external execution, which never runs in this process, not at all. A veto from
+  an innermost capability passed to a single run is not recorded either. **The
+  2.54 effects 0.26.1 documented no longer apply:** a record no longer carries
+  the arguments from before a before-hook's rewrite or measures an after-hook's
+  output, and a call either hook rejects is no longer recorded as a failure. The
+  class and the policy page state the contract field by field, and agent runs
+  with harness-shaped capabilities assert each part of it on both hook orders,
+  along with parallel calls in one run and concurrent runs of one agent each
+  keeping their own records. `build_agent` appends audit after
+  `config.capabilities`, so it also sits inside harness's innermost guardrail
+  and judge.
+- **Audit no longer reads the failure policy's copy by its cause.** Its error
+  hook now runs before every other one that sorts ahead of audit, the policy's
+  included, and is handed the tool's exception, so the record never sees the
+  policy's copy, and the step 0.26.1 added to describe that copy by the
+  exception it was raised from is gone. The copy is still 0.26.1's subclass.
+  Every other `ToolFailed` keeps its own message.
+- **Every other capability's error hook was handed `ToolFailurePolicy`'s copy
+  of a failure instead of the tool's exception.** The policy declared no
+  position and `build_agent` appended it last, and pydantic-ai runs
+  `on_tool_execute_error` innermost first, so the policy converted the
+  exception before anything composed through `config.capabilities` saw it. A
+  step recorder such as pydantic-ai-harness's `StepPersistence` logged the
+  policy's redacted `ToolFailed` as the tool's failure, and a capability that
+  recovered by returning a value was handed that copy too, while the policy
+  logged a failure the run had recovered from. The policy is now pinned
+  outermost and placed first, so it converts last: every other error hook sees
+  the tool's exception, a recovering one answers before anything is converted,
+  and when none does the model gets the same failed result as before. An
+  authorization refusal still passes every hook untouched. An earlier hook that
+  raises `ModelRetry` or `ToolFailed` in the exception's place has answered for
+  the model, so the policy passes it through rather than replacing that answer
+  with its own, and a `ModelRetry` passed through spends the tool's retry
+  budget and ends the run once that is spent. The
+  `django_pydantic_agent.failure` logger now hears only about the failures the
+  policy converts, so a call another capability recovered or answered for is no
+  longer logged there, and the policy page no longer says the full exception
+  reaches that logger either way. Neither the page nor the class said what
+  happens once a tool's own `ModelRetry` has no retries left, and both now do:
+  pydantic-ai raises `UnexpectedModelBehavior` in its place from inside the
+  call, which audit records and the policy converts into a failed result and
+  logs, where without the policy the run would end.
+- **The `[harness]` docs said the extra pins one harness minor.** The ceiling
+  came off in 0.14.0 and the extra has declared only a floor since. The
+  version-sensitive note now says so, and names what checks the range in place
+  of a ceiling: the lock, the per-PR `lowest declared versions` job at the
+  floor, and the weekly `upstream drift` run at the newest. It also notes that
+  recent harness releases pin `pydantic-ai-slim` exactly, so the harness a
+  project resolves decides its pydantic-ai.
+
 ## [0.26.1] — 2026-10-05
 
 ### Fixed
@@ -1459,7 +1579,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.24.0...v0.25.0

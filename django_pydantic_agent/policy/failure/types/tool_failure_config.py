@@ -17,8 +17,12 @@ class ToolFailureConfig:
     Whether the run survives is reliability; whether the exception's text reaches
     the model is disclosure, since a message can carry a query, a path or a
     credential, and whatever the model sees also reaches whatever renders the
-    transcript. The operator's copy is never redacted either way: the full
-    exception goes to the audit logger and the Python logger regardless.
+    transcript. The policy never redacts the operator's copy, whichever way
+    ``include_detail`` is set: the full exception goes to the audit logger, and
+    to the Python logger whenever the policy converts it. A capability that sorts
+    after audit can still change what audit records; the
+    [`AuditCapability`][django_pydantic_agent.AuditCapability] states that
+    exception.
     """
 
     enabled: bool = True

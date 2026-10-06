@@ -6,8 +6,9 @@ import logging
 from typing import Any
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
-from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.tools import ToolDefinition
 
@@ -35,16 +36,40 @@ class ToolFailurePolicy(AbstractCapability[Any]):
 
     The re-raise is ``pydantic_ai.exceptions.ToolFailed``, so the model sees a
     result marked failed rather than one reading as success. (Precisely, a
-    private subclass of it, so an audit record can tell this translation from a
-    ``ToolFailed`` anything else raised. pydantic-ai's control flow treats it as
-    a ``ToolFailed``; a trace records the subclass's name as the exception
-    type.) A failed result spends no retry budget, so bound a persistently broken tool with run-level
-    ``UsageLimits`` rather than expecting this to stop the model calling it.
+    private subclass of it: pydantic-ai's control flow treats it as a
+    ``ToolFailed``, and a trace records the subclass's name as the exception
+    type.) A failed result spends no retry budget, so bound a persistently
+    broken tool with run-level ``UsageLimits`` rather than expecting this to
+    stop the model calling it.
 
-    **Nothing is swallowed.** The exception is logged with its traceback to the
-    ``django_pydantic_agent.failure`` logger, and an ``AuditCapability`` in the
-    same chain still records the failure against the tool that caused it. What
-    changes is only who the failure stops.
+    **Nothing is swallowed.** An exception this converts is logged with its
+    traceback to the ``django_pydantic_agent.failure`` logger first, and an
+    ``AuditCapability`` in the same chain still records the failure against the
+    tool that caused it. What changes is only who the failure stops. That
+    logger hears only about what this converts: not a call another capability
+    recovered or answered for, not a refusal passing through, and not an
+    exception pydantic-ai never hands to an error hook, such as a tool's own
+    ``ToolFailed``, or its ``ModelRetry`` while it has retries left.
+
+    **It converts last.** Pinned outermost, and placed first by ``build_agent``,
+    so its ``on_tool_execute_error`` is the last of every capability's to run
+    (pydantic-ai runs that hook innermost first). Every other capability's error
+    hook is handed the exception the tool raised, never this policy's redacted
+    copy: a step recorder such as harness's ``StepPersistence`` logs the tool's
+    failure, and a capability that recovers answers before anything is
+    converted. What an earlier hook raised in the exception's place is that
+    capability's answer, and passes through when it is one pydantic-ai gives the
+    model itself: a ``ToolFailed`` already carries its own message for the
+    model, and a ``ModelRetry`` spends the tool's retry budget. Once that is
+    spent the run ends with ``UnexpectedModelBehavior``, which pydantic-ai
+    raises after every error hook has run, so this never sees it.
+
+    **A tool's own ``ModelRetry`` with no retries left is converted.** While
+    the tool has retries left pydantic-ai never hands its ``ModelRetry`` to an
+    error hook. Once they are spent it raises ``UnexpectedModelBehavior`` in
+    its place from inside the call, which does reach the error hooks, so this
+    logs it and converts it into a failed result like any other exception,
+    where without the policy the run would end.
 
     **An authorization refusal is exempt** and ends the run as it would without
     the policy — see ``ToolFailureConfig.reraise``, which is also how a project
@@ -56,6 +81,17 @@ class ToolFailurePolicy(AbstractCapability[Any]):
         self._reraise = (
             self._config.reraise if self._config.reraise is not None else _denial_types()
         )
+
+    def get_ordering(self) -> CapabilityOrdering:
+        """Pin the policy as an **outermost** capability.
+
+        pydantic-ai runs ``on_tool_execute_error`` hooks innermost first, so
+        the outermost one runs last: whatever else is composed sees the tool's
+        exception before this converts it. ``build_agent`` also places it first
+        in its list, which keeps it last among other outermost capabilities,
+        since list order breaks ties within a tier.
+        """
+        return CapabilityOrdering(position="outermost")
 
     async def on_tool_execute_error(
         self,
@@ -69,6 +105,15 @@ class ToolFailurePolicy(AbstractCapability[Any]):
         if isinstance(error, self._reraise):
             # Not logged here: it is on its way to the transport intact, and a
             # traceback saying "the run continues" would be a lie about this one.
+            raise error
+        if isinstance(error, (ModelRetry, ToolFailed)):
+            # pydantic-ai never hands a tool's own ``ModelRetry`` or
+            # ``ToolFailed`` to this hook, so one arriving here was raised by an
+            # earlier capability's error hook as its answer for the model.
+            # Converting it would replace that answer with this policy's.
+            # Each member is held by a test that fails without it:
+            # ``test_another_capabilitys_retry_is_not_converted`` and
+            # ``test_another_capabilitys_failed_result_is_not_converted``.
             raise error
         _logger.exception(
             "django-pydantic-agent: tool %r failed; the run continues with a failed result",

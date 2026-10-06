@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -24,6 +25,8 @@ from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
 from django_pydantic_agent.integrations.drf_mcp import DRFMCPToolset
 from tests.integrations.drf_server import BOOKS, REFUSED_SPEC, server
+from tests.integrations.drf_server_lookup import lookup_server
+from tests.integrations.drf_specs_lookup import SPECS as LOOKUP_SPECS
 
 
 def _request() -> HttpRequest:
@@ -189,9 +192,11 @@ async def test_a_fault_the_model_cannot_rewrite_still_ends_the_run(
 
 
 async def test_malformed_arguments_raise_model_retry_with_detail() -> None:
-    # JSON-RPC -32602 (the serializer rejecting the arguments *shape*) becomes
-    # ``ModelRetry`` carrying the field errors, so the model self-corrects
-    # instead of the run dying with RUN_ERROR.
+    # The serializer rejecting the arguments *shape* becomes ``ModelRetry``
+    # carrying the field errors, so the model self-corrects instead of the run
+    # dying with RUN_ERROR. drf-mcp answers it with an ``isError``
+    # ``validation_error`` result, where it used JSON-RPC -32602 before 0.50;
+    # the bridge retries either.
     toolset = DRFMCPToolset(server, _request())
     with pytest.raises(ModelRetry, match="Invalid arguments") as excinfo:
         await toolset.call_tool("add", {"a": "not_a_number", "b": 1}, None, None)
@@ -200,9 +205,10 @@ async def test_malformed_arguments_raise_model_retry_with_detail() -> None:
 
 
 async def test_invalid_params_error_raises_model_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Payload-level twin of the test above: on Python 3.11 the C tracer drops the
-    # bridge frame across drf-mcp's real executor hop, leaving the branch
-    # uncovered there even though it runs.
+    # Payload-level twin of the -32602 branch, which drf-mcp still takes for an
+    # unknown tool and took for refused arguments before 0.50: on Python 3.11
+    # the C tracer drops the bridge frame across drf-mcp's real executor hop,
+    # leaving the branch uncovered there even though it runs.
     async def fake_call(name: str, arguments: object = None, **_kwargs: object) -> JsonRpcError:
         return JsonRpcError(JsonRpcErrorCode.INVALID_PARAMS, "Invalid arguments")
 
@@ -625,3 +631,110 @@ async def test_a_selection_refused_while_rendering_is_one_retry_then_the_page() 
         if isinstance(part, ToolReturnPart)
     ]
     assert page[0]["items"] == [{"name": "a"}, {"name": "b"}]
+
+
+# Each tool reads its row through a selector taking ``pk`` with no default: the
+# selector tool's own selector, and the service tool's target lookup. A call
+# leaving ``pk`` out is corrected by sending it.
+_LOOKUP_CALLS = [
+    pytest.param("get_row", {}, {"pk": 1}, {"id": 1, "name": "first"}, id="selector"),
+    pytest.param(
+        "rename_row",
+        {"name": "second"},
+        {"pk": 1, "name": "second"},
+        {"id": 1, "name": "second"},
+        id="service-target-lookup",
+    ),
+]
+
+
+@pytest.mark.parametrize("name", ["get_row", "rename_row"])
+async def test_a_selector_parameter_without_a_default_is_required(name: str) -> None:
+    # drf-mcp lists a selector parameter with no default, which the server does
+    # not fill, in the tool's ``required``, and a service tool now advertises the
+    # target lookup its row is resolved through. The bridge passes ``tools/list``
+    # through verbatim, so this is what the model reads. Without either, the
+    # schema called ``pk`` optional on ``get_row`` and left it out of
+    # ``rename_row`` altogether, so nothing told a model to send the one argument
+    # the call cannot run without.
+    tools = await DRFMCPToolset(lookup_server, _request()).get_tools(None)
+    schema = tools[name].tool_def.parameters_json_schema
+    assert "pk" in schema["properties"]
+    assert "pk" in schema.get("required", [])
+
+
+@pytest.mark.parametrize(
+    ("mcp_server", "name", "arguments", "detail"),
+    [
+        pytest.param(
+            lookup_server, "get_row", {}, {"pk": ["This field is required."]}, id="missing"
+        ),
+        pytest.param(
+            server,
+            "add",
+            {"a": "not_a_number", "b": 1},
+            {"a": ["A valid integer is required."]},
+            id="wrong-type",
+        ),
+    ],
+)
+async def test_refused_arguments_arrive_as_a_validation_error_result(
+    mcp_server: MCPServer, name: str, arguments: dict[str, Any], detail: dict[str, Any]
+) -> None:
+    # The answer the retries here ride on, read off the real server rather than
+    # a double: an ``isError`` result whose error is a ``validation_error``
+    # keyed by the refused name, the branch of ``call_tool`` that raises
+    # ``ModelRetry`` with the detail. A missing selector argument raised
+    # ``TypeError`` before drf-mcp 0.50, and a wrong type was JSON-RPC -32602.
+    result = await mcp_server.acall_tool(name, arguments, user=AnonymousUser())
+    assert isinstance(result, dict), result
+    assert result["isError"] is True
+    assert json.loads(result["content"][0]["text"])["error"] == {
+        "type": "validation_error",
+        "message": "Invalid arguments",
+        "detail": detail,
+    }
+
+
+@pytest.mark.parametrize(("name", "omitted", "corrected", "row"), _LOOKUP_CALLS)
+async def test_a_call_missing_a_selector_argument_is_one_retry_then_the_row(
+    name: str, omitted: dict[str, Any], corrected: dict[str, Any], row: dict[str, Any]
+) -> None:
+    # drf-mcp answers the omission with an ``isError`` ``validation_error``
+    # result keyed by the missing name, which the bridge raises as ``ModelRetry``.
+    # Without it the selector raised ``TypeError`` out of ``acall_tool``, and so
+    # out of ``call_tool``, ending the run over an argument the model could have
+    # supplied. Driven through a real run, so the retry is what the model reads.
+    calls = iter([omitted, corrected])
+
+    def model_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        if any(part.part_kind == "tool-return" for part in messages[-1].parts):
+            return ModelResponse(parts=[TextPart("done")])
+        return ModelResponse(parts=[ToolCallPart(tool_name=name, args=next(calls))])
+
+    toolset = DRFMCPToolset(lookup_server, _request())
+    result = await Agent(FunctionModel(model_fn), toolsets=[toolset]).run("read the row")
+
+    parts = [part for message in result.all_messages() for part in message.parts]
+    retries = [part.content for part in parts if part.part_kind == "retry-prompt"]
+    assert retries == ['Invalid arguments: {"pk": ["This field is required."]}']
+    assert [part.content for part in parts if isinstance(part, ToolReturnPart)] == [row]
+
+
+@pytest.mark.parametrize("name", ["get_row", "rename_row"])
+async def test_both_bridges_require_the_same_arguments(name: str) -> None:
+    """One spec, listed in process and over the drf-mcp bridge.
+
+    The reason the ``[drf-mcp]`` and ``[spec-tools]`` floors move together: a
+    model is asked for the same arguments whichever way a spec is exposed.
+    Asserted against both packages' real schemas, so a pair of floors where only
+    one side requires ``pk`` fails here.
+    """
+    ctx = RunContext(deps=AgentDeps(user=AnonymousUser()), model=TestModel(), usage=RunUsage())
+    in_process = await build_spec_capability(LOOKUP_SPECS).get_toolset().get_tools(ctx)
+    bridged = await DRFMCPToolset(lookup_server, _request()).get_tools(None)
+    required = bridged[name].tool_def.parameters_json_schema.get("required", [])
+    assert sorted(required) == sorted(
+        in_process[name].tool_def.parameters_json_schema.get("required", [])
+    )
+    assert "pk" in required

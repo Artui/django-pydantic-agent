@@ -29,9 +29,14 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     destructive tools to require approval, and a
     [`ToolFailurePolicy`][django_pydantic_agent.ToolFailurePolicy], on unless
     turned off, so a raising tool fails its own call rather than the whole run.
-    Each declares its position through
-    ``get_ordering`` and pydantic-ai sorts them, so the list needs no
-    pre-ordering.
+    Each declares its position through ``get_ordering`` and pydantic-ai sorts
+    them: audit innermost, so it records the tool's own execution, and the
+    policy outermost, so it converts a failure only after every other
+    capability has seen it. Within a tier list order breaks ties, so audit is
+    appended after ``config.capabilities`` and the policy placed before them.
+    What sorts after audit regardless, such as an innermost capability passed
+    to a single run, can still reach the record; ``AuditCapability`` states
+    that exception.
 
     **A destructive tool is not confirmed unless a config asks for it.** The
     approval interrupt exists only when ``config.tool_guard`` is enabled, and
@@ -49,19 +54,27 @@ def build_agent(registry: ToolRegistry, config: AgentConfig) -> Agent[AgentDeps,
     """
     capabilities = list(config.capabilities) if config.capabilities is not None else []
     if config.audit_logger is not None and not isinstance(config.audit_logger, NullAuditLogger):
+        # Appended after ``config.capabilities``: audit is innermost, and list
+        # order breaks ties within that tier, so this keeps its
+        # ``before_tool_execute`` after every other innermost one's, such as
+        # harness's guardrail and tool-call judge. The record then carries the
+        # arguments after their rewrites, and a call they veto never reaches
+        # audit's own ``before_tool_execute``.
+        # ``test_the_arguments_are_the_ones_the_tool_received[innermost]``
+        # fails without it from pydantic-ai 2.54.
         capabilities.append(
             AuditCapability(config.audit_logger, ip_address=config.audit_ip_address),
         )
     if config.tool_guard is not None and config.tool_guard.enabled:
         capabilities.append(ToolGuard(registry, config=config.tool_guard))
     if config.tool_failure.enabled:
-        # No ordering constraint against the audit capability, and its record
-        # names the tool's exception either way. Before pydantic-ai 2.54 the
-        # audit's ``wrap_tool_execute`` surrounded only the tool's execution and
-        # this policy's ``on_tool_execute_error`` ran after it; from 2.54 the
-        # hook runs inside the wrapper, which is handed the policy's translation
-        # and describes the exception that translation was raised from.
-        capabilities.append(ToolFailurePolicy(config.tool_failure))
+        # Placed first: the policy is outermost, and first within that tier, so
+        # its ``on_tool_execute_error`` runs after every other capability's.
+        # Each of them, a step recorder included, sees the tool's exception
+        # before the policy turns it into the model's redacted copy.
+        # ``test_an_outermost_error_hook_still_sees_the_tools_exception`` fails
+        # without it.
+        capabilities.insert(0, ToolFailurePolicy(config.tool_failure))
     return Agent(
         model=config.model,
         deps_type=AgentDeps,

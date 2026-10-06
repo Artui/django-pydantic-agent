@@ -45,6 +45,16 @@ re-emitting them. What wrapping buys is the capability seam itself —
 `defer_loading`, and a uniform place to compose spec tools alongside audit and
 guard.
 
+A tool's input schema asks for what a call needs. A selector parameter with no
+default, which the toolset does not fill, is listed in `required`, and a
+single-item service advertises the lookup its target is resolved through, so a
+tool changing one row names the `pk` that picks it. A call that leaves such an
+argument out is a `ModelRetry` naming it, ``Missing required argument(s): `pk`.``,
+so the model supplies it on the next turn rather than the run ending on the
+selector's `TypeError`. Both need djangorestframework-pydantic-ai 0.33, which is
+why the extra is floored there, and the `[drf-mcp]` route asks for the same
+arguments and retries the same omission from drf-mcp 0.50.
+
 ### Declaring specs once
 
 `specs` takes either a `name -> spec` mapping or a **spec registry** —
@@ -91,6 +101,17 @@ transport would — including a selector tool's filter / ordering / pagination
 arguments and its `additionalProperties` policy, not just the input serializer's
 fields.
 
+That schema asks for what a call needs. A selector parameter with no default,
+which the server does not fill, is listed in `required`, so `get_row(*, pk)`
+requires `pk` rather than calling it optional. A service tool also advertises
+the target lookup its row is resolved through, its `collection_selector_spec`
+when it declares one and its `instance_selector_spec` otherwise, so a tool
+changing one row names the `pk` that picks it. A `many=True` service reads no
+target and advertises no lookup. Both need drf-mcp 0.50, which is why the
+extra is floored there; `[spec-tools]` builds its schemas the same way from
+djangorestframework-pydantic-ai 0.33, so one spec asks a model for the same
+arguments by either route.
+
 ### A tool that cannot run now
 
 A service's `affordances` can say when the operation is possible at all: a
@@ -124,11 +145,14 @@ refused with its code, as below.
 The bridge follows MCP's protocol-vs-tool boundary, which decides whether the
 model gets to recover:
 
-- a fault in the request the model produced — a malformed argument shape or an
-  unknown tool name, which drf-mcp 0.24+ serves on the same JSON-RPC `-32602` --
-  and tool-level `validation_error` results → `ModelRetry`, so the model retries
+- a fault in the request the model produced → `ModelRetry`, so the model retries
   with the field errors fixed, or with a real name (the retry lists the tools
-  this toolset advertises), instead of the run dying. That includes a
+  this toolset advertises), instead of the run dying. drf-mcp answers arguments
+  it refuses with a tool-level `validation_error` result, and an unknown tool
+  name on JSON-RPC `-32602`; the bridge retries both. Refused arguments include
+  one a selector requires that the call left out, which comes back keyed by its
+  name (`Invalid arguments: {"pk": ["This field is required."]}`) where below
+  drf-mcp 0.50 the selector's `TypeError` ended the run. They also include a
   read-shaping `QueryParam` value (a `fields` selection, say) the output
   serializer refuses while rendering, which drf-mcp 0.49+ answers as a
   `validation_error` naming the argument; on a paged tool the likeliest one is a
@@ -188,10 +212,26 @@ paths), so a harness capability, a first-party one, and your own all compose the
 same way, and pydantic-ai orders them by their own `get_ordering()`.
 
 !!! warning "Version-sensitive"
-    `pydantic-ai-harness` is 0.x and its minors may break. This package pins
-    `>=0.12,<0.13`; check the changelog before widening it. The 0.7 → 0.12 jump
+    `pydantic-ai-harness` is 0.x and its minors may break: the 0.7 → 0.12 jump
     changed the `StepStore` protocol, which is why `DefaultStepStore` grew an
-    `include_interrupted` argument and a `state` column.
+    `include_interrupted` argument and a `state` column. Even so, the `[harness]`
+    extra declares a **floor and no upper bound** (the number is in
+    `pyproject.toml`). A one-minor ceiling over an upstream that releases this
+    often made the package unresolvable on every harness release, whether or
+    not anything broke. Three checks stand in for it instead:
+
+    - **The lock** pins the harness and pydantic-ai every CI job runs against,
+      and is moved to the newest deliberately rather than left to drift.
+    - **The `lowest declared versions` job** runs the suite on every pull
+      request against the oldest harness the extra allows, so the floor stays
+      true.
+    - **The weekly `upstream drift` run** ignores the lock, resolves the newest
+      harness and pydantic-ai the extras allow, and runs the suite, so a
+      breaking release is found by a scheduled job rather than by you.
+
+    Recent harness releases pin `pydantic-ai-slim` to one exact release, so
+    with `[harness]` installed the harness version you resolve also decides
+    your pydantic-ai version.
 
 ### Long runs: compaction
 

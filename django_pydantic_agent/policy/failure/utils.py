@@ -1,4 +1,9 @@
-"""Internals the failure policy shares with the audit capability."""
+"""Internals of the failure policy.
+
+Here rather than private to ``tool_failure_policy.py`` because a trace records
+the exception's qualified name, so this module's path is part of what a failed
+tool span says.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +14,9 @@ class PolicyToolFailed(ToolFailed):
     """The ``ToolFailed`` that ``ToolFailurePolicy`` raises in place of a tool's
     exception, always ``from`` that exception.
 
-    It exists so ``AuditCapability`` can tell this translation apart from every
-    other ``ToolFailed``. A tool's own, a toolset's (a spec tool's timeout, an
-    MCP tool's error) and another capability's all reach the audit wrapper as a
-    plain ``ToolFailed`` under code mode, whose nested tool manager does not
-    convert them, and each one's message was written on purpose. Only this one
-    stands in for an exception whose text the model was not shown, so only this
-    one is described by its cause.
+    The audit record does not depend on it. ``AuditCapability``'s error hook
+    runs before the policy's and keeps the tool's own exception, so the record
+    never sees this one.
 
     A subclass rather than an attribute set on a plain ``ToolFailed``, and one
     that adds nothing to it. pydantic-ai's control flow treats it as a
