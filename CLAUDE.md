@@ -169,7 +169,7 @@ Change a rule here and change the config with it, or they drift apart again.
 | --- | --- | --- |
 | Python | 3.10 | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | Django | 4.2 LTS | 4.2, 5.0, 5.1, 5.2, 6.0 |
-| Pydantic-AI | 2.0 (the capability seam is v2-only) | latest in matrix |
+| Pydantic-AI | 2.16 (`ToolFailurePolicy` imports `ToolFailed`, which first exists there); 2.33 with `[anthropic]` (older releases hand the 1.x SDK an `httpx` client it rejects) | latest in matrix |
 
 ## Branching
 
