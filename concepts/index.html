@@ -914,18 +914,24 @@ record down. This package never reads them itself.</p>
 composes capabilities:</p>
 <ul>
 <li><strong><code>AuditCapability</code></strong>, when <code>audit_logger</code> is set and isn't the null logger.
-  It rides the <code>wrap_tool_execute</code> lifecycle hook, so it times and records
-  <strong>every</strong> tool the agent runs — registry tools <em>and</em> composed toolsets alike,
-  not just the ones registered here.</li>
+  It hooks pydantic-ai's tool execution, so it times and records <strong>every</strong> tool
+  the agent runs — registry tools <em>and</em> composed toolsets alike, not just the
+  ones registered here — with one record per execution describing the tool's
+  own.</li>
 <li><strong><code>ToolGuard</code></strong>, when <code>tool_guard</code> is set and <code>enabled</code>. It flips destructive
   tools to require approval.</li>
+<li><strong><code>ToolFailurePolicy</code></strong>, unless <code>tool_failure</code> turns it off. A raising tool
+  fails its own call rather than the whole run.</li>
 <li>Anything in <code>config.capabilities</code>, verbatim.</li>
 </ul>
-<p>Capabilities are composed <strong>order-independently</strong>. Each declares its position
-via <code>get_ordering()</code> (audit is outermost; the guard is orthogonal), and
-pydantic-ai's <code>CombinedCapability</code> topologically sorts them — so the list
-<code>build_agent</code> assembles needn't be pre-ordered, and a transport appending its
-own capability doesn't have to think about where.</p>
+<p>Each declares its position via <code>get_ordering()</code> and pydantic-ai's
+<code>CombinedCapability</code> sorts them topologically, so a transport appending its own
+capability to <code>config.capabilities</code> doesn't have to think about where. Audit is
+<strong>innermost</strong>, closest to the tool, and the failure policy <strong>outermost</strong>, so it
+converts a failure only after every other capability has seen it; the guard is
+orthogonal. Within a tier list order breaks ties, which is why <code>build_agent</code>
+appends audit after <code>config.capabilities</code> and places the policy before them.
+<a href="../policy/#ordering">Ordering</a> says what each position buys.</p>
 <p>The agent's <code>output_type</code> includes <code>DeferredToolRequests</code>, which turns on the
 tool-approval interrupt loop for <strong>server-side</strong> tools. That is deliberate and
 not merely a default: the AG-UI adapter only augments <code>output_type</code> when a run

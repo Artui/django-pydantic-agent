@@ -551,6 +551,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-capability-that-sorts-after-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A capability that sorts after audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-audit-needs-all-four-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why audit needs all four hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -955,6 +983,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-capability-that-sorts-after-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A capability that sorts after audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-audit-needs-all-four-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why audit needs all four hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -993,8 +1049,8 @@ off by default.</p>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">agent</span> <span class="o">=</span> <span class="n">build_agent</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">AgentConfig</span><span class="p">(</span><span class="n">model</span><span class="o">=...</span><span class="p">,</span> <span class="n">audit_logger</span><span class="o">=</span><span class="n">LoggingAuditLogger</span><span class="p">()))</span>
 </span></code></pre></div>
-<p>It rides the <code>wrap_tool_execute</code> lifecycle hook, which is the point: it times
-and records <strong>every tool the agent runs</strong>, not just the ones in the registry —
+<p>It hooks pydantic-ai's tool execution itself, which is the point: it times and
+records <strong>every tool the agent runs</strong>, not just the ones in the registry —
 drf-mcp and spec-toolset bridges, attachment tools, everything. A per-tool
 wrapper would miss the composed toolsets.</p>
 <p><code>NullAuditLogger</code> is the no-op default; <code>build_agent</code> skips composition entirely
@@ -1002,30 +1058,84 @@ when the logger is null, so "auditing off" costs nothing.</p>
 <h3 id="what-lands-in-a-record">What lands in a record<a class="headerlink" href="#what-lands-in-a-record" title="Permanent link">&para;</a></h3>
 <p><code>AuditEvent</code> carries <code>tool_name</code>, <code>arguments_repr</code>, <code>duration_ms</code>, <code>success</code>,
 and optional <code>error</code> / <code>result_size</code>.</p>
-<p>A failed call's <code>error</code> is the exception's type name and message, such as
-<code>"ValueError: kaboom"</code>. Where the <a href="#what-a-raising-tool-costs">failure policy</a>
-has turned a tool's exception into a failed result, the record describes that
-exception rather than the policy's model-facing text, so the operator's copy
-keeps what <code>include_detail</code> withholds.</p>
-<p>Every other <code>ToolFailed</code> keeps its own message, cause or not, because its raiser
-chose that message as the outcome: a tool's own, a toolset's, another
-capability's. Its cause can say less than the message does: a spec tool's
-timeout names the limit in the message, while the <code>asyncio</code> timeout it is
-raised from has no text at all. A tool's own <code>ToolFailed</code> is recorded as
+<p><strong>There is one record per tool execution, and it describes the tool's own
+execution</strong>, whatever other capabilities sort ahead of audit, which is
+everything composed through <code>AgentConfig.capabilities</code> unless its own ordering
+places it inside audit, and on every supported pydantic-ai release:</p>
+<ul>
+<li><code>arguments_repr</code> holds the arguments the tool received, after every other
+  capability's <code>before_tool_execute</code> has rewritten them.</li>
+<li><code>success</code> and <code>error</code> describe what the tool did. <code>error</code> reads
+  <code>Type: message</code> for the exception the tool raised, before anything converts
+  it or recovers from it.</li>
+<li><code>result_size</code> is the length of the tool's own result, before any
+  <code>after_tool_execute</code> rewrites it.</li>
+<li><code>duration_ms</code> spans the tool alone: from after every other capability's
+  <code>before_tool_execute</code> to before any <code>on_tool_execute_error</code> or
+  <code>after_tool_execute</code>. Time spent in other capabilities' hooks is not in it.</li>
+</ul>
+<p>A capability that <strong>sorts after audit</strong>, such as an innermost one passed to a
+single run, is outside that promise. It runs between audit and the tool, so
+what it does can reach the record, on every pydantic-ai release and through
+any of its hooks, and the record is then not the tool's own.
+<a href="#a-capability-that-sorts-after-audit">A capability that sorts after audit</a>
+says when a capability sorts there and gives measured examples of what it
+changes.</p>
+<p><strong>A failure is recorded as the failure, whatever a capability ahead of audit
+does with it next.</strong> The
+<a href="#what-a-raising-tool-costs">failure policy</a> turns a tool's exception into a
+<code>ToolFailed</code> for the model, redacted unless <code>include_detail</code> is set; the record
+still names the exception the tool raised, because this is the operator's copy.
+A capability whose <code>on_tool_execute_error</code> returns a value in the exception's
+place has decided what the run does next, not what the tool did, so that
+failure is recorded as a failure too. One that
+<a href="#a-capability-that-sorts-after-audit">sorts after audit</a> is the exception:
+a recovery in its error hook is recorded as a success from pydantic-ai 2.54,
+and so is one in its wrapper before 2.54, or from 2.54 when the tool raised
+<code>ModelRetry</code> or <code>ToolFailed</code>.</p>
+<p>On an ordinary call two exceptions never reach any capability's error hook,
+and are recorded as they propagate. A <code>ToolFailed</code> that <strong>a tool raises
+itself</strong> is converted by pydantic-ai into a <code>ToolFailedError</code> carrying the same
+message, so <code>raise ToolFailed("model copy") from e</code> is recorded as
+<code>ToolFailedError: model copy</code>, and the policy is never handed it. The drf-mcp
+bridge's refusals arrive the same way. A <code>ModelRetry</code> is recorded as
+<code>ToolRetryError: &lt;message&gt;</code>, and the retried call gets a record of its own.
+From a code-mode sandbox, whose nested tool manager converts neither, both are
+recorded as raised: <code>ToolFailed: model copy</code> and <code>ModelRetry: &lt;message&gt;</code>.</p>
+<p><strong>Once a tool's retry budget is spent, its <code>ModelRetry</code> is recorded
+differently.</strong> On an ordinary call pydantic-ai raises <code>UnexpectedModelBehavior</code>
+in its place, from inside the call, so it does reach the error hooks: the
+record reads <code>UnexpectedModelBehavior: Tool '&lt;name&gt;' exceeded max retries count
+of &lt;n&gt;...</code>, and the <a href="#what-a-raising-tool-costs">failure policy</a> converts it
+into a failed result like any other exception.</p>
+<p><strong>A <code>ToolFailed</code> keeps its own message, cause or not</strong>, because whoever raised
+it chose that message as the outcome: a tool, or a toolset such as the spec
+bridge. Its cause can say less than the message does: a spec tool's timeout
+names the limit in the message, while the <code>asyncio</code> timeout it is raised from
+has no text at all. Neither an exception's cause nor its context is read into
+the record. A tool's own <code>ToolFailed</code> is recorded as
 <code>"ToolFailedError: &lt;message&gt;"</code>, or as <code>"ToolFailed: &lt;message&gt;"</code> when it is
 called from a code-mode sandbox.</p>
-<p>From pydantic-ai 2.54, <code>before_tool_execute</code> and <code>after_tool_execute</code> run inside
-the audit's wrapper, where before 2.54 they ran outside it, and that changes
-what a record says about either hook:</p>
+<p><strong>A call that never runs the tool produces no record.</strong> Two things mark one:</p>
 <ul>
-<li><strong>A before-hook.</strong> The record now carries the validated arguments rather than
-  what the hook rewrote them to, so a redaction done there no longer reaches it.
-  A call the hook rejects is recorded as a failure, where before 2.54 it left no
-  record.</li>
-<li><strong>An after-hook.</strong> <code>result_size</code> now measures what the hook returned rather
-  than the tool's own result. A call the hook rejects is recorded as a failure,
-  where before 2.54 the record said the call had succeeded.</li>
+<li><strong>It stopped before audit's <code>before_tool_execute</code></strong>, with any exception: a
+  veto, a <code>ModelRetry</code> asking for different arguments, or an error.</li>
+<li><strong>Its outcome is one pydantic-ai treats as not executed</strong>: a
+  <code>SkipToolExecution</code> veto, or a <code>CallDeferred</code> or <code>ApprovalRequired</code>
+  deferral, wherever it was raised. A tool can raise either deferral itself,
+  and a toolset can raise one for it, as pydantic-ai's
+  <code>FunctionToolset.approval_required()</code> does.</li>
 </ul>
+<p>So neither a call pydantic-ai-harness's guardrails or tool-call judge veto, nor
+a destructive call the <a href="#the-destructive-tool-gate">gate</a> holds for approval,
+nor any other call deferred for approval has a record. The approved call is
+recorded when it is resumed and runs, like any other. A call deferred to
+external execution never runs in this process, so it has no record here: the
+record belongs to whatever executes it, as a record of what was refused
+belongs to whatever refused it.</p>
+<p>Audit never changes what the run sees. Its error hook re-raises what it is
+handed, and a sink that raises is caught and logged to the
+<code>django_pydantic_agent.audit</code> logger, costing the record rather than the run.</p>
 <p>Arguments are stored <strong>as a string</strong> (typically JSON-encoded), deliberately: it
 keeps records cheap to serialize and discourages retaining raw sensitive values.</p>
 <p><code>organization_id</code> and <code>target_type</code> exist on the shape but are <code>None</code> at this
@@ -1119,9 +1229,19 @@ comes back to the model marked failed, naming the tool, and the run carries on:<
 run survives is a reliability question; whether the exception's text reaches the
 model is a disclosure one. A traceback message can carry a query, a path or a
 credential, and anything handed to the model is also handed to whatever renders
-the transcript. The operator's copy is never redacted — the full exception goes
-to the audit logger and to the <code>django_pydantic_agent.failure</code> logger either way.</p>
-<p>Two things worth knowing:</p>
+the transcript. The policy never redacts the operator's copy. Audit records the
+exception it is handed in full (<a href="#what-lands-in-a-record">what lands in a record</a>),
+unless a capability <a href="#a-capability-that-sorts-after-audit">sorts after audit</a> and
+changes it, and whenever the policy converts a failure it first logs the
+exception, with its traceback, to the <code>django_pydantic_agent.failure</code> logger.
+That logger hears only about the failures the policy converts: nothing when
+another capability recovered the call or answered for the model with its own
+<code>ModelRetry</code> or <code>ToolFailed</code>, when an authorization refusal passes through, or
+when the exception never reached the error hooks at all, as a tool's own
+<code>ToolFailed</code> does not, nor its <code>ModelRetry</code> while it has retries left. A
+tool's <code>ModelRetry</code> with no retries left does reach them, as
+<code>UnexpectedModelBehavior</code>, so the policy converts it and logs it.</p>
+<p>Three things worth knowing:</p>
 <ul>
 <li><strong>It hangs off <code>on_tool_execute_error</code>, not a <code>try</code> around the handler.</strong>
   Pydantic-AI does not route control-flow exceptions to that hook —
@@ -1129,7 +1249,22 @@ to the audit logger and to the <code>django_pydantic_agent.failure</code> logger
   retry signal, or an explicit <code>ToolFailed</code>. So the approval gate above and the
   model's retry budget both pass through untouched. A hand-written
   <code>except Exception</code> would have caught <code>ApprovalRequired</code> and silently disabled
-  the gate.</li>
+  the gate. The exception is a tool's own <code>ModelRetry</code> once its budget is
+  spent: pydantic-ai raises <code>UnexpectedModelBehavior</code> in its place from inside
+  the call, which is routed to that hook, so the policy converts it into a
+  failed result where without the policy the run would end.</li>
+<li><strong>It converts last.</strong> It is pinned outermost and <code>build_agent</code> places it
+  first, so its <code>on_tool_execute_error</code> runs after every other capability's
+  (see <a href="#ordering">ordering</a>). Every other error hook is handed the exception
+  the tool raised, never the policy's redacted copy: a step recorder such as
+  pydantic-ai-harness's <code>StepPersistence</code> logs the real failure, and a
+  capability that recovers by returning a value answers before anything is
+  converted. An earlier error hook that raises <code>ModelRetry</code> or <code>ToolFailed</code> in
+  the exception's place has answered for the model, so that passes through
+  unconverted. A <code>ModelRetry</code> passed through spends the tool's retry budget,
+  and once that is spent the run ends with <code>UnexpectedModelBehavior</code>, which
+  pydantic-ai raises after every error hook has run, so the policy never sees
+  it. That is the opposite of a tool's own <code>ModelRetry</code>, above.</li>
 <li><strong>It spends no retry budget</strong>, because <code>ToolFailed</code> deliberately doesn't.
   A model can call a persistently broken tool again; bound that with run-level
   <code>UsageLimits</code> rather than expecting this to stop it.</li>
@@ -1158,18 +1293,109 @@ message is a place to find one.</p>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">(</span><span class="n">PermissionDenied</span><span class="p">,</span> <span class="ne">LookupError</span><span class="p">))</span>
 </span></code></pre></div>
 <h2 id="ordering">Ordering<a class="headerlink" href="#ordering" title="Permanent link">&para;</a></h2>
-<p>No capability here needs positioning. Each declares its place via
-<code>get_ordering()</code> — audit outermost, the guard orthogonal — and pydantic-ai's
-<code>CombinedCapability</code> topologically sorts them. The failure policy needs no
-constraint at all: it rides <code>on_tool_execute_error</code> while audit rides
-<code>wrap_tool_execute</code>, and the record names the original exception whichever way
-the list is sorted. Which of the two sees the failure first is pydantic-ai's
-call, and it changed in 2.54: before it, the wrapper surrounded only the tool's
-execution, so audit recorded the exception and the policy converted it
-afterwards; from 2.54 the error hook runs inside the wrapper, so audit is handed
-the policy's translation, recognises it as the policy's, and records the
-exception it was raised from.
-Append your own capabilities in any order.</p>
+<p>Each capability here declares its own place through <code>get_ordering()</code>, and
+pydantic-ai's <code>CombinedCapability</code> sorts them topologically, with list order
+breaking ties within a tier. Add your own to <code>AgentConfig.capabilities</code> in any
+order; <code>build_agent</code> positions its own around them.</p>
+<ul>
+<li><strong>Audit is innermost</strong>, the capability closest to the tool: its
+  <code>before_tool_execute</code> runs last, and its <code>on_tool_execute_error</code> and
+  <code>after_tool_execute</code> run first. <code>build_agent</code> appends it after
+  <code>config.capabilities</code>, which keeps it inside other innermost capabilities
+  too, such as pydantic-ai-harness's guardrail and tool-call judge, so the
+  record carries the arguments after their rewrites and a call they veto never
+  reaches audit's <code>before_tool_execute</code>.</li>
+<li><strong>The failure policy is outermost</strong>, and <code>build_agent</code> places it first, which
+  keeps it outside other outermost capabilities. pydantic-ai runs error hooks
+  innermost first, so the policy's runs last.</li>
+<li><strong>The guard is orthogonal.</strong> It touches only <code>prepare_tools</code>, before any call
+  is made.</li>
+</ul>
+<p>Composing these by hand rather than through <code>build_agent</code>, keep the same
+places: <code>AuditCapability</code> after any other innermost capability, and
+<code>ToolFailurePolicy</code> before any other outermost one.</p>
+<h3 id="a-capability-that-sorts-after-audit">A capability that sorts after audit<a class="headerlink" href="#a-capability-that-sorts-after-audit" title="Permanent link">&para;</a></h3>
+<p>A capability that sorts after audit <strong>runs between audit and the tool</strong>. Three
+compositions put one there, whatever <code>build_agent</code> did:</p>
+<ul>
+<li>an <strong>innermost capability passed to a single run</strong>, as in
+  <code>agent.run(..., capabilities=[...])</code>, which pydantic-ai sorts after the
+  agent's own capabilities;</li>
+<li>an innermost capability <strong>composed by hand after audit</strong>;</li>
+<li>a capability whose <strong>own ordering places it inside audit</strong>, wherever it is
+  composed, <code>AgentConfig.capabilities</code> included, as
+  <code>CapabilityOrdering(position="innermost", wrapped_by=[AuditCapability])</code>
+  does.</li>
+</ul>
+<p><strong>The rule: what such a capability does can reach the record, on every
+pydantic-ai release and through any of its hooks, and the record is then not
+the tool's own.</strong> Which of its hooks run between audit and the tool, and when,
+depends on the release. The examples below were measured with real agent
+runs; they are examples, not a list of the only ways.</p>
+<ul>
+<li><strong>From pydantic-ai 2.54, through its <code>before_tool_execute</code>,
+  <code>on_tool_execute_error</code> and <code>after_tool_execute</code>.</strong> A record misses its
+  argument rewrite; records a <code>ModelRetry</code> its <code>before_tool_execute</code> raises as
+  a failure, though the tool never ran; records its recovery as a success,
+  measuring the recovered value, and an exception it raises in place of the
+  tool's; records a <code>ModelRetry</code> its <code>after_tool_execute</code> raises as a failure,
+  though the tool succeeded; measures its result rewrite; and times its hooks
+  with the tool.</li>
+<li><strong>From 2.54, through its <code>wrap_tool_execute</code>, when the tool raised
+  <code>ModelRetry</code> or <code>ToolFailed</code>.</strong> pydantic-ai routes both past every error and
+  result hook, audit's included, so the record is whatever this wrapper hands
+  back. A record carries its rewrite of the failure's message, as
+  pydantic-ai-harness's <code>result_guard</code> does; records its recovery as a
+  success; and records an exception it raises in their place. If it runs the
+  tool again, the record describes the later run alone, and the run that
+  failed has none; if a capability ahead of audit refuses that rerun, the
+  record pairs the first run's arguments with the refusal, timed across both.</li>
+<li><strong>From 2.54, a rerun by its <code>wrap_tool_execute</code> after a failure audit's
+  error hook saw, or after a success.</strong> Audit's own hook settled the first
+  run, so the tool gets one record, of that run. Reruns it makes
+  concurrently, as through <code>asyncio.gather</code>, share one record, which can pair
+  one run's arguments with another's result.</li>
+<li><strong>Before 2.54, through its <code>wrap_tool_execute</code>.</strong> A record misses an argument
+  rewrite there; records a recovery as a success, an exception of its own in
+  place of the tool's, and a <code>ModelRetry</code> raised before the tool runs as a
+  failure; measures a result rewrite; carries a rewrite of a failed tool's
+  message; and times the wrapper with the tool. If it runs the tool again,
+  the one record holds the last run's outcome, with the arguments audit passed
+  on and the time of every run.</li>
+</ul>
+<p>A veto it raises is still not recorded on any release, because a
+<code>SkipToolExecution</code> is a call that did not execute.</p>
+<p><strong>Everything composed through <code>AgentConfig.capabilities</code> is unaffected,
+unless its own ordering places it inside audit.</strong> <code>build_agent</code> appends audit
+after all of it, so audit sorts last among the innermost capabilities there,
+and the record is the tool's own on every release. pydantic-ai-harness's tool
+guardrail and tool-call judge are innermost: in <code>config.capabilities</code> they sort
+before audit, and passed to a single run they sort after it. There, from 2.54,
+a guardrail's <code>retry</code> verdict is recorded as a failure, a <code>retry</code> from its
+<code>result_guard</code> turns the tool's success into a failure, and its
+<code>result_guard</code>'s <code>replace</code> is what the record measures. Its <code>result_guard</code>
+also screens the message of a tool that raised <code>ModelRetry</code> or <code>ToolFailed</code>,
+from its wrapper, so on every release a <code>replace</code> there is the message the
+record names.</p>
+<h3 id="why-audit-needs-all-four-hooks">Why audit needs all four hooks<a class="headerlink" href="#why-audit-needs-all-four-hooks" title="Permanent link">&para;</a></h3>
+<p>pydantic-ai 2.54 moved every capability's <code>before_tool_execute</code>,
+<code>on_tool_execute_error</code> and <code>after_tool_execute</code> inside the
+<code>wrap_tool_execute</code> chain; earlier releases ran them around it. A wrapper that
+recorded only what it saw would therefore describe a different thing on each
+side of 2.54. From 2.54 it would record a failure another capability recovers
+from as a success, a vetoed call as a failure, the arguments before a rewrite
+and the result after one, and other capabilities' hooks in the duration.</p>
+<p>For everything that sorts ahead of it, audit records the same thing on both,
+because it observes the tool from all four hooks. Its <code>before_tool_execute</code> captures the arguments and the start, its
+<code>on_tool_execute_error</code> the tool's exception, and its <code>after_tool_execute</code> the
+tool's result. Its wrapper is the only one that writes the record, once per
+execution, as it exits, preferring what the hooks captured over what it saw
+itself. Before 2.54 the innermost wrapper encloses the tool alone, so what it
+sees is already the tool's outcome; from 2.54 it encloses every hook, and the
+captures are what keep the record the tool's. Each call's captures belong to
+that call, so parallel calls in one run and concurrent runs of one agent never
+read each other's. Reruns that a capability sorted after audit makes
+concurrently, inside one call, are one call to audit, and share its captures.</p>
 <p>Full signatures in the <a href="../reference/policy/">policy reference</a>.</p>
 
 

@@ -2077,9 +2077,14 @@ alike — a <a class="autorefs autorefs-internal" title="ToolGuard" href="../pol
 destructive tools to require approval, and a
 <a class="autorefs autorefs-internal" title="ToolFailurePolicy" href="../policy/#django_pydantic_agent.ToolFailurePolicy"><code>ToolFailurePolicy</code></a>, on unless
 turned off, so a raising tool fails its own call rather than the whole run.
-Each declares its position through
-<code>get_ordering</code> and pydantic-ai sorts them, so the list needs no
-pre-ordering.</p>
+Each declares its position through <code>get_ordering</code> and pydantic-ai sorts
+them: audit innermost, so it records the tool's own execution, and the
+policy outermost, so it converts a failure only after every other
+capability has seen it. Within a tier list order breaks ties, so audit is
+appended after <code>config.capabilities</code> and the policy placed before them.
+What sorts after audit regardless, such as an innermost capability passed
+to a single run, can still reach the record; <code>AuditCapability</code> states
+that exception.</p>
 <p><strong>A destructive tool is not confirmed unless a config asks for it.</strong> The
 approval interrupt exists only when <code>config.tool_guard</code> is enabled, and
 even then it reaches a tool only if that tool's source declares the mutation

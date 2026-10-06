@@ -1082,6 +1082,15 @@ so they reach the model either way and the capability <em>delegates</em> rather 
 re-emitting them. What wrapping buys is the capability seam itself —
 <code>defer_loading</code>, and a uniform place to compose spec tools alongside audit and
 guard.</p>
+<p>A tool's input schema asks for what a call needs. A selector parameter with no
+default, which the toolset does not fill, is listed in <code>required</code>, and a
+single-item service advertises the lookup its target is resolved through, so a
+tool changing one row names the <code>pk</code> that picks it. A call that leaves such an
+argument out is a <code>ModelRetry</code> naming it, <code>Missing required argument(s): `pk`.</code>,
+so the model supplies it on the next turn rather than the run ending on the
+selector's <code>TypeError</code>. Both need djangorestframework-pydantic-ai 0.33, which is
+why the extra is floored there, and the <code>[drf-mcp]</code> route asks for the same
+arguments and retries the same omission from drf-mcp 0.50.</p>
 <h3 id="declaring-specs-once">Declaring specs once<a class="headerlink" href="#declaring-specs-once" title="Permanent link">&para;</a></h3>
 <p><code>specs</code> takes either a <code>name -&gt; spec</code> mapping or a <strong>spec registry</strong> —
 drf-services 0.27's <code>SpecRegistry</code>, the single declaration site for a project
@@ -1115,6 +1124,16 @@ locally, so the bridge advertises the <strong>same</strong> merged <code>inputSc
 transport would — including a selector tool's filter / ordering / pagination
 arguments and its <code>additionalProperties</code> policy, not just the input serializer's
 fields.</p>
+<p>That schema asks for what a call needs. A selector parameter with no default,
+which the server does not fill, is listed in <code>required</code>, so <code>get_row(*, pk)</code>
+requires <code>pk</code> rather than calling it optional. A service tool also advertises
+the target lookup its row is resolved through, its <code>collection_selector_spec</code>
+when it declares one and its <code>instance_selector_spec</code> otherwise, so a tool
+changing one row names the <code>pk</code> that picks it. A <code>many=True</code> service reads no
+target and advertises no lookup. Both need drf-mcp 0.50, which is why the
+extra is floored there; <code>[spec-tools]</code> builds its schemas the same way from
+djangorestframework-pydantic-ai 0.33, so one spec asks a model for the same
+arguments by either route.</p>
 <h3 id="a-tool-that-cannot-run-now">A tool that cannot run now<a class="headerlink" href="#a-tool-that-cannot-run-now" title="Permanent link">&para;</a></h3>
 <p>A service's <code>affordances</code> can say when the operation is possible at all: a
 condition written as a callable reads only the user and the request, never the
@@ -1143,11 +1162,14 @@ refused with its code, as below.</p>
 <p>The bridge follows MCP's protocol-vs-tool boundary, which decides whether the
 model gets to recover:</p>
 <ul>
-<li>a fault in the request the model produced — a malformed argument shape or an
-  unknown tool name, which drf-mcp 0.24+ serves on the same JSON-RPC <code>-32602</code> --
-  and tool-level <code>validation_error</code> results → <code>ModelRetry</code>, so the model retries
+<li>a fault in the request the model produced → <code>ModelRetry</code>, so the model retries
   with the field errors fixed, or with a real name (the retry lists the tools
-  this toolset advertises), instead of the run dying. That includes a
+  this toolset advertises), instead of the run dying. drf-mcp answers arguments
+  it refuses with a tool-level <code>validation_error</code> result, and an unknown tool
+  name on JSON-RPC <code>-32602</code>; the bridge retries both. Refused arguments include
+  one a selector requires that the call left out, which comes back keyed by its
+  name (<code>Invalid arguments: {"pk": ["This field is required."]}</code>) where below
+  drf-mcp 0.50 the selector's <code>TypeError</code> ended the run. They also include a
   read-shaping <code>QueryParam</code> value (a <code>fields</code> selection, say) the output
   serializer refuses while rendering, which drf-mcp 0.49+ answers as a
   <code>validation_error</code> naming the argument; on a paged tool the likeliest one is a
@@ -1196,10 +1218,26 @@ paths), so a harness capability, a first-party one, and your own all compose the
 same way, and pydantic-ai orders them by their own <code>get_ordering()</code>.</p>
 <div class="admonition warning">
 <p class="admonition-title">Version-sensitive</p>
-<p><code>pydantic-ai-harness</code> is 0.x and its minors may break. This package pins
-<code>&gt;=0.12,&lt;0.13</code>; check the changelog before widening it. The 0.7 → 0.12 jump
+<p><code>pydantic-ai-harness</code> is 0.x and its minors may break: the 0.7 → 0.12 jump
 changed the <code>StepStore</code> protocol, which is why <code>DefaultStepStore</code> grew an
-<code>include_interrupted</code> argument and a <code>state</code> column.</p>
+<code>include_interrupted</code> argument and a <code>state</code> column. Even so, the <code>[harness]</code>
+extra declares a <strong>floor and no upper bound</strong> (the number is in
+<code>pyproject.toml</code>). A one-minor ceiling over an upstream that releases this
+often made the package unresolvable on every harness release, whether or
+not anything broke. Three checks stand in for it instead:</p>
+<ul>
+<li><strong>The lock</strong> pins the harness and pydantic-ai every CI job runs against,
+  and is moved to the newest deliberately rather than left to drift.</li>
+<li><strong>The <code>lowest declared versions</code> job</strong> runs the suite on every pull
+  request against the oldest harness the extra allows, so the floor stays
+  true.</li>
+<li><strong>The weekly <code>upstream drift</code> run</strong> ignores the lock, resolves the newest
+  harness and pydantic-ai the extras allow, and runs the suite, so a
+  breaking release is found by a scheduled job rather than by you.</li>
+</ul>
+<p>Recent harness releases pin <code>pydantic-ai-slim</code> to one exact release, so
+with <code>[harness]</code> installed the harness version you resolve also decides
+your pydantic-ai version.</p>
 </div>
 <h3 id="long-runs-compaction">Long runs: compaction<a class="headerlink" href="#long-runs-compaction" title="Permanent link">&para;</a></h3>
 <p>A tool-heavy run grows its message history until it crowds the context window.
