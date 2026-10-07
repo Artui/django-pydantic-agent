@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest
 from django.test import RequestFactory
 from pydantic_ai import Agent, ModelRetry, ToolFailed
@@ -27,6 +28,7 @@ from django_pydantic_agent.integrations.drf_mcp import DRFMCPToolset
 from tests.integrations.drf_server import BOOKS, REFUSED_SPEC, server
 from tests.integrations.drf_server_lookup import lookup_server
 from tests.integrations.drf_specs_lookup import SPECS as LOOKUP_SPECS
+from tests.integrations.drf_specs_lookup import Row
 
 
 def _request() -> HttpRequest:
@@ -664,34 +666,46 @@ async def test_a_selector_parameter_without_a_default_is_required(name: str) -> 
 
 
 @pytest.mark.parametrize(
-    ("mcp_server", "name", "arguments", "detail"),
+    ("mcp_server", "name", "arguments", "message", "detail"),
     [
         pytest.param(
-            lookup_server, "get_row", {}, {"pk": ["This field is required."]}, id="missing"
+            lookup_server,
+            "get_row",
+            {},
+            "Missing required argument(s): `pk`.",
+            {"pk": ["This field is required."]},
+            id="missing",
         ),
         pytest.param(
             server,
             "add",
             {"a": "not_a_number", "b": 1},
+            "Invalid arguments",
             {"a": ["A valid integer is required."]},
             id="wrong-type",
         ),
     ],
 )
 async def test_refused_arguments_arrive_as_a_validation_error_result(
-    mcp_server: MCPServer, name: str, arguments: dict[str, Any], detail: dict[str, Any]
+    mcp_server: MCPServer,
+    name: str,
+    arguments: dict[str, Any],
+    message: str,
+    detail: dict[str, Any],
 ) -> None:
     # The answer the retries here ride on, read off the real server rather than
     # a double: an ``isError`` result whose error is a ``validation_error``
     # keyed by the refused name, the branch of ``call_tool`` that raises
-    # ``ModelRetry`` with the detail. A missing selector argument raised
-    # ``TypeError`` before drf-mcp 0.50, and a wrong type was JSON-RPC -32602.
+    # ``ModelRetry`` with the message and, where it adds something, the detail.
+    # A missing selector argument raised ``TypeError`` before drf-mcp 0.50, and
+    # a wrong type was JSON-RPC -32602. From drf-mcp 0.51 the missing one's
+    # message names the argument, while a refused value keeps the generic one.
     result = await mcp_server.acall_tool(name, arguments, user=AnonymousUser())
     assert isinstance(result, dict), result
     assert result["isError"] is True
     assert json.loads(result["content"][0]["text"])["error"] == {
         "type": "validation_error",
-        "message": "Invalid arguments",
+        "message": message,
         "detail": detail,
     }
 
@@ -738,3 +752,33 @@ async def test_both_bridges_require_the_same_arguments(name: str) -> None:
         in_process[name].tool_def.parameters_json_schema.get("required", [])
     )
     assert "pk" in required
+
+
+def _recent_rows(*, page: int = 1) -> list[dict[str, Any]]:
+    """List rows, taking a parameter the list pipeline strips from every call."""
+    return []
+
+
+async def test_both_routes_refuse_a_list_selector_taking_page() -> None:
+    """One spec neither route can serve, refused by both before a call is made.
+
+    A list tool's ``page`` is its pagination argument, which both routes take
+    out of the call before the selector runs, so a selector declaring one was
+    advertised and ran on its default whatever page the model asked for. The
+    floors on both extras are where each route refuses it instead, and they
+    move together so one spec is served by both or refused by both. Each
+    message is matched on the reason, not only the name, so a refusal for some
+    other cause does not pass here.
+    """
+    spec = SelectorSpec(
+        kind=SelectorKind.LIST,
+        selector=_recent_rows,
+        output_serializer=Row,
+        permission_classes=[AllowAny],
+    )
+    with pytest.raises(ImproperlyConfigured, match=r"\['page'\], but `page` and `limit`"):
+        MCPServer(name="refused").register_selector_tool(
+            name="recent_rows", description="List rows.", spec=spec
+        )
+    with pytest.raises(ImproperlyConfigured, match=r"\['page'\], but `page` and `limit`"):
+        build_spec_capability({"recent_rows": spec})

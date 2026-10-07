@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.52`
+  (was `>=0.50`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.35` (was `>=0.33`), and these two floors
+  move together.** Both releases refuse, before any call, a tool no call could
+  be served through. A list selector taking `page` or `limit`, or a parameter a
+  `QueryParam` also names, was advertised and never received the model's value,
+  because both routes take those names out of the call before the selector
+  runs: a required one failed every call, and a defaulted one ran on its
+  default whatever page the model asked for. drf-mcp now raises
+  `ImproperlyConfigured` when the tool is registered, and
+  `build_spec_capability` when it builds the toolset, so one spec is served by
+  both routes or refused by both. Both also hand back as a retry what used to
+  end the run or vanish. A parameter the call could have carried and nothing
+  filled, one a `kwargs=` provider declines say, raised the selector's
+  `TypeError` and is now a refusal naming it. On the `[drf-mcp]` route, a chain
+  step whose service raises DRF's `ValidationError` is a `validation_error`
+  result where the exception escaped `call_tool`, and an argument a service
+  tool with no `input_serializer` does not declare is refused where it was
+  dropped unread; `DRFMCPToolset` raises each as `ModelRetry`. That last one is
+  the change a project can notice: a call that sent such an argument succeeded
+  and now costs one retry. Registering the policy drf-mcp used to choose for
+  such a tool keeps the old behaviour: `UnknownArguments.PASSTHROUGH` under a
+  spreading binding, `IGNORE` under `BUNDLE`. drf-mcp's
+  refusal for a missing argument now names it, ``Missing required argument(s):
+  `pk`.``, the sentence the `[spec-tools]` route already wrote. Both floor
+  drf-services at 0.56.0 in turn, and the Pydantic-AI one hard: its toolset
+  imports names that first exist there. A new test registers one list selector
+  taking `page` on each route and asserts both refuse it for that reason, and
+  the `validation_error` result the bridge's retry rides on is pinned with the
+  new message.
+
 ## [0.27.0] — 2026-10-05
 
 ### Changed

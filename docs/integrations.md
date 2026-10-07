@@ -51,9 +51,14 @@ single-item service advertises the lookup its target is resolved through, so a
 tool changing one row names the `pk` that picks it. A call that leaves such an
 argument out is a `ModelRetry` naming it, ``Missing required argument(s): `pk`.``,
 so the model supplies it on the next turn rather than the run ending on the
-selector's `TypeError`. Both need djangorestframework-pydantic-ai 0.33, which is
-why the extra is floored there, and the `[drf-mcp]` route asks for the same
-arguments and retries the same omission from drf-mcp 0.50.
+selector's `TypeError`. Both arrived in djangorestframework-pydantic-ai 0.33, and
+the `[drf-mcp]` route asks for the same arguments and retries the same omission
+from drf-mcp 0.50. The extra is floored where a parameter a `kwargs=` provider
+declines, and the model left out, is retried the same way rather than reaching
+the selector, and where a selector parameter the toolset takes out of every
+call, a list selector's `page` or `limit` or a name a `QueryParam` also claims,
+makes `build_spec_capability` raise `ImproperlyConfigured` rather than
+advertising an argument whose value never arrives.
 
 ### Declaring specs once
 
@@ -107,10 +112,12 @@ requires `pk` rather than calling it optional. A service tool also advertises
 the target lookup its row is resolved through, its `collection_selector_spec`
 when it declares one and its `instance_selector_spec` otherwise, so a tool
 changing one row names the `pk` that picks it. A `many=True` service reads no
-target and advertises no lookup. Both need drf-mcp 0.50, which is why the
-extra is floored there; `[spec-tools]` builds its schemas the same way from
-djangorestframework-pydantic-ai 0.33, so one spec asks a model for the same
-arguments by either route.
+target and advertises no lookup. Both arrived in drf-mcp 0.50; `[spec-tools]`
+builds its schemas the same way from djangorestframework-pydantic-ai 0.33, so one
+spec asks a model for the same arguments by either route. The extra is floored
+where drf-mcp refuses at registration a selector parameter it takes out of every
+call, as `[spec-tools]` refuses it when the toolset is built, so one spec is
+served by both routes or refused by both.
 
 ### A tool that cannot run now
 

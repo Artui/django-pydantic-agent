@@ -65,7 +65,31 @@ openai = ["pydantic-ai-slim[openai]>=2.16,<3"]
 google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
 # toolset (the agent calls DRF tools without a network hop).
-# Floored at 0.50, where a tool's ``inputSchema`` requires what a call needs. A
+# Floored where an argument a call gets wrong comes back as a retry naming what
+# to change, rather than as a crash, a silent drop or a server fault. A call
+# leaving out a required argument is refused with a message naming it,
+# ``Missing required argument(s): `pk`.``, which is the sentence the
+# ``[spec-tools]`` route writes for the same call; it said ``Invalid
+# arguments`` and left the name to the detail. A chain step whose service
+# raises DRF's ``ValidationError`` is a ``validation_error`` result, which this
+# bridge raises as ``ModelRetry``; below it the exception escaped
+# ``acall_tool``, and so ``call_tool``, ending the run. A service tool with no
+# ``input_serializer`` refuses an argument it does not declare, as a
+# ``validation_error`` result the bridge retries, and its ``inputSchema`` lists
+# the ones it does; below it the call ran with the argument dropped unread. A
+# parameter the call could have carried and nothing filled, one a ``kwargs=``
+# provider declines say, is refused the same way where it raised ``TypeError``
+# out of the call. And a tool that
+# could never serve, a ``LIST`` selector taking ``page`` or a service requiring
+# ``data`` with no ``input_serializer`` to fill it, is refused at registration
+# rather than failing every call it is offered for. It moves in lockstep with
+# the ``[spec-tools]`` floor below, which refuses the same selector parameters
+# when the toolset is built and retries the same unfilled parameter: a
+# mismatched pair would register one spec on one route and refuse it on the
+# other, and word one omission two ways. Both floor drf-services at 0.56.0 in
+# turn, whose dispatch is what refuses the unfilled parameter.
+#
+# 0.50 was the previous floor, where a tool's ``inputSchema`` requires what a call needs. A
 # selector parameter with no default, which the server does not fill, is listed
 # in ``required``, and a service tool advertises the target lookup its row is
 # resolved through, so a tool changing one row names the ``pk`` that picks it.
@@ -81,9 +105,9 @@ google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # fatal when missed, on the other. It floors drf-services at 0.55.0 in turn,
 # and hard: ``tools/list`` passes ``spec_to_json_schema(supplied=)``, which
 # first exists there, so below it listing any selector tool or target lookup
-# raises ``TypeError``.
+# raises ``TypeError``. Subsumed.
 #
-# 0.49 was the previous floor, where a read-shaping ``QueryParam`` value the output
+# 0.49 was the floor before that, where a read-shaping ``QueryParam`` value the output
 # serializer refuses while rendering is an ``isError`` ``validation_error``
 # result naming the argument, which this bridge raises as ``ModelRetry``. Below
 # it the refusal escaped ``call_tool`` as a raw ``ValidationError`` and ended the
@@ -134,10 +158,29 @@ google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # 0.37 was the floor before that, the first release carrying drf-services>=0.49
 # after a serializer that nests itself crashed the catalog walk. That constraint
 # still holds and is subsumed.
-drf-mcp = ["djangorestframework-mcp-server>=0.50"]
+drf-mcp = ["djangorestframework-mcp-server>=0.52"]
 # Expose drf-services specs directly as agent tools via djangorestframework-
 # pydantic-ai's SpecCapability — no MCP server in the path.
-# Floored at 0.33, where a tool's input schema requires what a call needs: a
+# Floored where a spec no call could be served through is refused when the
+# toolset is built, and a parameter nothing filled is a retry rather than a
+# crash. A selector parameter the toolset takes out of every call, a list
+# selector's ``page`` or ``limit`` or a name a ``QueryParam`` also claims, is an
+# ``ImproperlyConfigured`` from ``build_spec_capability``; below it the
+# parameter was advertised and never received the model's value, so a required
+# one failed every call and a defaulted one ran on its default whatever the
+# model sent. A parameter a ``kwargs=`` provider declines and the model left
+# out is a ``ModelRetry`` naming it, where it reached the selector and raised
+# ``TypeError`` out of the run. A value sent for a ``NotClientInput`` name is
+# dropped under every unknown-argument policy, and a key any callable in a
+# service call marks ``NotClientInput`` is no longer advertised beside its
+# target lookup. It moves in lockstep with the ``[drf-mcp]`` floor above for
+# the reason that pairing always has: both routes now refuse the same specs,
+# ask for the same arguments and word an omission the same way. It
+# floors drf-services at 0.56.0 in turn, and hard: the toolset imports
+# ``provider_keys``, ``can_present_nothing`` and ``server_owned_keys`` at module
+# level, and they first exist there.
+#
+# 0.33 was the previous floor, where a tool's input schema requires what a call needs: a
 # selector parameter with no default, which the toolset does not fill, is listed
 # in ``required``, and a single-item service advertises the lookup its target is
 # resolved through. A call that leaves such an argument out is a ``ModelRetry``
@@ -148,9 +191,9 @@ drf-mcp = ["djangorestframework-mcp-server>=0.50"]
 # retry. It floors drf-services at 0.55.0 in turn, and hard: building the
 # toolset passes ``spec_to_json_schema(supplied=)``, so below it
 # ``build_spec_capability`` raises ``TypeError`` for any selector spec or
-# service target lookup.
+# service target lookup. Subsumed.
 #
-# 0.32 was the previous floor, where a read-shaping value the output serializer refuses
+# 0.32 was the floor before that, where a read-shaping value the output serializer refuses
 # while rendering is a ``ModelRetry`` naming the argument rather than a raw
 # ``ValidationError`` ending the run, and an explicit ``null`` for one is
 # omitted rather than reaching the serializer as the string ``None``. It moves in
@@ -191,7 +234,7 @@ drf-mcp = ["djangorestframework-mcp-server>=0.50"]
 # 0.24 was the floor before that, for the recursion crash above one level down:
 # build_spec_capability constructs a SpecCapability, whose tool definitions are
 # schemas, so the crash landed at construction rather than at a call. Subsumed.
-spec-tools = ["djangorestframework-pydantic-ai>=0.33"]
+spec-tools = ["djangorestframework-pydantic-ai>=0.35"]
 # pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
 # CodeMode batching, compaction, step persistence, sub-agents.
 harness = ["pydantic-ai-harness[code-mode]>=0.13"]
@@ -222,9 +265,9 @@ dev = [
     # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
     # Must move in lockstep with the extra — a dev group pinning the old band
     # makes the project unsatisfiable against its own extra.
-    "djangorestframework-mcp-server>=0.50",
+    "djangorestframework-mcp-server>=0.52",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.
-    "djangorestframework-pydantic-ai>=0.33",
+    "djangorestframework-pydantic-ai>=0.35",
     # The [harness] extra's backing package, so the harness capabilities run in dev.
     "pydantic-ai-harness[code-mode]>=0.13",
     # Provider libs so the api_key / provider model-building path is exercised
