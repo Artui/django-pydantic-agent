@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-10-07
+
+### Changed
+
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.52`
+  (was `>=0.50`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.35` (was `>=0.33`), and these two floors
+  move together.** Both releases refuse, before any call, a tool no call could
+  be served through. A list selector taking `page` or `limit`, or a parameter a
+  `QueryParam` also names, was advertised and never received the model's value,
+  because both routes take those names out of the call before the selector
+  runs: a required one failed every call, and a defaulted one ran on its
+  default whatever page the model asked for. drf-mcp now raises
+  `ImproperlyConfigured` when the tool is registered, and
+  `build_spec_capability` when it builds the toolset, so one spec is served by
+  both routes or refused by both. Both also hand back as a retry what used to
+  end the run or vanish. A parameter the call could have carried and nothing
+  filled, one a `kwargs=` provider declines say, raised the selector's
+  `TypeError` and is now a refusal naming it. On the `[drf-mcp]` route, a chain
+  step whose service raises DRF's `ValidationError` is a `validation_error`
+  result where the exception escaped `call_tool`, and an argument a service
+  tool with no `input_serializer` does not declare is refused where it was
+  dropped unread; `DRFMCPToolset` raises each as `ModelRetry`. That last one is
+  the change a project can notice: a call that sent such an argument succeeded
+  and now costs one retry. Registering the policy drf-mcp used to choose for
+  such a tool keeps the old behaviour: `UnknownArguments.PASSTHROUGH` under a
+  spreading binding, `IGNORE` under `BUNDLE`. drf-mcp's
+  refusal for a missing argument now names it, ``Missing required argument(s):
+  `pk`.``, the sentence the `[spec-tools]` route already wrote. Both floor
+  drf-services at 0.56.0 in turn, and the Pydantic-AI one hard: its toolset
+  imports names that first exist there. A new test registers one list selector
+  taking `page` on each route and asserts both refuse it for that reason, and
+  the `validation_error` result the bridge's retry rides on is pinned with the
+  new message.
+
+### Fixed
+
+- **`DRFMCPToolset` no longer repeats a refusal its message already states.**
+  The bridge's `ModelRetry` was drf-mcp's message with the field detail
+  appended as JSON, every time. drf-mcp's render-time refusal quotes that
+  detail in its message, and its missing-argument refusal now names the
+  argument, so a model read ``Missing required argument(s): `pk`.: {"pk":
+  ["This field is required."]}``, one sentence twice, where the `[spec-tools]`
+  route raises ``Missing required argument(s): `pk`.`` once for the same call.
+  The detail is now left off when the message names everything in it, as a
+  whole token: every key at any depth, and where a value sits under no field,
+  as a bare list or string or under DRF's non-field key, that value's own
+  words. Otherwise the detail is kept whole, never in part, so drf-mcp's
+  generic `Invalid arguments` keeps its field detail. A field's name stands for
+  its reasons, which holds for every message that names one today: the
+  missing-argument line's reason is always that the field is required, and the
+  render-time line quotes its reason. A future message naming a field without
+  its reason would lose the reason with the detail. The non-field key is read
+  from DRF's `NON_FIELD_ERRORS_KEY` setting. Tests cover the missing-argument
+  detail dropped, the generic message kept with a one-letter key that a
+  substring match would find inside `arguments`, a nested key the message does
+  not name, a partial overlap, non-field strings quoted and not, a renamed
+  non-field key, and the two routes handing back identical retry text for the
+  same omission.
+
 ## [0.27.0] — 2026-10-05
 
 ### Changed
@@ -1579,7 +1639,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.25.0...v0.26.0

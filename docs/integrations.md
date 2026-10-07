@@ -51,9 +51,14 @@ single-item service advertises the lookup its target is resolved through, so a
 tool changing one row names the `pk` that picks it. A call that leaves such an
 argument out is a `ModelRetry` naming it, ``Missing required argument(s): `pk`.``,
 so the model supplies it on the next turn rather than the run ending on the
-selector's `TypeError`. Both need djangorestframework-pydantic-ai 0.33, which is
-why the extra is floored there, and the `[drf-mcp]` route asks for the same
-arguments and retries the same omission from drf-mcp 0.50.
+selector's `TypeError`. Both arrived in djangorestframework-pydantic-ai 0.33, and
+the `[drf-mcp]` route asks for the same arguments and retries the same omission
+from drf-mcp 0.50. The extra is floored where a parameter a `kwargs=` provider
+declines, and the model left out, is retried the same way rather than reaching
+the selector, and where a selector parameter the toolset takes out of every
+call, a list selector's `page` or `limit` or a name a `QueryParam` also claims,
+makes `build_spec_capability` raise `ImproperlyConfigured` rather than
+advertising an argument whose value never arrives.
 
 ### Declaring specs once
 
@@ -107,10 +112,12 @@ requires `pk` rather than calling it optional. A service tool also advertises
 the target lookup its row is resolved through, its `collection_selector_spec`
 when it declares one and its `instance_selector_spec` otherwise, so a tool
 changing one row names the `pk` that picks it. A `many=True` service reads no
-target and advertises no lookup. Both need drf-mcp 0.50, which is why the
-extra is floored there; `[spec-tools]` builds its schemas the same way from
-djangorestframework-pydantic-ai 0.33, so one spec asks a model for the same
-arguments by either route.
+target and advertises no lookup. Both arrived in drf-mcp 0.50; `[spec-tools]`
+builds its schemas the same way from djangorestframework-pydantic-ai 0.33, so one
+spec asks a model for the same arguments by either route. The extra is floored
+where drf-mcp refuses at registration a selector parameter it takes out of every
+call, as `[spec-tools]` refuses it when the toolset is built, so one spec is
+served by both routes or refused by both.
 
 ### A tool that cannot run now
 
@@ -149,14 +156,20 @@ model gets to recover:
   with the field errors fixed, or with a real name (the retry lists the tools
   this toolset advertises), instead of the run dying. drf-mcp answers arguments
   it refuses with a tool-level `validation_error` result, and an unknown tool
-  name on JSON-RPC `-32602`; the bridge retries both. Refused arguments include
-  one a selector requires that the call left out, which comes back keyed by its
-  name (`Invalid arguments: {"pk": ["This field is required."]}`) where below
-  drf-mcp 0.50 the selector's `TypeError` ended the run. They also include a
-  read-shaping `QueryParam` value (a `fields` selection, say) the output
-  serializer refuses while rendering, which drf-mcp 0.49+ answers as a
-  `validation_error` naming the argument; on a paged tool the likeliest one is a
-  selection written against the page envelope rather than one item;
+  name on JSON-RPC `-32602`; the bridge retries both. The retry is drf-mcp's
+  message, then its field detail as JSON, unless the message already names
+  every field in the detail, nested ones included, in which case the detail is
+  left off rather than read twice. A detail is sent whole or not at all, so
+  `Invalid arguments: {"a": ["A valid integer is required."]}` keeps it, since
+  that message names nothing. Refused arguments include one a selector
+  requires that the call left out, which the model reads as
+  ``Missing required argument(s): `pk`.``, word for word what `[spec-tools]`
+  raises for the same call, where below drf-mcp 0.50 the selector's `TypeError`
+  ended the run. They also include a read-shaping `QueryParam` value (a
+  `fields` selection, say) the output serializer refuses while rendering, which
+  drf-mcp 0.49+ answers as a `validation_error` naming the argument and quoting
+  the serializer's reason; on a paged tool the likeliest one is a selection
+  written against the page envelope rather than one item;
 - a tool-level `input_required` result (a service asking for more input, which
   an in-process caller cannot be asked for mid-call) → `ModelRetry` naming the
   arguments to add on the next call;
