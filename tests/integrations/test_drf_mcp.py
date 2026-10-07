@@ -7,7 +7,7 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -24,7 +24,7 @@ from rest_framework_services.types.selector_spec import SelectorSpec
 
 from django_pydantic_agent.agent.types.agent_deps import AgentDeps
 from django_pydantic_agent.integrations.build_spec_capability import build_spec_capability
-from django_pydantic_agent.integrations.drf_mcp import DRFMCPToolset
+from django_pydantic_agent.integrations.drf_mcp import DRFMCPToolset, _retry_message
 from tests.integrations.drf_server import BOOKS, REFUSED_SPEC, server
 from tests.integrations.drf_server_lookup import lookup_server
 from tests.integrations.drf_specs_lookup import SPECS as LOOKUP_SPECS
@@ -549,9 +549,95 @@ async def test_excluded_names_are_skipped_registry_wins() -> None:
 
 
 def test_retry_message_without_detail_is_the_bare_message() -> None:
-    from django_pydantic_agent.integrations.drf_mcp import _retry_message
-
     assert _retry_message("nope", None) == "nope"
+
+
+def test_a_detail_the_message_already_names_is_dropped() -> None:
+    # drf-mcp's missing-argument line names the argument its detail is keyed
+    # by, and that detail's only reason is "required", which the line says.
+    assert (
+        _retry_message("Missing required argument(s): `pk`.", {"pk": ["This field is required."]})
+        == "Missing required argument(s): `pk`."
+    )
+
+
+def test_a_name_counts_only_as_a_whole_token() -> None:
+    """Holds the lookarounds: a name is matched as a token, never a substring.
+
+    ``a`` sits inside ``arguments``, so a substring match would drop the only
+    place the generic message's reason is written. A key ending in a non-word
+    character still matches, which ``\\b`` would refuse.
+    """
+    detail = {"a": ["A valid integer is required."]}
+    assert _retry_message("Invalid arguments", detail) == (
+        'Invalid arguments: {"a": ["A valid integer is required."]}'
+    )
+    assert _retry_message("Missing required argument(s): `a`.", detail) == (
+        "Missing required argument(s): `a`."
+    )
+    assert (
+        _retry_message("Missing required argument(s): `tags[]`.", {"tags[]": ["Required."]})
+        == "Missing required argument(s): `tags[]`."
+    )
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        pytest.param({"items": {"name": ["This field is required."]}}, id="dict"),
+        pytest.param({"items": [{}, {"name": ["This field is required."]}]}, id="list"),
+    ],
+)
+def test_a_nested_key_is_a_name_the_message_must_carry(detail: Any) -> None:
+    # Every key counts, at any depth: naming ``items`` says nothing about which
+    # of its fields was refused.
+    assert _retry_message("Invalid `items`.", detail) == (f"Invalid `items`.: {json.dumps(detail)}")
+    assert _retry_message("Invalid `name` in `items`.", detail) == "Invalid `name` in `items`."
+
+
+def test_a_detail_the_message_names_only_in_part_is_kept_whole() -> None:
+    # Every name, not any: the field the message leaves out is still in the
+    # detail, and the detail is never cut down to it.
+    detail = {"pk": ["This field is required."], "name": ["This field is required."]}
+    assert _retry_message("Missing required argument(s): `pk`.", detail) == (
+        f"Missing required argument(s): `pk`.: {json.dumps(detail)}"
+    )
+    assert (
+        _retry_message("Missing required argument(s): `name`, `pk`.", detail)
+        == "Missing required argument(s): `name`, `pk`."
+    )
+
+
+_UNEXPECTED = "Unexpected argument(s): 'notify_owner'."
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        pytest.param({"non_field_errors": [_UNEXPECTED]}, id="non-field-key"),
+        pytest.param([_UNEXPECTED], id="bare-list"),
+        pytest.param(_UNEXPECTED, id="bare-string"),
+    ],
+)
+def test_a_reason_under_no_field_counts_as_its_own_words(detail: Any) -> None:
+    """Holds the non-field branch: DRF's non-field key is structure, not a name.
+
+    Its strings sit under no field, so they are what the message has to quote,
+    as a bare list or string's are; the key itself never counts as said.
+    """
+    assert _retry_message(_UNEXPECTED, detail) == _UNEXPECTED
+    assert _retry_message("Invalid arguments", detail) == (
+        f"Invalid arguments: {json.dumps(detail)}"
+    )
+
+
+@override_settings(REST_FRAMEWORK={"NON_FIELD_ERRORS_KEY": "__all__"})
+def test_the_non_field_key_is_read_from_drf_settings() -> None:
+    # A project renaming DRF's non-field key moves which key is structure: the
+    # renamed key's strings must be quoted, and the default name is a field.
+    assert _retry_message(_UNEXPECTED, {"__all__": [_UNEXPECTED]}) == _UNEXPECTED
+    detail = {"non_field_errors": [_UNEXPECTED]}
+    assert _retry_message(_UNEXPECTED, detail) == f"{_UNEXPECTED}: {json.dumps(detail)}"
 
 
 class _SelectableRow(serializers.Serializer):
@@ -621,8 +707,10 @@ async def test_a_selection_refused_while_rendering_is_one_retry_then_the_page() 
     ]
     assert len(retries) == 1
     # The argument is named, the serializer is quoted in its own words, and the
-    # model is told what the selection applies to on a paged tool.
-    assert retries[0].startswith(
+    # model is told what the selection applies to on a paged tool. The detail,
+    # keyed by ``fields``, is left off: the message names it and quotes its
+    # reason, so appending it would repeat the sentence.
+    assert retries[0] == (
         "`fields` was rejected while rendering the result: Unknown field `items`. "
         + PAGED_QUERY_PARAM_SCOPE
     )
@@ -731,8 +819,61 @@ async def test_a_call_missing_a_selector_argument_is_one_retry_then_the_row(
 
     parts = [part for message in result.all_messages() for part in message.parts]
     retries = [part.content for part in parts if part.part_kind == "retry-prompt"]
-    assert retries == ['Invalid arguments: {"pk": ["This field is required."]}']
+    # The message names the one argument the detail is keyed by, so the detail
+    # is left off: the model reads the sentence once, as on the spec-tools route.
+    assert retries == ["Missing required argument(s): `pk`."]
     assert [part.content for part in parts if isinstance(part, ToolReturnPart)] == [row]
+
+
+async def _retries_for_an_omission(
+    name: str,
+    omitted: dict[str, Any],
+    corrected: dict[str, Any],
+    *,
+    toolsets: list[Any] | None = None,
+    capabilities: list[Any] | None = None,
+) -> list[str]:
+    """Run one omission then its correction, and return what the model was told."""
+    calls = iter([omitted, corrected])
+
+    def model_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        if any(part.part_kind == "tool-return" for part in messages[-1].parts):
+            return ModelResponse(parts=[TextPart("done")])
+        return ModelResponse(parts=[ToolCallPart(tool_name=name, args=next(calls))])
+
+    agent = Agent(
+        FunctionModel(model_fn),
+        deps_type=AgentDeps,
+        toolsets=toolsets,
+        capabilities=capabilities,
+    )
+    result = await agent.run("read the row", deps=AgentDeps(user=AnonymousUser()))
+    return [
+        part.content
+        for message in result.all_messages()
+        for part in message.parts
+        if part.part_kind == "retry-prompt"
+    ]
+
+
+@pytest.mark.parametrize(("name", "omitted", "corrected", "row"), _LOOKUP_CALLS)
+async def test_both_routes_hand_back_an_omission_in_the_same_words(
+    name: str, omitted: dict[str, Any], corrected: dict[str, Any], row: dict[str, Any]
+) -> None:
+    """One spec, one omission, the same retry text by either route.
+
+    The reason the bridge drops a detail its message already names: drf-mcp's
+    missing-argument line is the spec-tools toolset's sentence, and the detail
+    after it was the only difference a model could read between the routes.
+    """
+    bridged = await _retries_for_an_omission(
+        name, omitted, corrected, toolsets=[DRFMCPToolset(lookup_server, _request())]
+    )
+    in_process = await _retries_for_an_omission(
+        name, omitted, corrected, capabilities=[build_spec_capability(LOOKUP_SPECS)]
+    )
+    assert len(bridged) == 1
+    assert bridged == in_process
 
 
 @pytest.mark.parametrize("name", ["get_row", "rename_row"])

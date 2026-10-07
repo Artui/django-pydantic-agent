@@ -156,14 +156,20 @@ model gets to recover:
   with the field errors fixed, or with a real name (the retry lists the tools
   this toolset advertises), instead of the run dying. drf-mcp answers arguments
   it refuses with a tool-level `validation_error` result, and an unknown tool
-  name on JSON-RPC `-32602`; the bridge retries both. Refused arguments include
-  one a selector requires that the call left out, which comes back keyed by its
-  name (`Invalid arguments: {"pk": ["This field is required."]}`) where below
-  drf-mcp 0.50 the selector's `TypeError` ended the run. They also include a
-  read-shaping `QueryParam` value (a `fields` selection, say) the output
-  serializer refuses while rendering, which drf-mcp 0.49+ answers as a
-  `validation_error` naming the argument; on a paged tool the likeliest one is a
-  selection written against the page envelope rather than one item;
+  name on JSON-RPC `-32602`; the bridge retries both. The retry is drf-mcp's
+  message, then its field detail as JSON, unless the message already names
+  every field in the detail, nested ones included, in which case the detail is
+  left off rather than read twice. A detail is sent whole or not at all, so
+  `Invalid arguments: {"a": ["A valid integer is required."]}` keeps it, since
+  that message names nothing. Refused arguments include one a selector
+  requires that the call left out, which the model reads as
+  ``Missing required argument(s): `pk`.``, word for word what `[spec-tools]`
+  raises for the same call, where below drf-mcp 0.50 the selector's `TypeError`
+  ended the run. They also include a read-shaping `QueryParam` value (a
+  `fields` selection, say) the output serializer refuses while rendering, which
+  drf-mcp 0.49+ answers as a `validation_error` naming the argument and quoting
+  the serializer's reason; on a paged tool the likeliest one is a selection
+  written against the page envelope rather than one item;
 - a tool-level `input_required` result (a service asking for more input, which
   an in-process caller cannot be asked for mid-call) → `ModelRetry` naming the
   arguments to add on the next call;

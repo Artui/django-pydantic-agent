@@ -7,6 +7,7 @@ module lazily and the dependency on ``rest_framework_mcp`` stays optional.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from asgiref.sync import sync_to_async
@@ -15,6 +16,7 @@ from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
+from rest_framework.settings import api_settings
 from rest_framework_mcp import JsonRpcError, JsonRpcErrorCode
 
 from django_pydantic_agent.constants import DESTRUCTIVE_METADATA_KEY
@@ -379,13 +381,84 @@ def _retry_message(message: str, detail: Any, *, available: list[str] | None = N
 
     Never both — a `-32602` is about either the name or the arguments, and the
     caller already decided which by whether the name was advertised.
+
+    The detail is left off when the message already says it, and kept whole
+    otherwise; see ``_message_says``.
     """
     if available is not None:
         names: str = ", ".join(sorted(available)) or "none"
         return f"{message}. Available tools: {names}."
-    if not detail:
+    if not detail or _message_says(message, detail):
         return message
     return f"{message}: {json.dumps(detail, default=str)}"
+
+
+def _message_says(message: str, detail: Any) -> bool:
+    """Whether every name the detail carries appears in the message as a token.
+
+    Appending a detail the message already states makes a model read one
+    sentence twice, and makes this route read differently from the spec-tools
+    route, which raises the toolset's sentence alone for the same omission.
+    So the detail is dropped when the message names everything in it, and kept
+    whole when it names anything less: a part of a detail is never sent, and
+    drf-mcp's generic ``Invalid arguments``, which names nothing, keeps all of
+    its detail.
+
+    A field's name stands for its reasons. The only messages that name fields
+    are drf-mcp's missing-argument line, whose reason is always that the field
+    is required, which the line says, and its render-time line, which quotes
+    the reason after the name. That is the cost of this rule: a future message
+    naming a field without its reason would drop the reason with the detail.
+    Matching the reasons' words instead would keep the missing-argument detail,
+    whose ``This field is required.`` that line paraphrases rather than quotes,
+    and the duplicate with it.
+
+    Each condition is held by a test in ``tests/integrations/test_drf_mcp.py``:
+    every name rather than any by
+    ``test_a_detail_the_message_names_only_in_part_is_kept_whole``; the
+    whole-token match by ``test_a_name_counts_only_as_a_whole_token``; and the
+    non-field key by ``test_a_reason_under_no_field_counts_as_its_own_words``
+    and ``test_the_non_field_key_is_read_from_drf_settings``.
+    """
+    names: list[str] = _detail_names(detail, api_settings.NON_FIELD_ERRORS_KEY)
+    return all(_names_token(message, name) for name in names)
+
+
+def _detail_names(detail: Any, non_field_key: str, *, under_a_field: bool = False) -> list[str]:
+    """What a detail names: every dict key at any depth, and the strings under none.
+
+    A key is a field, so naming ``items`` says nothing about which of its own
+    fields was refused, and a nested key counts as one more name. A value under
+    no field key, a bare list or string or one under DRF's non-field key, has no
+    name to stand for it, so its own words are what the message must quote. The
+    non-field key is structure rather than a field, and it is read from DRF's
+    settings because a project can rename it.
+    """
+    if isinstance(detail, dict):
+        names: list[str] = []
+        for key, value in detail.items():
+            is_field: bool = str(key) != non_field_key
+            if is_field:
+                names.append(str(key))
+            names.extend(_detail_names(value, non_field_key, under_a_field=is_field))
+        return names
+    if isinstance(detail, list):
+        return [
+            name
+            for item in detail
+            for name in _detail_names(item, non_field_key, under_a_field=under_a_field)
+        ]
+    return [] if under_a_field else [str(detail)]
+
+
+def _names_token(message: str, name: str) -> bool:
+    """Whether ``name`` appears in ``message`` with no word character either side.
+
+    Lookarounds rather than ``\\b``: a word boundary needs a word character on
+    one side, so a name that starts or ends with punctuation, ``tags[]`` say,
+    would never match. A substring match would find ``a`` inside ``arguments``.
+    """
+    return re.search(rf"(?<!\w){re.escape(name)}(?!\w)", message) is not None
 
 
 __all__ = ["DRFMCPToolset"]

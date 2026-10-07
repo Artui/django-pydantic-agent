@@ -40,6 +40,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `validation_error` result the bridge's retry rides on is pinned with the
   new message.
 
+### Fixed
+
+- **`DRFMCPToolset` no longer repeats a refusal its message already states.**
+  The bridge's `ModelRetry` was drf-mcp's message with the field detail
+  appended as JSON, every time. drf-mcp's render-time refusal quotes that
+  detail in its message, and its missing-argument refusal now names the
+  argument, so a model read ``Missing required argument(s): `pk`.: {"pk":
+  ["This field is required."]}``, one sentence twice, where the `[spec-tools]`
+  route raises ``Missing required argument(s): `pk`.`` once for the same call.
+  The detail is now left off when the message names everything in it, as a
+  whole token: every key at any depth, and where a value sits under no field,
+  as a bare list or string or under DRF's non-field key, that value's own
+  words. Otherwise the detail is kept whole, never in part, so drf-mcp's
+  generic `Invalid arguments` keeps its field detail. A field's name stands for
+  its reasons, which holds for every message that names one today: the
+  missing-argument line's reason is always that the field is required, and the
+  render-time line quotes its reason. A future message naming a field without
+  its reason would lose the reason with the detail. The non-field key is read
+  from DRF's `NON_FIELD_ERRORS_KEY` setting. Tests cover the missing-argument
+  detail dropped, the generic message kept with a one-letter key that a
+  substring match would find inside `arguments`, a nested key the message does
+  not name, a partial overlap, non-field strings quoted and not, a renamed
+  non-field key, and the two routes handing back identical retry text for the
+  same omission.
+
 ## [0.27.0] — 2026-10-05
 
 ### Changed
