@@ -1088,9 +1088,14 @@ single-item service advertises the lookup its target is resolved through, so a
 tool changing one row names the <code>pk</code> that picks it. A call that leaves such an
 argument out is a <code>ModelRetry</code> naming it, <code>Missing required argument(s): `pk`.</code>,
 so the model supplies it on the next turn rather than the run ending on the
-selector's <code>TypeError</code>. Both need djangorestframework-pydantic-ai 0.33, which is
-why the extra is floored there, and the <code>[drf-mcp]</code> route asks for the same
-arguments and retries the same omission from drf-mcp 0.50.</p>
+selector's <code>TypeError</code>. Both arrived in djangorestframework-pydantic-ai 0.33, and
+the <code>[drf-mcp]</code> route asks for the same arguments and retries the same omission
+from drf-mcp 0.50. The extra is floored where a parameter a <code>kwargs=</code> provider
+declines, and the model left out, is retried the same way rather than reaching
+the selector, and where a selector parameter the toolset takes out of every
+call, a list selector's <code>page</code> or <code>limit</code> or a name a <code>QueryParam</code> also claims,
+makes <code>build_spec_capability</code> raise <code>ImproperlyConfigured</code> rather than
+advertising an argument whose value never arrives.</p>
 <h3 id="declaring-specs-once">Declaring specs once<a class="headerlink" href="#declaring-specs-once" title="Permanent link">&para;</a></h3>
 <p><code>specs</code> takes either a <code>name -&gt; spec</code> mapping or a <strong>spec registry</strong> —
 drf-services 0.27's <code>SpecRegistry</code>, the single declaration site for a project
@@ -1130,10 +1135,12 @@ requires <code>pk</code> rather than calling it optional. A service tool also ad
 the target lookup its row is resolved through, its <code>collection_selector_spec</code>
 when it declares one and its <code>instance_selector_spec</code> otherwise, so a tool
 changing one row names the <code>pk</code> that picks it. A <code>many=True</code> service reads no
-target and advertises no lookup. Both need drf-mcp 0.50, which is why the
-extra is floored there; <code>[spec-tools]</code> builds its schemas the same way from
-djangorestframework-pydantic-ai 0.33, so one spec asks a model for the same
-arguments by either route.</p>
+target and advertises no lookup. Both arrived in drf-mcp 0.50; <code>[spec-tools]</code>
+builds its schemas the same way from djangorestframework-pydantic-ai 0.33, so one
+spec asks a model for the same arguments by either route. The extra is floored
+where drf-mcp refuses at registration a selector parameter it takes out of every
+call, as <code>[spec-tools]</code> refuses it when the toolset is built, so one spec is
+served by both routes or refused by both.</p>
 <h3 id="a-tool-that-cannot-run-now">A tool that cannot run now<a class="headerlink" href="#a-tool-that-cannot-run-now" title="Permanent link">&para;</a></h3>
 <p>A service's <code>affordances</code> can say when the operation is possible at all: a
 condition written as a callable reads only the user and the request, never the
@@ -1166,14 +1173,20 @@ model gets to recover:</p>
   with the field errors fixed, or with a real name (the retry lists the tools
   this toolset advertises), instead of the run dying. drf-mcp answers arguments
   it refuses with a tool-level <code>validation_error</code> result, and an unknown tool
-  name on JSON-RPC <code>-32602</code>; the bridge retries both. Refused arguments include
-  one a selector requires that the call left out, which comes back keyed by its
-  name (<code>Invalid arguments: {"pk": ["This field is required."]}</code>) where below
-  drf-mcp 0.50 the selector's <code>TypeError</code> ended the run. They also include a
-  read-shaping <code>QueryParam</code> value (a <code>fields</code> selection, say) the output
-  serializer refuses while rendering, which drf-mcp 0.49+ answers as a
-  <code>validation_error</code> naming the argument; on a paged tool the likeliest one is a
-  selection written against the page envelope rather than one item;</li>
+  name on JSON-RPC <code>-32602</code>; the bridge retries both. The retry is drf-mcp's
+  message, then its field detail as JSON, unless the message already names
+  every field in the detail, nested ones included, in which case the detail is
+  left off rather than read twice. A detail is sent whole or not at all, so
+  <code>Invalid arguments: {"a": ["A valid integer is required."]}</code> keeps it, since
+  that message names nothing. Refused arguments include one a selector
+  requires that the call left out, which the model reads as
+  <code>Missing required argument(s): `pk`.</code>, word for word what <code>[spec-tools]</code>
+  raises for the same call, where below drf-mcp 0.50 the selector's <code>TypeError</code>
+  ended the run. They also include a read-shaping <code>QueryParam</code> value (a
+  <code>fields</code> selection, say) the output serializer refuses while rendering, which
+  drf-mcp 0.49+ answers as a <code>validation_error</code> naming the argument and quoting
+  the serializer's reason; on a paged tool the likeliest one is a selection
+  written against the page envelope rather than one item;</li>
 <li>a tool-level <code>input_required</code> result (a service asking for more input, which
   an in-process caller cannot be asked for mid-call) → <code>ModelRetry</code> naming the
   arguments to add on the next call;</li>
