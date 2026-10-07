@@ -1661,13 +1661,20 @@ async def test_no_per_call_state_outlives_the_run() -> None:
     A veto leaves the tool unrun, an approval deferral stops before any hook,
     and a tool's own ``ToolFailed`` skips the error and result hooks. Per-call
     state lives in the tool call's own context, so none survives the run.
+
+    The tools are coroutines so that they run on the event loop. A plain
+    function runs on anyio's worker thread under a copy of the context, and
+    that thread hands the result back to the loop before it drops the copy, so
+    the scan below can land in between and find an execution the thread
+    releases a moment later: a failure that says nothing about audit, and
+    depends only on how the runner schedules the two threads.
     """
 
-    def lookup(n: int) -> str:
+    async def lookup(n: int) -> str:
         """Look a thing up."""
         raise ToolFailed("model copy")
 
-    def drop(n: int) -> str:
+    async def drop(n: int) -> str:
         """Delete a thing."""
         return "dropped"
 
