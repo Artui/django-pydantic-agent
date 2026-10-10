@@ -432,6 +432,88 @@ async def test_a_tools_own_retry_with_no_budget_left_is_converted_into_a_failed_
     )
 
 
+async def test_reraising_unexpected_model_behavior_ends_the_run_on_a_spent_retry_budget() -> None:
+    """The opt-out the docs describe for a tool's own ``ModelRetry``.
+
+    The default converts it into a failed result (the test above). Naming
+    ``UnexpectedModelBehavior`` in ``reraise`` hands it back to pydantic-ai,
+    which ends the run, as it does without the policy. Its ``__cause__`` is the
+    tool's ``ModelRetry``, which the next test shows a sub-agent's exhausted
+    budget shares.
+    """
+    from django.core.exceptions import PermissionDenied
+
+    reg = ToolRegistry()
+
+    @tool(reg)
+    def boom(target: str) -> str:
+        """Always asks again."""
+        raise ModelRetry("try another target")
+
+    agent = build_agent(
+        reg,
+        AgentConfig(
+            model=TestModel(call_tools=["boom"]),
+            retries=0,
+            tool_failure=ToolFailureConfig(reraise=(UnexpectedModelBehavior, PermissionDenied)),
+        ),
+    )
+
+    with pytest.raises(UnexpectedModelBehavior, match="exceeded max retries count of 0") as info:
+        await agent.run("go", deps=AgentDeps(user=None))
+
+    assert isinstance(info.value.__cause__, ModelRetry)
+
+
+async def test_reraising_unexpected_model_behavior_also_ends_the_run_for_a_sub_agents_budget() -> (
+    None
+):
+    """The same entry catches every ``UnexpectedModelBehavior``, not only the
+    one pydantic-ai raises for the tool's own spent budget: a tool that lets a
+    sub-agent's exhausted budget propagate raises the same type with the same
+    ``ModelRetry`` as its ``__cause__``, so the two cannot be told apart.
+    """
+    sub_registry = ToolRegistry()
+
+    @tool(sub_registry)
+    def inner(target: str) -> str:
+        """Always asks again."""
+        raise ModelRetry("try another target")
+
+    sub_agent = build_agent(
+        sub_registry,
+        AgentConfig(
+            model=TestModel(call_tools=["inner"]),
+            retries=0,
+            tool_failure=ToolFailureConfig(enabled=False),
+        ),
+    )
+    reg = ToolRegistry()
+
+    @tool(reg)
+    async def delegate(target: str) -> str:
+        """Delegates to a sub-agent and lets its failure propagate."""
+        await sub_agent.run("go", deps=AgentDeps(user=None))
+        return "unreachable"
+
+    def agent_with(reraise: tuple[type[BaseException], ...] | None) -> Agent[AgentDeps, str]:
+        return build_agent(
+            reg,
+            AgentConfig(
+                model=TestModel(call_tools=["delegate"]),
+                tool_failure=ToolFailureConfig(reraise=reraise),
+            ),
+        )
+
+    converted = await agent_with(None).run("go", deps=AgentDeps(user=None))
+    assert [r.outcome for r in _tool_returns(converted)] == ["failed"]
+
+    with pytest.raises(UnexpectedModelBehavior, match="exceeded max retries count of 0") as info:
+        await agent_with((UnexpectedModelBehavior,)).run("go", deps=AgentDeps(user=None))
+
+    assert isinstance(info.value.__cause__, ModelRetry)
+
+
 async def test_another_capabilitys_failed_result_is_not_converted() -> None:
     """A ``ToolFailed`` from an error hook is that capability's own answer for
     the model, and the policy's message must not replace it.

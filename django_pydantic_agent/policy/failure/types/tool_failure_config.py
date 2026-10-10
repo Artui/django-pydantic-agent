@@ -41,7 +41,15 @@ class ToolFailureConfig:
     ``None`` means the built-in set: an authorization refusal, in both the
     flavours a Django project raises it — ``django.core.exceptions``' and, when
     DRF is installed, ``rest_framework.exceptions``'. Pass a tuple to replace
-    that set wholesale, or ``()`` to convert every exception.
+    that set wholesale, or ``()`` to convert every exception. Replacing means
+    re-listing both ``PermissionDenied`` classes to keep denials exempt.
+
+    **A spent tool retry budget.** Add ``UnexpectedModelBehavior`` (from
+    ``pydantic_ai.exceptions``) to end the run when a tool's own ``ModelRetry``
+    has no retries left, rather than converting it into a failed result. It
+    ends the run for every ``UnexpectedModelBehavior`` a tool raises, including
+    a sub-agent's exhausted budget the tool propagates, and ``__cause__``
+    cannot tell the two apart.
 
     **Why a denial is not a tool failure.** A converted denial leaves the run
     alive and the model free to call the same tool on the next row, while a
