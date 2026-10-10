@@ -247,13 +247,17 @@ Three things worth knowing:
 - **It hangs off `on_tool_execute_error`, not a `try` around the handler.**
   Pydantic-AI does not route control-flow exceptions to that hook —
   `SkipToolExecution`, `CallDeferred`, `ApprovalRequired`, the `ModelRetry`
-  retry signal, or an explicit `ToolFailed`. So the approval gate above and the
-  model's retry budget both pass through untouched. A hand-written
-  `except Exception` would have caught `ApprovalRequired` and silently disabled
-  the gate. The exception is a tool's own `ModelRetry` once its budget is
-  spent: pydantic-ai raises `UnexpectedModelBehavior` in its place from inside
-  the call, which is routed to that hook, so the policy converts it into a
-  failed result where without the policy the run would end.
+  retry signal, or an explicit `ToolFailed`. So the approval gate above passes
+  through untouched, and so does a `ModelRetry` while the tool has retries
+  left. A hand-written `except Exception` would have caught `ApprovalRequired`
+  and silently disabled the gate. The policy neither spends nor grants retries,
+  but it does change what happens when a tool's own budget runs out: pydantic-ai
+  raises `UnexpectedModelBehavior` in the last `ModelRetry`'s place from inside
+  the call, which is routed to that hook, so the policy converts it like any
+  other failure. The run continues with a failed result where without the
+  policy it would end. A capability's `ModelRetry` is different: pydantic-ai
+  checks its budget after every error hook has run, outside the policy's reach,
+  so it still ends the run when the budget is spent.
 - **It converts last.** It is pinned outermost and `build_agent` places it
   first, so its `on_tool_execute_error` runs after every other capability's
   (see [ordering](#ordering)). Every other error hook is handed the exception
@@ -269,6 +273,50 @@ Three things worth knowing:
 - **It spends no retry budget**, because `ToolFailed` deliberately doesn't.
   A model can call a persistently broken tool again; bound that with run-level
   `UsageLimits` rather than expecting this to stop it.
+
+### A tool that has spent its retries
+
+A tool that keeps raising `ModelRetry` is told to try again until its retry
+budget (`AgentConfig.retries`) is spent.
+Without the policy the next `ModelRetry` ends the run with
+`UnexpectedModelBehavior`. With it, that exception is converted: the model gets
+a failed result, the run continues, audit and the
+`django_pydantic_agent.failure` logger record `UnexpectedModelBehavior`, and the
+model is free to call the tool again.
+
+**That default has a cost.** The tool keeps executing on later calls, so any
+side effect it has repeats after its budget is spent. Two things bound it: the
+model taking the failed result's "do not retry" at its word (with
+`include_detail` off; with it on, the model gets the exception text and no such
+instruction), and pydantic-ai's default request limit, which ends a run that
+keeps calling. Set run-level `UsageLimits` when a tool's side effects matter.
+
+To have a spent budget end the run, name the exception in `reraise`:
+
+```python
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
+
+AgentConfig(
+    model=...,
+    tool_failure=ToolFailureConfig(
+        reraise=(UnexpectedModelBehavior, DjangoPermissionDenied, DRFPermissionDenied),
+    ),
+)
+```
+
+Two caveats:
+
+- **`reraise` replaces the default set, it does not extend it.** The default is
+  `django.core.exceptions.PermissionDenied` and, when DRF is installed,
+  `rest_framework.exceptions.PermissionDenied`
+  ([a denial is not a tool failure](#a-denial-is-not-a-tool-failure)). A tuple
+  that leaves them out converts denials again, so re-list both.
+- **It ends the run for every `UnexpectedModelBehavior` a tool raises**, not
+  only for its own spent budget: a tool that lets a sub-agent's exhausted
+  budget propagate ends the run too. The two cannot be told apart by type or
+  `__cause__`: both are `UnexpectedModelBehavior` with a `ModelRetry` cause.
 
 ### A denial is not a tool failure
 

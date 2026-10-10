@@ -30,9 +30,11 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     than a stylistic one: pydantic-ai does **not** call that hook for control-flow
     exceptions (``SkipToolExecution`` / ``CallDeferred`` / ``ApprovalRequired``),
     retry signals or failure signals. The approval interrupt the tool guard
-    depends on and the model's retry budget therefore pass through untouched,
-    where a hand-rolled ``except Exception`` around the handler would swallow
-    them and quietly disable the gate.
+    depends on therefore passes through untouched, and so does a ``ModelRetry``
+    while the tool has retries left, where a hand-rolled ``except Exception``
+    around the handler would swallow them and quietly disable the gate. The
+    policy neither spends nor grants retries; what it changes is the end of a
+    tool's own budget, below.
 
     The re-raise is ``pydantic_ai.exceptions.ToolFailed``, so the model sees a
     result marked failed rather than one reading as success. (Precisely, a
@@ -69,7 +71,14 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     error hook. Once they are spent it raises ``UnexpectedModelBehavior`` in
     its place from inside the call, which does reach the error hooks, so this
     logs it and converts it into a failed result like any other exception,
-    where without the policy the run would end.
+    where without the policy the run would end. A capability's ``ModelRetry``
+    is different: pydantic-ai checks its budget outside the error hooks, so it
+    still ends the run when the budget is spent. The default carries a cost,
+    since the tool keeps executing on later calls and its side effects repeat,
+    bounded by the model taking the failed result's "do not retry" (with
+    ``include_detail`` off) or by pydantic-ai's default request limit. Naming ``UnexpectedModelBehavior`` in
+    ``ToolFailureConfig.reraise`` ends the run instead, and ends it for a
+    sub-agent's exhausted budget a tool propagates too.
 
     **An authorization refusal is exempt** and ends the run as it would without
     the policy — see ``ToolFailureConfig.reraise``, which is also how a project

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **The failure policy no longer claims the model's retry budget "passes
+  through untouched".** It does not: once a tool's own `ModelRetry` has spent
+  the tool's retries, pydantic-ai raises `UnexpectedModelBehavior` from inside
+  the call, and `ToolFailurePolicy` converts it into a failed result, so the
+  run continues where it would otherwise end, and audit and the failure logger
+  record `UnexpectedModelBehavior`. A capability's `ModelRetry` past its budget
+  still ends the run. The policy neither spends nor grants retries; the docs and
+  docstrings now say that instead. Nothing changes in behaviour. The policy page
+  also documents the cost of the default (the tool keeps executing on later
+  calls, so its side effects repeat after its budget is spent, bounded by the
+  model taking "do not retry" with `include_detail` off, or by pydantic-ai's request limit) and the
+  opt-out: naming `UnexpectedModelBehavior` in `ToolFailureConfig.reraise` ends
+  the run. `reraise` replaces the default set, so re-list both `PermissionDenied`
+  classes, and it also ends the run when a tool propagates a sub-agent's
+  exhausted budget, which `__cause__` cannot tell apart.
+
 ## [0.28.0] — 2026-10-07
 
 ### Changed

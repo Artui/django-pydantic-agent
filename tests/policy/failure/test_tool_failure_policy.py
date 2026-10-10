@@ -13,7 +13,8 @@ from django.test import RequestFactory
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.exceptions import ToolFailed, UnexpectedModelBehavior
-from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai_harness.step_persistence import StepPersistence
@@ -430,6 +431,115 @@ async def test_a_tools_own_retry_with_no_budget_left_is_converted_into_a_failed_
     assert event.error.startswith(
         "UnexpectedModelBehavior: Tool 'boom' exceeded max retries count of 0."
     )
+
+
+async def test_a_tool_keeps_executing_after_its_retry_budget_is_spent() -> None:
+    """The cost of converting a spent budget: nothing stops the model calling the
+    tool again, so its side effects repeat. The model here calls it three times
+    and then answers; with the policy off the first spent budget would end the run.
+    """
+    executions: list[str] = []
+    reg = ToolRegistry()
+
+    @tool(reg)
+    def boom(target: str) -> str:
+        """Always asks again."""
+        executions.append(target)
+        raise ModelRetry("try another target")
+
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if len(executions) < 3:
+            return ModelResponse(parts=[ToolCallPart("boom", {"target": "x"})])
+        return ModelResponse(parts=[TextPart("giving up")])
+
+    agent = build_agent(reg, AgentConfig(model=FunctionModel(model_fn), retries=0))
+
+    result = await agent.run("go", deps=AgentDeps(user=None))
+
+    assert len(executions) == 3
+    assert [r.outcome for r in _tool_returns(result)] == ["failed", "failed", "failed"]
+
+
+async def test_reraising_unexpected_model_behavior_ends_the_run_on_a_spent_retry_budget() -> None:
+    """The opt-out the docs describe for a tool's own ``ModelRetry``.
+
+    The default converts it into a failed result (the test above). Naming
+    ``UnexpectedModelBehavior`` in ``reraise`` hands it back to pydantic-ai,
+    which ends the run, as it does without the policy. Its ``__cause__`` is the
+    tool's ``ModelRetry``, which the next test shows a sub-agent's exhausted
+    budget shares.
+    """
+    from django.core.exceptions import PermissionDenied
+
+    reg = ToolRegistry()
+
+    @tool(reg)
+    def boom(target: str) -> str:
+        """Always asks again."""
+        raise ModelRetry("try another target")
+
+    agent = build_agent(
+        reg,
+        AgentConfig(
+            model=TestModel(call_tools=["boom"]),
+            retries=0,
+            tool_failure=ToolFailureConfig(reraise=(UnexpectedModelBehavior, PermissionDenied)),
+        ),
+    )
+
+    with pytest.raises(UnexpectedModelBehavior, match="exceeded max retries count of 0") as info:
+        await agent.run("go", deps=AgentDeps(user=None))
+
+    assert isinstance(info.value.__cause__, ModelRetry)
+
+
+async def test_reraising_unexpected_model_behavior_also_ends_the_run_for_a_sub_agents_budget() -> (
+    None
+):
+    """The same entry catches every ``UnexpectedModelBehavior``, not only the
+    one pydantic-ai raises for the tool's own spent budget: a tool that lets a
+    sub-agent's exhausted budget propagate raises the same type with the same
+    ``ModelRetry`` as its ``__cause__``, so the two cannot be told apart.
+    """
+    sub_registry = ToolRegistry()
+
+    @tool(sub_registry)
+    def inner(target: str) -> str:
+        """Always asks again."""
+        raise ModelRetry("try another target")
+
+    sub_agent = build_agent(
+        sub_registry,
+        AgentConfig(
+            model=TestModel(call_tools=["inner"]),
+            retries=0,
+            tool_failure=ToolFailureConfig(enabled=False),
+        ),
+    )
+    reg = ToolRegistry()
+
+    @tool(reg)
+    async def delegate(target: str) -> str:
+        """Delegates to a sub-agent and lets its failure propagate."""
+        await sub_agent.run("go", deps=AgentDeps(user=None))
+        return "unreachable"
+
+    def agent_with(reraise: tuple[type[BaseException], ...] | None) -> Agent[AgentDeps, str]:
+        return build_agent(
+            reg,
+            AgentConfig(
+                model=TestModel(call_tools=["delegate"]),
+                tool_failure=ToolFailureConfig(reraise=reraise),
+            ),
+        )
+
+    converted = await agent_with(None).run("go", deps=AgentDeps(user=None))
+    assert [r.outcome for r in _tool_returns(converted)] == ["failed"]
+
+    with pytest.raises(UnexpectedModelBehavior, match="Tool 'inner'") as info:
+        await agent_with((UnexpectedModelBehavior,)).run("go", deps=AgentDeps(user=None))
+
+    assert isinstance(info.value.__cause__, ModelRetry)
 
 
 async def test_another_capabilitys_failed_result_is_not_converted() -> None:
