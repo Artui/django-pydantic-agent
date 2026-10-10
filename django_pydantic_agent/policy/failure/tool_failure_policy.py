@@ -75,8 +75,8 @@ class ToolFailurePolicy(AbstractCapability[Any]):
     is different: pydantic-ai checks its budget outside the error hooks, so it
     still ends the run when the budget is spent. The default carries a cost,
     since the tool keeps executing on later calls and its side effects repeat,
-    bounded by the model taking the failed result's "do not retry" or by
-    pydantic-ai's default request limit. Naming ``UnexpectedModelBehavior`` in
+    bounded by the model taking the failed result's "do not retry" (with
+    ``include_detail`` off) or by pydantic-ai's default request limit. Naming ``UnexpectedModelBehavior`` in
     ``ToolFailureConfig.reraise`` ends the run instead, and ends it for a
     sub-agent's exhausted budget a tool propagates too.
 

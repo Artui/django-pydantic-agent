@@ -286,9 +286,10 @@ model is free to call the tool again.
 
 **That default has a cost.** The tool keeps executing on later calls, so any
 side effect it has repeats after its budget is spent. Two things bound it: the
-model taking the failed result's "do not retry" at its word, and pydantic-ai's
-default request limit, which ends a run that keeps calling. Set run-level `UsageLimits`
-when a tool's side effects matter.
+model taking the failed result's "do not retry" at its word (with
+`include_detail` off; with it on, the model gets the exception text and no such
+instruction), and pydantic-ai's default request limit, which ends a run that
+keeps calling. Set run-level `UsageLimits` when a tool's side effects matter.
 
 To have a spent budget end the run, name the exception in `reraise`:
 
@@ -314,8 +315,8 @@ Two caveats:
   that leaves them out converts denials again, so re-list both.
 - **It ends the run for every `UnexpectedModelBehavior` a tool raises**, not
   only for its own spent budget: a tool that lets a sub-agent's exhausted
-  budget propagate ends the run too. The two cannot be told apart, because the
-  exception's `__cause__` shows `ModelRetry` in both.
+  budget propagate ends the run too. The two cannot be told apart by type or
+  `__cause__`: both are `UnexpectedModelBehavior` with a `ModelRetry` cause.
 
 ### A denial is not a tool failure
 

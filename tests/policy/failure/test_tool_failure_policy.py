@@ -13,7 +13,8 @@ from django.test import RequestFactory
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.exceptions import ToolFailed, UnexpectedModelBehavior
-from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai_harness.step_persistence import StepPersistence
@@ -432,6 +433,33 @@ async def test_a_tools_own_retry_with_no_budget_left_is_converted_into_a_failed_
     )
 
 
+async def test_a_tool_keeps_executing_after_its_retry_budget_is_spent() -> None:
+    """The cost of converting a spent budget: nothing stops the model calling the
+    tool again, so its side effects repeat. The model here calls it three times
+    and then answers; with the policy off the first spent budget would end the run.
+    """
+    executions: list[str] = []
+    reg = ToolRegistry()
+
+    @tool(reg)
+    def boom(target: str) -> str:
+        """Always asks again."""
+        executions.append(target)
+        raise ModelRetry("try another target")
+
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if len(executions) < 3:
+            return ModelResponse(parts=[ToolCallPart("boom", {"target": "x"})])
+        return ModelResponse(parts=[TextPart("giving up")])
+
+    agent = build_agent(reg, AgentConfig(model=FunctionModel(model_fn), retries=0))
+
+    result = await agent.run("go", deps=AgentDeps(user=None))
+
+    assert len(executions) == 3
+    assert [r.outcome for r in _tool_returns(result)] == ["failed", "failed", "failed"]
+
+
 async def test_reraising_unexpected_model_behavior_ends_the_run_on_a_spent_retry_budget() -> None:
     """The opt-out the docs describe for a tool's own ``ModelRetry``.
 
@@ -508,7 +536,7 @@ async def test_reraising_unexpected_model_behavior_also_ends_the_run_for_a_sub_a
     converted = await agent_with(None).run("go", deps=AgentDeps(user=None))
     assert [r.outcome for r in _tool_returns(converted)] == ["failed"]
 
-    with pytest.raises(UnexpectedModelBehavior, match="exceeded max retries count of 0") as info:
+    with pytest.raises(UnexpectedModelBehavior, match="Tool 'inner'") as info:
         await agent_with((UnexpectedModelBehavior,)).run("go", deps=AgentDeps(user=None))
 
     assert isinstance(info.value.__cause__, ModelRetry)

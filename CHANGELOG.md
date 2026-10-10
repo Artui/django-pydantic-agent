@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   docstrings now say that instead. Nothing changes in behaviour. The policy page
   also documents the cost of the default (the tool keeps executing on later
   calls, so its side effects repeat after its budget is spent, bounded by the
-  model taking "do not retry" or by pydantic-ai's request limit) and the
+  model taking "do not retry" with `include_detail` off, or by pydantic-ai's request limit) and the
   opt-out: naming `UnexpectedModelBehavior` in `ToolFailureConfig.reraise` ends
   the run. `reraise` replaces the default set, so re-list both `PermissionDenied`
   classes, and it also ends the run when a tool propagates a sub-agent's
