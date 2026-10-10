@@ -2784,7 +2784,14 @@ without the policy.</p>
 <p><code>None</code> means the built-in set: an authorization refusal, in both the
 flavours a Django project raises it — <code>django.core.exceptions</code>' and, when
 DRF is installed, <code>rest_framework.exceptions</code>'. Pass a tuple to replace
-that set wholesale, or <code>()</code> to convert every exception.</p>
+that set wholesale, or <code>()</code> to convert every exception. Replacing means
+re-listing both <code>PermissionDenied</code> classes to keep denials exempt.</p>
+<p><strong>A spent tool retry budget.</strong> Add <code>UnexpectedModelBehavior</code> (from
+<code>pydantic_ai.exceptions</code>) to end the run when a tool's own <code>ModelRetry</code>
+has no retries left, rather than converting it into a failed result. It
+ends the run for every <code>UnexpectedModelBehavior</code> a tool raises, including
+a sub-agent's exhausted budget the tool propagates, and <code>__cause__</code>
+cannot tell the two apart.</p>
 <p><strong>Why a denial is not a tool failure.</strong> A converted denial leaves the run
 alive and the model free to call the same tool on the next row, while a
 failed result stays distinguishable from a "not found" one — so a sweep over
@@ -2835,9 +2842,11 @@ the whole answer.</p>
 than a stylistic one: pydantic-ai does <strong>not</strong> call that hook for control-flow
 exceptions (<code>SkipToolExecution</code> / <code>CallDeferred</code> / <code>ApprovalRequired</code>),
 retry signals or failure signals. The approval interrupt the tool guard
-depends on and the model's retry budget therefore pass through untouched,
-where a hand-rolled <code>except Exception</code> around the handler would swallow
-them and quietly disable the gate.</p>
+depends on therefore passes through untouched, and so does a <code>ModelRetry</code>
+while the tool has retries left, where a hand-rolled <code>except Exception</code>
+around the handler would swallow them and quietly disable the gate. The
+policy neither spends nor grants retries; what it changes is the end of a
+tool's own budget, below.</p>
 <p>The re-raise is <code>pydantic_ai.exceptions.ToolFailed</code>, so the model sees a
 result marked failed rather than one reading as success. (Precisely, a
 private subclass of it: pydantic-ai's control flow treats it as a
@@ -2870,7 +2879,14 @@ the tool has retries left pydantic-ai never hands its <code>ModelRetry</code> to
 error hook. Once they are spent it raises <code>UnexpectedModelBehavior</code> in
 its place from inside the call, which does reach the error hooks, so this
 logs it and converts it into a failed result like any other exception,
-where without the policy the run would end.</p>
+where without the policy the run would end. A capability's <code>ModelRetry</code>
+is different: pydantic-ai checks its budget outside the error hooks, so it
+still ends the run when the budget is spent. The default carries a cost,
+since the tool keeps executing on later calls and its side effects repeat,
+bounded by the model taking the failed result's "do not retry" (with
+<code>include_detail</code> off) or by pydantic-ai's default request limit. Naming <code>UnexpectedModelBehavior</code> in
+<code>ToolFailureConfig.reraise</code> ends the run instead, and ends it for a
+sub-agent's exhausted budget a tool propagates too.</p>
 <p><strong>An authorization refusal is exempt</strong> and ends the run as it would without
 the policy — see <code>ToolFailureConfig.reraise</code>, which is also how a project
 exempts more, or nothing at all.</p>

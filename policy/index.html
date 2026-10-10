@@ -527,6 +527,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-tool-that-has-spent-its-retries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A tool that has spent its retries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#a-denial-is-not-a-tool-failure" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -959,6 +970,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-tool-that-has-spent-its-retries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A tool that has spent its retries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#a-denial-is-not-a-tool-failure" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1246,13 +1268,17 @@ tool's <code>ModelRetry</code> with no retries left does reach them, as
 <li><strong>It hangs off <code>on_tool_execute_error</code>, not a <code>try</code> around the handler.</strong>
   Pydantic-AI does not route control-flow exceptions to that hook —
   <code>SkipToolExecution</code>, <code>CallDeferred</code>, <code>ApprovalRequired</code>, the <code>ModelRetry</code>
-  retry signal, or an explicit <code>ToolFailed</code>. So the approval gate above and the
-  model's retry budget both pass through untouched. A hand-written
-  <code>except Exception</code> would have caught <code>ApprovalRequired</code> and silently disabled
-  the gate. The exception is a tool's own <code>ModelRetry</code> once its budget is
-  spent: pydantic-ai raises <code>UnexpectedModelBehavior</code> in its place from inside
-  the call, which is routed to that hook, so the policy converts it into a
-  failed result where without the policy the run would end.</li>
+  retry signal, or an explicit <code>ToolFailed</code>. So the approval gate above passes
+  through untouched, and so does a <code>ModelRetry</code> while the tool has retries
+  left. A hand-written <code>except Exception</code> would have caught <code>ApprovalRequired</code>
+  and silently disabled the gate. The policy neither spends nor grants retries,
+  but it does change what happens when a tool's own budget runs out: pydantic-ai
+  raises <code>UnexpectedModelBehavior</code> in the last <code>ModelRetry</code>'s place from inside
+  the call, which is routed to that hook, so the policy converts it like any
+  other failure. The run continues with a failed result where without the
+  policy it would end. A capability's <code>ModelRetry</code> is different: pydantic-ai
+  checks its budget after every error hook has run, outside the policy's reach,
+  so it still ends the run when the budget is spent.</li>
 <li><strong>It converts last.</strong> It is pinned outermost and <code>build_agent</code> places it
   first, so its <code>on_tool_execute_error</code> runs after every other capability's
   (see <a href="#ordering">ordering</a>). Every other error hook is handed the exception
@@ -1268,6 +1294,44 @@ tool's <code>ModelRetry</code> with no retries left does reach them, as
 <li><strong>It spends no retry budget</strong>, because <code>ToolFailed</code> deliberately doesn't.
   A model can call a persistently broken tool again; bound that with run-level
   <code>UsageLimits</code> rather than expecting this to stop it.</li>
+</ul>
+<h3 id="a-tool-that-has-spent-its-retries">A tool that has spent its retries<a class="headerlink" href="#a-tool-that-has-spent-its-retries" title="Permanent link">&para;</a></h3>
+<p>A tool that keeps raising <code>ModelRetry</code> is told to try again until its retry
+budget (<code>AgentConfig.retries</code>) is spent.
+Without the policy the next <code>ModelRetry</code> ends the run with
+<code>UnexpectedModelBehavior</code>. With it, that exception is converted: the model gets
+a failed result, the run continues, audit and the
+<code>django_pydantic_agent.failure</code> logger record <code>UnexpectedModelBehavior</code>, and the
+model is free to call the tool again.</p>
+<p><strong>That default has a cost.</strong> The tool keeps executing on later calls, so any
+side effect it has repeats after its budget is spent. Two things bound it: the
+model taking the failed result's "do not retry" at its word (with
+<code>include_detail</code> off; with it on, the model gets the exception text and no such
+instruction), and pydantic-ai's default request limit, which ends a run that
+keeps calling. Set run-level <code>UsageLimits</code> when a tool's side effects matter.</p>
+<p>To have a spent budget end the run, name the exception in <code>reraise</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">PermissionDenied</span> <span class="k">as</span> <span class="n">DjangoPermissionDenied</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic_ai.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnexpectedModelBehavior</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rest_framework.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">PermissionDenied</span> <span class="k">as</span> <span class="n">DRFPermissionDenied</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">AgentConfig</span><span class="p">(</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">model</span><span class="o">=...</span><span class="p">,</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">tool_failure</span><span class="o">=</span><span class="n">ToolFailureConfig</span><span class="p">(</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="n">reraise</span><span class="o">=</span><span class="p">(</span><span class="n">UnexpectedModelBehavior</span><span class="p">,</span> <span class="n">DjangoPermissionDenied</span><span class="p">,</span> <span class="n">DRFPermissionDenied</span><span class="p">),</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="p">),</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
+</span></code></pre></div>
+<p>Two caveats:</p>
+<ul>
+<li><strong><code>reraise</code> replaces the default set, it does not extend it.</strong> The default is
+  <code>django.core.exceptions.PermissionDenied</code> and, when DRF is installed,
+  <code>rest_framework.exceptions.PermissionDenied</code>
+  (<a href="#a-denial-is-not-a-tool-failure">a denial is not a tool failure</a>). A tuple
+  that leaves them out converts denials again, so re-list both.</li>
+<li><strong>It ends the run for every <code>UnexpectedModelBehavior</code> a tool raises</strong>, not
+  only for its own spent budget: a tool that lets a sub-agent's exhausted
+  budget propagate ends the run too. The two cannot be told apart by type or
+  <code>__cause__</code>: both are <code>UnexpectedModelBehavior</code> with a <code>ModelRetry</code> cause.</li>
 </ul>
 <h3 id="a-denial-is-not-a-tool-failure">A denial is not a tool failure<a class="headerlink" href="#a-denial-is-not-a-tool-failure" title="Permanent link">&para;</a></h3>
 <p>An authorization refusal passes through untouched and ends the run, exactly as
@@ -1289,8 +1353,8 @@ result's <em>shape</em>. They are still told apart by its <em>words</em>: one sa
 not there and the other says the tool failed. An oracle needs one bit, and a
 message is a place to find one.</p>
 <p>The set is a project decision:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">())</span>  <span class="c1"># convert everything (the old behaviour)</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">(</span><span class="n">PermissionDenied</span><span class="p">,</span> <span class="ne">LookupError</span><span class="p">))</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">())</span>  <span class="c1"># convert everything (the old behaviour)</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">ToolFailureConfig</span><span class="p">(</span><span class="n">reraise</span><span class="o">=</span><span class="p">(</span><span class="n">PermissionDenied</span><span class="p">,</span> <span class="ne">LookupError</span><span class="p">))</span>
 </span></code></pre></div>
 <h2 id="ordering">Ordering<a class="headerlink" href="#ordering" title="Permanent link">&para;</a></h2>
 <p>Each capability here declares its own place through <code>get_ordering()</code>, and
