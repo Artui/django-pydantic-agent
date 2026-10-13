@@ -201,6 +201,11 @@ than parsing it out of the sentence.
 Bridged tools also carry destructiveness into the [tool guard](policy.md): the
 bridge maps each tool's `readOnlyHint` annotation onto `DESTRUCTIVE_METADATA_KEY`.
 
+A spec's own confirmation (`AdditionalInputRequired`) is the `input_required`
+retry above, which the model can answer itself, on this route and on
+`[spec-tools]` alike. It is not an approval gate: see
+[what is gated, and what is not](policy.md#what-is-gated-and-what-is-not).
+
 ## `[harness]` — upstream capabilities
 
 ```bash

@@ -202,6 +202,26 @@ server does not perform is worse than no promise at all:
   *client-registered* tool's `parameters`, so it never sees a tool that executes
   server-side. Neither path substitutes for the other.
 
+!!! warning "A spec's confirmation is not an approval gate"
+    The only human gate on a server-side tool is `ToolGuard`. Three ways a
+    deployment ends up without the gate it assumes:
+
+    - **It is off by default.** A deployment that never sets
+      `ToolGuardConfig(enabled=True)` has no approval gate on any tool.
+    - **`exempt` wins over `require_approval`.** A name in both is never gated,
+      and exempting a tool removes the human from its calls altogether.
+    - **A confirmation written into a spec is not a substitute.** A spec that
+      asks for confirmation by raising `AdditionalInputRequired` reaches the agent
+      as an `input_required` result, because neither bridge can ask the caller
+      mid-call; both turn it into a `ModelRetry` that tells the *model* to call
+      the tool again with the missing argument (a `confirmed` flag, say). The
+      model can supply that itself on the next turn. On a page that confirmation
+      is a prompt for a person; on the agent route it is a retry, not a security
+      boundary. An operation that needs a human decision belongs in
+      `require_approval`. A tool declaring `readOnlyHint: False` is gated by
+      default while the guard is enabled, but only until its name is in `exempt`
+      or a registration overrides the annotation.
+
 ## What a raising tool costs
 
 A tool that raises used to end the run. The transport emitted `RUN_ERROR`, the
