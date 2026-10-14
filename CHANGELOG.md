@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `if TYPE_CHECKING:` guard in `DefaultStepStore` is gone.** Its two names,
+  `EventKind` and `ToolEffectStatus`, are imported at module level from the
+  `pydantic_ai_harness.step_persistence` module the file already imports at runtime,
+  and ruff `TID251` now bans `typing.TYPE_CHECKING` and `typing_extensions.TYPE_CHECKING`
+  across the package. No public path, signature or behaviour changed.
+
 ## [0.28.1] — 2026-10-10
 
 ### Documentation

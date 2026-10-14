@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from asgiref.sync import sync_to_async
 from django.http import HttpRequest
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai_harness.step_persistence import (
     ContinuableSnapshot,
+    EventKind,
     RunRecord,
     SnapshotState,
     StepEvent,
     ToolEffectRecord,
+    ToolEffectStatus,
 )
 
 from django_pydantic_agent.contrib.store.models import (
@@ -21,9 +23,6 @@ from django_pydantic_agent.contrib.store.models import (
 )
 from django_pydantic_agent.persistence.anonymous_operation_error import AnonymousOperationError
 from django_pydantic_agent.persistence.utils import resolve_owner_id
-
-if TYPE_CHECKING:
-    from pydantic_ai_harness.step_persistence import EventKind, ToolEffectStatus
 
 
 class DefaultStepStore:

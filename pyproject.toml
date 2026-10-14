@@ -346,6 +346,13 @@ required-imports = ["from __future__ import annotations"]
 # "parents", which lets ``from .foo import bar`` through.
 ban-relative-imports = "all"
 
+# A TYPE_CHECKING guard exists to hide an import cycle from the interpreter
+# while the type checker still sees it. Break the cycle instead: move the shared
+# name to a leaf module, type the parameter with a base class, or reverse an edge.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.TYPE_CHECKING".msg = "Break the import cycle instead of guarding it."
+"typing_extensions.TYPE_CHECKING".msg = "Break the import cycle instead of guarding it."
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
