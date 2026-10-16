@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pydantic_ai_harness.step_persistence` module the file already imports at runtime,
   and ruff `TID251` now bans `typing.TYPE_CHECKING` and `typing_extensions.TYPE_CHECKING`
   across the package. No public path, signature or behaviour changed.
+- **The suite passes against drf-services 0.58 as well as the locked 0.56.** A
+  fresh install resolves drf-services 0.58, which compiles specs to
+  django-service-specs, and two of its intended changes reached tests here, not
+  the package: `SpecRegistry.register` refuses a spec that declares no
+  permissions, so the registry tests' spec declares `AllowAny`, and a call
+  dispatched off HTTP, as drf-mcp's is, now has a wrong-typed argument refused
+  by the kernel's typed check ("Expected an integer.") rather than DRF's
+  `IntegerField` ("A valid integer is required."). The bridge tests accept
+  those two sentences and no other, and still hold the `validation_error`
+  type, message and refused key exactly. No floor moves, and no code changed.
 
 ## [0.28.1] — 2026-10-10
 
