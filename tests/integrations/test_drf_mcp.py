@@ -30,6 +30,16 @@ from tests.integrations.drf_server_lookup import lookup_server
 from tests.integrations.drf_specs_lookup import SPECS as LOOKUP_SPECS
 from tests.integrations.drf_specs_lookup import Row
 
+# The sentence a refused integer argument carries, which depends on which layer
+# of drf-services answers it, not on anything this package does. drf-mcp
+# dispatches off HTTP, and from drf-services 0.58 that path runs the kernel's
+# typed check before the serializer ("Expected an integer."); before it, DRF's
+# ``IntegerField`` was the first to refuse ("A valid integer is required.").
+# The lock pins one and a lowest-direct resolve floats to the other, so both
+# are accepted, and only these two: a refusal worded any other way, such as a
+# missing-argument "This field is required.", still fails the tests below.
+WRONG_TYPE_SENTENCES = ("A valid integer is required.", "Expected an integer.")
+
 
 def _request() -> HttpRequest:
     request = RequestFactory().post("/agent/")
@@ -202,8 +212,11 @@ async def test_malformed_arguments_raise_model_retry_with_detail() -> None:
     toolset = DRFMCPToolset(server, _request())
     with pytest.raises(ModelRetry, match="Invalid arguments") as excinfo:
         await toolset.call_tool("add", {"a": "not_a_number", "b": 1}, None, None)
-    # The per-field DRF detail rides in the retry text for the model.
-    assert "valid integer" in str(excinfo.value)
+    # The per-field detail rides in the retry text for the model, keyed by the
+    # refused argument.
+    retry_text = str(excinfo.value)
+    assert '"a"' in retry_text
+    assert any(sentence in retry_text for sentence in WRONG_TYPE_SENTENCES), retry_text
 
 
 async def test_invalid_params_error_raises_model_retry(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -754,14 +767,14 @@ async def test_a_selector_parameter_without_a_default_is_required(name: str) -> 
 
 
 @pytest.mark.parametrize(
-    ("mcp_server", "name", "arguments", "message", "detail"),
+    ("mcp_server", "name", "arguments", "message", "details"),
     [
         pytest.param(
             lookup_server,
             "get_row",
             {},
             "Missing required argument(s): `pk`.",
-            {"pk": ["This field is required."]},
+            [{"pk": ["This field is required."]}],
             id="missing",
         ),
         pytest.param(
@@ -769,7 +782,7 @@ async def test_a_selector_parameter_without_a_default_is_required(name: str) -> 
             "add",
             {"a": "not_a_number", "b": 1},
             "Invalid arguments",
-            {"a": ["A valid integer is required."]},
+            [{"a": [sentence]} for sentence in WRONG_TYPE_SENTENCES],
             id="wrong-type",
         ),
     ],
@@ -779,7 +792,7 @@ async def test_refused_arguments_arrive_as_a_validation_error_result(
     name: str,
     arguments: dict[str, Any],
     message: str,
-    detail: dict[str, Any],
+    details: list[dict[str, Any]],
 ) -> None:
     # The answer the retries here ride on, read off the real server rather than
     # a double: an ``isError`` result whose error is a ``validation_error``
@@ -788,14 +801,16 @@ async def test_refused_arguments_arrive_as_a_validation_error_result(
     # A missing selector argument raised ``TypeError`` before drf-mcp 0.50, and
     # a wrong type was JSON-RPC -32602. From drf-mcp 0.51 the missing one's
     # message names the argument, while a refused value keeps the generic one.
+    # ``details`` lists every detail the installed drf-services may answer with
+    # (see ``WRONG_TYPE_SENTENCES``), and the error must equal one of them
+    # whole, so its type, message and keys are still held exactly.
     result = await mcp_server.acall_tool(name, arguments, user=AnonymousUser())
     assert isinstance(result, dict), result
     assert result["isError"] is True
-    assert json.loads(result["content"][0]["text"])["error"] == {
-        "type": "validation_error",
-        "message": message,
-        "detail": detail,
-    }
+    error = json.loads(result["content"][0]["text"])["error"]
+    assert error in [
+        {"type": "validation_error", "message": message, "detail": detail} for detail in details
+    ], error
 
 
 @pytest.mark.parametrize(("name", "omitted", "corrected", "row"), _LOOKUP_CALLS)

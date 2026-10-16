@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rest_framework.permissions import AllowAny
 from rest_framework_services import ServiceSpec, SpecRegistry
 
 from django_pydantic_agent.integrations.resolve_spec_mapping import resolve_spec_mapping
@@ -16,7 +17,9 @@ def _ok(user: Any) -> dict[str, Any]:
 
 
 def _spec() -> ServiceSpec:
-    return ServiceSpec(service=_ok, atomic=False)
+    # Permissions are declared because ``SpecRegistry.register`` refuses a spec
+    # that declares none from drf-services 0.58; earlier releases took one.
+    return ServiceSpec(service=_ok, atomic=False, permission_classes=[AllowAny])
 
 
 def test_a_plain_mapping_passes_through_unchanged() -> None:
