@@ -1232,6 +1232,28 @@ server does not perform is worse than no promise at all:</p>
   <em>client-registered</em> tool's <code>parameters</code>, so it never sees a tool that executes
   server-side. Neither path substitutes for the other.</li>
 </ul>
+<div class="admonition warning">
+<p class="admonition-title">A spec's confirmation is not an approval gate</p>
+<p>The only human gate on a server-side tool is <code>ToolGuard</code>. Three ways a
+deployment ends up without the gate it assumes:</p>
+<ul>
+<li><strong>It is off by default.</strong> A deployment that never sets
+  <code>ToolGuardConfig(enabled=True)</code> has no approval gate on any tool.</li>
+<li><strong><code>exempt</code> wins over <code>require_approval</code>.</strong> A name in both is never gated,
+  and exempting a tool removes the human from its calls altogether.</li>
+<li><strong>A confirmation written into a spec is not a substitute.</strong> A spec that
+  asks for confirmation by raising <code>AdditionalInputRequired</code> reaches the agent
+  as an <code>input_required</code> result, because neither bridge can ask the caller
+  mid-call; both turn it into a <code>ModelRetry</code> that tells the <em>model</em> to call
+  the tool again with the missing argument (a <code>confirmed</code> flag, say). The
+  model can supply that itself on the next turn. On a page that confirmation
+  is a prompt for a person; on the agent route it is a retry, not a security
+  boundary. An operation that needs a human decision belongs in
+  <code>require_approval</code>. A tool declaring <code>readOnlyHint: False</code> is gated by
+  default while the guard is enabled, but only until its name is in <code>exempt</code>
+  or a registration overrides the annotation.</li>
+</ul>
+</div>
 <h2 id="what-a-raising-tool-costs">What a raising tool costs<a class="headerlink" href="#what-a-raising-tool-costs" title="Permanent link">&para;</a></h2>
 <p>A tool that raises used to end the run. The transport emitted <code>RUN_ERROR</code>, the
 turn stopped, and everything the model had already produced went with it —

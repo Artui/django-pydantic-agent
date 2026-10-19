@@ -1213,6 +1213,10 @@ the <code>[spec-tools]</code> route off the exception through <code>translate_ex
 than parsing it out of the sentence.</p>
 <p>Bridged tools also carry destructiveness into the <a href="../policy/">tool guard</a>: the
 bridge maps each tool's <code>readOnlyHint</code> annotation onto <code>DESTRUCTIVE_METADATA_KEY</code>.</p>
+<p>A spec's own confirmation (<code>AdditionalInputRequired</code>) is the <code>input_required</code>
+retry above, which the model can answer itself, on this route and on
+<code>[spec-tools]</code> alike. It is not an approval gate: see
+<a href="../policy/#what-is-gated-and-what-is-not">what is gated, and what is not</a>.</p>
 <h2 id="harness-upstream-capabilities"><code>[harness]</code> — upstream capabilities<a class="headerlink" href="#harness-upstream-capabilities" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-pydantic-agent<span class="o">[</span>harness<span class="o">]</span>
 </span></code></pre></div>
