@@ -7,14 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2] — 2026-10-19
+
 ### Changed
 
+- **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.53`
+  (was `>=0.52`) and the `[spec-tools]` extra at
+  `djangorestframework-pydantic-ai>=0.36` (was `>=0.35`), and these two floors
+  move together.** Both releases are the ones built on drf-services as an
+  adapter over django-service-specs: each asks for `djangorestframework-services`
+  at 0.58.0 and `django-service-specs` at 0.9.0, and the ceiling below 0.58 that
+  the previous patch releases carried is gone. The floors declared before
+  admitted the two uncapped builds, 0.52.0 and 0.35.0, beside drf-services 0.58,
+  a pairing those packages exclude from their next patch on because their own
+  suites fail there, so an install could resolve onto it. What each route
+  refuses, it refuses before any call: drf-mcp refuses at registration what
+  drf-services 0.58 refuses on every call, and the Pydantic-AI toolset refuses
+  `UnknownArguments.PASSTHROUGH` when it is built. The `[drf-mcp]` test server
+  for a paged selector now declares its `fields` read on the spec, with
+  `reads=`, where it passed the deprecated `query_params=` to the registrar, so
+  the suite no longer exercises the path drf-mcp now warns about. Nothing in the
+  package changed. The lock moves to drf-services 0.58.0 and
+  django-service-specs 0.9.0 with them.
 - **The `if TYPE_CHECKING:` guard in `DefaultStepStore` is gone.** Its two names,
   `EventKind` and `ToolEffectStatus`, are imported at module level from the
   `pydantic_ai_harness.step_persistence` module the file already imports at runtime,
   and ruff `TID251` now bans `typing.TYPE_CHECKING` and `typing_extensions.TYPE_CHECKING`
   across the package. No public path, signature or behaviour changed.
-- **The suite passes against drf-services 0.58 as well as the locked 0.56.** A
+- **The suite passes against drf-services 0.58.** A
   fresh install resolves drf-services 0.58, which compiles specs to
   django-service-specs, and two of its intended changes reached tests here, not
   the package: `SpecRegistry.register` refuses a spec that declares no
@@ -23,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by the kernel's typed check ("Expected an integer.") rather than DRF's
   `IntegerField` ("A valid integer is required."). The bridge tests accept
   those two sentences and no other, and still hold the `validation_error`
-  type, message and refused key exactly. No floor moves, and no code changed.
+  type, message and refused key exactly. No package code changed.
 
 ## [0.28.1] — 2026-10-10
 
@@ -1677,7 +1697,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.2...HEAD
+[0.28.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.1...v0.27.0
