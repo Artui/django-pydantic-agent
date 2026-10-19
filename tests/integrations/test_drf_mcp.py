@@ -686,9 +686,9 @@ def _paged_selection_server() -> MCPServer:
             selector=lambda: [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
             output_serializer=_SelectableRow,
             permission_classes=[AllowAny],
+            reads=[QueryParam("fields")],
         ),
         paginate=True,
-        query_params=[QueryParam("fields")],
     )
     return paged
 

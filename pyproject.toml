@@ -65,7 +65,20 @@ openai = ["pydantic-ai-slim[openai]>=2.16,<3"]
 google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # In-process bridge exposing a drf-mcp-server tool registry as a Pydantic-AI
 # toolset (the agent calls DRF tools without a network hop).
-# Floored where an argument a call gets wrong comes back as a retry naming what
+# Floored where the server asks for drf-services at 0.58.0 and
+# django-service-specs at 0.9.0, the adapter over the kernel, and the ceiling
+# that kept an older build below drf-services 0.58 is gone. The floor declared
+# before admitted the uncapped build beside drf-services 0.58, a pairing the
+# package excludes from its next patch on because its own suite fails there. It
+# also registers a selector's channels from the spec's own ``reads=``, where the
+# mount's ``query_params=`` is deprecated and warns, and it refuses at
+# registration what drf-services 0.58 refuses on every call, so a tool that
+# would fail each call is not offered. It moves in lockstep with the
+# ``[spec-tools]`` floor below, which makes the same move on that route: a
+# mismatched pair would resolve one route onto a drf-services the other
+# excludes.
+#
+# 0.52 was the previous floor, where an argument a call gets wrong comes back as a retry naming what
 # to change, rather than as a crash, a silent drop or a server fault. A call
 # leaving out a required argument is refused with a message naming it,
 # ``Missing required argument(s): `pk`.``, which is the sentence the
@@ -87,9 +100,9 @@ google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # when the toolset is built and retries the same unfilled parameter: a
 # mismatched pair would register one spec on one route and refuse it on the
 # other, and word one omission two ways. Both floor drf-services at 0.56.0 in
-# turn, whose dispatch is what refuses the unfilled parameter.
+# turn, whose dispatch is what refuses the unfilled parameter. Subsumed.
 #
-# 0.50 was the previous floor, where a tool's ``inputSchema`` requires what a call needs. A
+# 0.50 was the floor before that, where a tool's ``inputSchema`` requires what a call needs. A
 # selector parameter with no default, which the server does not fill, is listed
 # in ``required``, and a service tool advertises the target lookup its row is
 # resolved through, so a tool changing one row names the ``pk`` that picks it.
@@ -158,10 +171,22 @@ google = ["pydantic-ai-slim[google]>=2.16,<3"]
 # 0.37 was the floor before that, the first release carrying drf-services>=0.49
 # after a serializer that nests itself crashed the catalog walk. That constraint
 # still holds and is subsumed.
-drf-mcp = ["djangorestframework-mcp-server>=0.52"]
+drf-mcp = ["djangorestframework-mcp-server>=0.53"]
 # Expose drf-services specs directly as agent tools via djangorestframework-
 # pydantic-ai's SpecCapability — no MCP server in the path.
-# Floored where a spec no call could be served through is refused when the
+# Floored where the toolset asks for drf-services at 0.58.0 and
+# django-service-specs at 0.9.0, the adapter over the kernel, and the ceiling
+# that kept an older build below drf-services 0.58 is gone. The floor declared
+# before admitted the uncapped build beside drf-services 0.58, a pairing the
+# package excludes from its next patch on because its own suite fails there. It
+# also reads a registry entry's channels from the spec's own ``reads=``, refuses
+# ``UnknownArguments.PASSTHROUGH`` when the toolset is built rather than on
+# every call, and takes server-supplied values for a tool's arguments. It moves
+# in lockstep with the ``[drf-mcp]`` floor above, which makes the same move on
+# that route: a mismatched pair would resolve one route onto a drf-services the
+# other excludes.
+#
+# 0.35 was the previous floor, where a spec no call could be served through is refused when the
 # toolset is built, and a parameter nothing filled is a retry rather than a
 # crash. A selector parameter the toolset takes out of every call, a list
 # selector's ``page`` or ``limit`` or a name a ``QueryParam`` also claims, is an
@@ -178,9 +203,9 @@ drf-mcp = ["djangorestframework-mcp-server>=0.52"]
 # ask for the same arguments and word an omission the same way. It
 # floors drf-services at 0.56.0 in turn, and hard: the toolset imports
 # ``provider_keys``, ``can_present_nothing`` and ``server_owned_keys`` at module
-# level, and they first exist there.
+# level, and they first exist there. Subsumed.
 #
-# 0.33 was the previous floor, where a tool's input schema requires what a call needs: a
+# 0.33 was the floor before that, where a tool's input schema requires what a call needs: a
 # selector parameter with no default, which the toolset does not fill, is listed
 # in ``required``, and a single-item service advertises the lookup its target is
 # resolved through. A call that leaves such an argument out is a ``ModelRetry``
@@ -234,7 +259,7 @@ drf-mcp = ["djangorestframework-mcp-server>=0.52"]
 # 0.24 was the floor before that, for the recursion crash above one level down:
 # build_spec_capability constructs a SpecCapability, whose tool definitions are
 # schemas, so the crash landed at construction rather than at a call. Subsumed.
-spec-tools = ["djangorestframework-pydantic-ai>=0.35"]
+spec-tools = ["djangorestframework-pydantic-ai>=0.36"]
 # pydantic-ai-harness capabilities (lazy-imported; the core install stays slim):
 # CodeMode batching, compaction, step persistence, sub-agents.
 harness = ["pydantic-ai-harness[code-mode]>=0.13"]
@@ -265,9 +290,9 @@ dev = [
     # The [drf-mcp] extra's backing package, so its bridge + tests run in dev.
     # Must move in lockstep with the extra — a dev group pinning the old band
     # makes the project unsatisfiable against its own extra.
-    "djangorestframework-mcp-server>=0.52",
+    "djangorestframework-mcp-server>=0.53",
     # The [spec-tools] extra's backing package, so its capability + tests run in dev.
-    "djangorestframework-pydantic-ai>=0.35",
+    "djangorestframework-pydantic-ai>=0.36",
     # The [harness] extra's backing package, so the harness capabilities run in dev.
     "pydantic-ai-harness[code-mode]>=0.13",
     # Provider libs so the api_key / provider model-building path is exercised
