@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2] — 2026-10-19
+
 ### Changed
 
 - **The `[drf-mcp]` extra is floored at `djangorestframework-mcp-server>=0.53`
@@ -17,8 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at 0.58.0 and `django-service-specs` at 0.9.0, and the ceiling below 0.58 that
   the previous patch releases carried is gone. The floors declared before
   admitted the two uncapped builds, 0.52.0 and 0.35.0, beside drf-services 0.58,
-  a pairing those packages exclude from their next patch on, so an install could
-  resolve onto a combination neither route works with. What each route
+  a pairing those packages exclude from their next patch on because their own
+  suites fail there, so an install could resolve onto it. What each route
   refuses, it refuses before any call: drf-mcp refuses at registration what
   drf-services 0.58 refuses on every call, and the Pydantic-AI toolset refuses
   `UnknownArguments.PASSTHROUGH` when it is built. The `[drf-mcp]` test server
@@ -1695,7 +1697,8 @@ handler and check for `None`, which is what the contract always said.
   carries no dependency on any wire format; the calling transport validates its
   own shape (and its message ids survive a round trip untouched).
 
-[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.1...HEAD
+[Unreleased]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.2...HEAD
+[0.28.2]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/Artui/django-pydantic-agent/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/Artui/django-pydantic-agent/compare/v0.26.1...v0.27.0
