@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **This is the final release of `django-pydantic-agent`; development continues
+  as `django-spec-agents`.** The new package (import package
+  `django_spec_agents`, documentation at
+  <https://artui.github.io/django-spec-agents/>) merges this one with
+  `djangorestframework-pydantic-ai`, and this package's layout carries over under
+  the new root. To move an installed project, run `migrate` on this release
+  first, change the `django_pydantic_agent` imports to `django_spec_agents`,
+  change the `INSTALLED_APPS` entry `"django_pydantic_agent.contrib.store"` to
+  `"django_spec_agents.contrib.store"`, and run `migrate` once more: the new
+  app's label is `django_spec_agents_store` and its single migration renames the
+  store's tables in place. The `anthropic`, `openai`, `google`, `drf-mcp` and
+  `harness` extras keep their names, and `[spec-tools]` becomes
+  `django-spec-agents[specs]`. The attachment storage alias, the session key, the
+  attachment upload prefix, the `agent_store_*` commands and the
+  `django_pydantic_agent.audit` and `django_pydantic_agent.failure` loggers keep
+  their spelling. `DESTRUCTIVE_METADATA_KEY`, the attachments toolset id and the
+  `django-spec-agents: ` message prefix change, and a tool registered under a
+  `name=` is offered under that name after moving, where this package offers the
+  function's name. The code is unchanged from 0.28.2: the package adds no
+  deprecation warning, shim or re-export, and the extras are unchanged. The
+  trove classifier is now `Development Status :: 7 - Inactive`, and the README
+  and every documentation page carry a notice pointing at the new
+  package. See [Moving to django-spec-agents](https://artui.github.io/django-pydantic-agent/moving/).
+- **A known defect stays in this final release and is fixed only in
+  `django-spec-agents`.** A destructive tool registered under a `name=` other
+  than its function's, or as a direct `ToolSpec`, is offered to the model under
+  the function's name, so the tool guard does not ask before it runs.
+
 ## [0.28.2] — 2026-10-19
 
 ### Changed

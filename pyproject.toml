@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["django", "pydantic-ai", "agent", "llm", "ai", "toolset"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 7 - Inactive",
     "Environment :: Web Environment",
     "Framework :: Django",
     "Framework :: Django :: 4.2",
