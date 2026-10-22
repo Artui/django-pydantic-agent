@@ -11,8 +11,7 @@ the new root, so `django_pydantic_agent.contrib.store` is
 
 ## Moving an installed project
 
-1. Run `migrate` on `django-pydantic-agent` 0.28.3 (or any release of this
-   package) first. The new store's migration renames this package's store tables
+1. Run `migrate` on this release, `django-pydantic-agent` 0.28.3, first. The new store's migration renames this package's store tables
    in place and needs all of this package's own store migrations applied before
    it runs.
 2. Replace the dependency with `django-spec-agents` and change every
