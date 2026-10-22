@@ -6,9 +6,11 @@
 > [Moving to django-spec-agents](https://artui.github.io/django-pydantic-agent/moving/).
 >
 > This release is code-identical to 0.28.2. A known defect stays in it and is
-> fixed only in `django-spec-agents`: a destructive tool registered under a
-> `name=` other than its function's, or as a direct `ToolSpec`, is offered to the
-> model under the function's name, so the tool guard does not ask before it runs.
+> fixed only in `django-spec-agents`: a destructive tool whose registered name
+> differs from its function's name, through `@tool(name=)` or a `ToolSpec`
+> registered directly, is offered to the model under the function's name, so the
+> tool guard does not ask before it runs. If you stay on 0.28.x, put the
+> function's name in `require_approval`; the registered name does nothing there.
 
 # django-pydantic-agent
 
@@ -19,7 +21,7 @@
 [![Docs](https://img.shields.io/badge/docs-artui.github.io-blue.svg)](https://artui.github.io/django-pydantic-agent/)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Artui/django-pydantic-agent/gh-pages/coverage.json)](https://github.com/Artui/django-pydantic-agent/actions/workflows/tests.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![License](https://img.shields.io/pypi/l/django-pydantic-agent.svg)](LICENSE)
+[![License](https://img.shields.io/pypi/l/django-pydantic-agent.svg)](https://github.com/Artui/django-pydantic-agent/blob/main/LICENSE)
 
 The settings-agnostic agent-host substrate shared by Django's Pydantic-AI
 transports.

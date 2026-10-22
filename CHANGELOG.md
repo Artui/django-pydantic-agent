@@ -21,23 +21,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change the `INSTALLED_APPS` entry `"django_pydantic_agent.contrib.store"` to
   `"django_spec_agents.contrib.store"`, and run `migrate` once more: the new
   app's label is `django_spec_agents_store` and its single migration renames the
-  store's tables in place. The `anthropic`, `openai`, `google`, `drf-mcp` and
-  `harness` extras keep their names, and `[spec-tools]` becomes
-  `django-spec-agents[specs]`. The attachment storage alias, the session key, the
-  attachment upload prefix, the `agent_store_*` commands and the
-  `django_pydantic_agent.audit` and `django_pydantic_agent.failure` loggers keep
-  their spelling. `DESTRUCTIVE_METADATA_KEY`, the attachments toolset id and the
-  `django-spec-agents: ` message prefix change, and a tool registered under a
-  `name=` is offered under that name after moving, where this package offers the
-  function's name. The code is unchanged from 0.28.2: the package adds no
-  deprecation warning, shim or re-export, and the extras are unchanged. The
-  trove classifier is now `Development Status :: 7 - Inactive`, and the README
-  and every documentation page carry a notice pointing at the new
-  package. See [Moving to django-spec-agents](https://artui.github.io/django-pydantic-agent/moving/).
+  store's tables in place. `django_pydantic_agent.constants` has no counterpart:
+  import `ToolCategory`, the `X_*_KEY` names and `DESTRUCTIVE_METADATA_KEY` from
+  the `django_spec_agents` root, and `ATTACHMENT_STORAGE_ALIAS` from
+  `django_spec_agents.types.attachment_storage_alias`. A project app whose
+  models or migrations name `django_pydantic_agent_store` must be edited to
+  `django_spec_agents_store`, with its migration dependency on that app's
+  `0001_initial`; the moving page has the steps. The `anthropic`, `openai`,
+  `google`, `drf-mcp` and `harness` extras keep their names, and `[spec-tools]`
+  becomes `django-spec-agents[specs]`. The attachment storage alias, the session
+  key, the attachment upload prefix and the `django_pydantic_agent.audit` and
+  `django_pydantic_agent.failure` loggers keep their spelling, and so do the
+  `agent_store_*` commands. `DESTRUCTIVE_METADATA_KEY`, the attachments toolset
+  id, the audit `ContextVar` name and the `django-spec-agents: ` message prefix
+  change. A tool registered under a `name=` is offered under that name after
+  moving, where this package offers the function's name, so a `require_approval`
+  or `exempt` entry, an approval prompt, an audit query or a step-store
+  `tool_name` query that used the function name uses the registered name; and a
+  `description=` override reaches the model, which this package drops. The code
+  is unchanged from 0.28.2: the package adds no deprecation warning, shim or
+  re-export, and the extras are unchanged. The trove classifier is now
+  `Development Status :: 7 - Inactive`, and the README and every documentation
+  page carry a notice pointing at the new package. See
+  [Moving to django-spec-agents](https://artui.github.io/django-pydantic-agent/moving/).
 - **A known defect stays in this final release and is fixed only in
-  `django-spec-agents`.** A destructive tool registered under a `name=` other
-  than its function's, or as a direct `ToolSpec`, is offered to the model under
-  the function's name, so the tool guard does not ask before it runs.
+  `django-spec-agents`.** A destructive tool whose registered name differs from
+  its function's name, through `@tool(name=)` or a `ToolSpec` registered
+  directly, is offered to the model under the function's name, so the tool guard
+  does not ask before it runs. The registry hands the agent the bare functions,
+  which is also why a `description=` override is dropped. On 0.28.x, putting the
+  function's name in `require_approval` gates the tool, and the registered name
+  does nothing there.
 
 ## [0.28.2] — 2026-10-19
 
