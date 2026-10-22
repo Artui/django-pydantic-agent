@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{#- The site-wide notice: this package's final release points readers at its
+    replacement. The link goes through the url filter so it resolves from a
+    nested page as well as from the index. -#}
+{% block announce %}
+  This package has had its final release. Development continues as
+  <a href="https://artui.github.io/django-spec-agents/">django-spec-agents</a>;
+  see <a href="{{ 'moving/' | url }}">Moving to django-spec-agents</a>.
+{% endblock %}
